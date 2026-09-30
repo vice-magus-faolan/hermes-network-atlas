@@ -8,7 +8,7 @@ from ipaddress import ip_address
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
 from .identity import mac_address
-from .storage import Store, encode, identifier, parse_time, timestamp, utc_now
+from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 from .updates import Update, _text, inference_update, operator_update
 
 INTERFACE_TYPES = ("ethernet", "wifi", "bridge", "vlan", "virtual", "loopback", "unknown")
@@ -62,8 +62,10 @@ def create_device(store: Store, name: str, *, now: datetime | None = None) -> di
         observation = append_fact(store, "device", device, "canonical_name", name, "user", "user_supplied", at)
         event = store.audit(operation, "device_created", "user", at, entity=device,
                             details={"observation_id": observation})
-    return {"device_id": device, "operation_id": operation, "audit_event_ids": [event],
-            "applied": True, "persisted": True}
+        receipt = {"device_id": device, "operation_id": operation, "audit_event_ids": [event],
+                   "applied": True, "persisted": True}
+        response_json(receipt, store.policy.limits.output_bytes)
+    return receipt
 
 
 def _relationship(store: Store, update: Update, at: str) -> str:
@@ -116,8 +118,12 @@ def apply_update(store: Store, update: Update, *, now: datetime | None = None) -
         observation = _apply_fact(store, checked, at)
         event = store.audit(operation, "fact_asserted", checked.source, at, entity=checked.device_id,
                             details={"field": checked.field, "observation_id": observation})
-    return {"validated": True, "applied": True, "persisted": True, "update": asdict(checked),
-            "operation_id": operation, "observation_id": observation, "audit_event_ids": [event]}
+        receipt = {"validated": True, "applied": True, "persisted": True, "update": asdict(checked),
+                   "operation_id": operation, "observation_id": observation, "audit_event_ids": [event]}
+        # An unreportable mutation must roll back its fact, alias/retirement/edge,
+        # and audit event together; never report applied=false after committing.
+        response_json(receipt, store.policy.limits.output_bytes)
+    return receipt
 
 
 def _apply_fact(store: Store, update: Update, at: str) -> str:
@@ -140,6 +146,7 @@ def add_interface(store: Store, device: str, name: str, mac: str | None = None, 
         raise ValueError("invalid interface type")
     normalized, stable = mac_address(mac) if mac is not None else (None, False)
     at, interface, operation = timestamp(now or utc_now()), identifier(), identifier()
+    response_json({"interface_id": interface, "applied": True, "persisted": True}, store.policy.limits.output_bytes)
     with store.transaction():
         store.require("devices", device)
         store.connection.execute("INSERT INTO interfaces VALUES (?,?,?,?,?)",
@@ -187,6 +194,7 @@ def add_address(store: Store, interface: str, address: str, prefix_length: int, 
     if type(prefix_length) is not int or not 0 <= prefix_length <= ip.max_prefixlen:
         raise ValueError("invalid address prefix")
     at, assignment, operation = timestamp(now or utc_now()), identifier(), identifier()
+    response_json({"assignment_id": assignment, "applied": True, "persisted": True}, store.policy.limits.output_bytes)
     with store.transaction():
         store.require("interfaces", interface)
         observation = append_fact(store, "address", assignment, "assignment",
@@ -201,6 +209,7 @@ def add_address(store: Store, interface: str, address: str, prefix_length: int, 
 def end_address(store: Store, assignment: str, *, now: datetime | None = None) -> None:
     """Explicit operator historical transition; observing a different IP never calls this."""
     at, operation = timestamp(now or utc_now()), identifier()
+    response_json({"applied": True, "persisted": True}, store.policy.limits.output_bytes)
     with store.transaction():
         row = store.connection.execute("SELECT * FROM addresses WHERE id=?", (assignment,)).fetchone()
         if row is None or row["ended_at"] is not None or at < row["first_seen"]:

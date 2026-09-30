@@ -52,6 +52,18 @@ def encode(value: object) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def response_json(value: object, maximum: int) -> str:
+    """Serialize a bounded JSON response, including the CLI's trailing newline.
+
+    Mutation callers must check the exact receipt before committing. Use this
+    same serializer at emission so escaping/UTF-8 expansion cannot bypass policy.
+    """
+    content = json.dumps(value, ensure_ascii=True, sort_keys=True, allow_nan=False) + "\n"
+    if len(content.encode("utf-8")) > maximum:
+        raise ValueError("response exceeds configured byte bound")
+    return content
+
+
 def private_directory(path: Path) -> None:
     """Create private directories without chmodding an existing shared parent."""
     if path.is_symlink():

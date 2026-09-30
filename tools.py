@@ -12,7 +12,7 @@ from .updates import Update, inference_update
 from .core import apply_update
 from .query import query
 from .render import export_map, render_map
-from .storage import Store
+from .storage import Store, response_json
 
 
 def update_receipt(update: Update) -> str:
@@ -24,12 +24,12 @@ def update_receipt(update: Update) -> str:
 def status(home: Path) -> str:
     """Summarize stored knowledge separately from profile-local authorization."""
     policy = load_policy(home)
-    return json.dumps({**query(policy, {"view": "status"}), "stage": "atlas_core", "persistence_available": True,
-                       "collection_available": False,
-                       "configured_networks": [network.name for network in policy.networks],
-                       "authorized_for_atlas_ssh_inspection": list(policy.authorized_aliases),
-                       "operator_update_route": "hermes network-atlas update"},
-                      sort_keys=True)
+    return response_json({**query(policy, {"view": "status"}), "stage": "atlas_core", "persistence_available": True,
+                          "collection_available": False,
+                          "configured_networks": [network.name for network in policy.networks],
+                          "authorized_for_atlas_ssh_inspection": list(policy.authorized_aliases),
+                          "operator_update_route": "hermes network-atlas update"},
+                         policy.limits.output_bytes)
 
 
 class Handlers:
@@ -43,8 +43,7 @@ class Handlers:
         del runtime_context
         try:
             policy = load_policy(self.home)
-            result = status(self.home) if params == {"view": "status"} else json.dumps(query(policy, params), sort_keys=True)
-            return _bounded(result, policy.limits.output_bytes)
+            return status(self.home) if params == {"view": "status"} else response_json(query(policy, params), policy.limits.output_bytes)
         except (OSError, ConfigError, ValueError, sqlite3.Error):
             return json.dumps({"error": "invalid query or local policy", "applied": False})
 
@@ -57,7 +56,8 @@ class Handlers:
             if not policy.database.exists():
                 raise ValueError("unknown atlas entity")
             with Store(policy, writable=True) as store:
-                return json.dumps(apply_update(store, update), sort_keys=True)
+                # apply_update checks this exact serialized receipt before commit.
+                return response_json(apply_update(store, update), policy.limits.output_bytes)
         except (OSError, ConfigError, ValueError, sqlite3.Error):
             return json.dumps({"error": "invalid inference proposal or local policy", "applied": False})
 
@@ -75,8 +75,8 @@ class Handlers:
             policy = load_policy(self.home)
             outputs = render_map(policy)
             files = [str(policy.exports / name) for name in ("network_map.md", "network_map.mmd")] if params.get("export", False) else []
-            result = _bounded(json.dumps({"format": format_name, "content": outputs[format_name], "exports": files,
-                                          "discovery_performed": False}), policy.limits.output_bytes)
+            result = response_json({"format": format_name, "content": outputs[format_name], "exports": files,
+                                    "discovery_performed": False}, policy.limits.output_bytes)
             if params.get("export", False):
                 export_map(policy, outputs)
             return result
@@ -94,9 +94,3 @@ class Handlers:
             return self.map({"format": parts[1] if len(parts) == 2 else "text"})
         return json.dumps({"error": "slash update origin cannot be attested; use the local operator CLI",
                            "applied": False})
-
-
-def _bounded(content: str, maximum: int) -> str:
-    if len(content.encode("utf-8")) > maximum:
-        raise ValueError("query output exceeds configured byte bound")
-    return content

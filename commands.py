@@ -12,7 +12,7 @@ from .schemas import UPDATE_FIELDS
 from .tools import Handlers, status, update_receipt
 from .updates import Update, operator_update
 from .core import add_address, add_interface, apply_update, create_device, end_address
-from .storage import Store
+from .storage import Store, response_json
 
 
 def setup_parser(parser: argparse.ArgumentParser) -> None:
@@ -52,7 +52,9 @@ def run_command(args: argparse.Namespace, home: Path) -> int:
         result = _read_command(args, home, policy)
         if result is None:
             result = _write_command(args, policy)
-        print(json.dumps(result, sort_keys=True))
+        # Native mutations have already checked this exact receipt before commit;
+        # read-only and validation results are checked here without side effects.
+        print(response_json(result, policy.limits.output_bytes), end="")
         return 2 if "error" in result else 0
     except (OSError, ConfigError, ValueError, RecursionError, sqlite3.Error):
         print(json.dumps({"error": "invalid operator update or local policy", "applied": False}))

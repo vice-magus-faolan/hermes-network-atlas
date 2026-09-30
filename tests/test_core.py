@@ -67,7 +67,8 @@ class AtlasFixture(unittest.TestCase):
 
     def counts(self):
         return {name: self.store.connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-                for name in ("devices", "interfaces", "addresses", "observations", "relations", "audit_events", "batches", "probes")}
+                for name in ("devices", "interfaces", "addresses", "observations", "relations", "aliases",
+                             "access_evidence", "audit_events", "batches", "probes")}
 
 
 class PersistenceTests(AtlasFixture):
@@ -283,6 +284,144 @@ class IdentityAndProvenanceTests(AtlasFixture):
 
 
 class QueryUpdateMapTests(AtlasFixture):
+    def set_output_limit(self, maximum):
+        self.raw["limits"]["output_bytes"] = maximum
+        (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
+
+    def test_update_receipts_refuse_overflow_without_mutation(self):
+        self.set_output_limit(512)
+        handler = tools.Handlers(self.home)
+        for value, explanation in (("x" * 4096, "e" * 4096), ("雪" * 64, "Unicode expansion"),
+                                   ('"\\' * 64, "JSON escaping")):
+            with self.subTest(value=value):
+                before = self.counts()
+                result = handler.update({"device_id": self.device, "field": "os", "value": value,
+                                         "explanation": explanation})
+                self.assertIn("error", json.loads(result))
+                self.assertEqual(self.counts(), before)
+                self.assertLessEqual(len(result.encode("utf-8")), 512)
+
+    def test_update_receipt_exact_byte_boundary_and_success_control(self):
+        handler = tools.Handlers(self.home)
+        params = {"device_id": self.device, "field": "os", "value": "雪", "explanation": 'JSON "\\ 雪'}
+        result = handler.update(params)
+        receipt = json.loads(result)
+        self.assertTrue(receipt["persisted"])
+        self.assertEqual(receipt["update"]["value"], "雪")
+        size = len(result.encode("utf-8"))
+        self.set_output_limit(size - 1)
+        before = self.counts()
+        self.assertIn("error", json.loads(handler.update(params)))
+        self.assertEqual(self.counts(), before)
+        self.set_output_limit(size)
+        result = handler.update(params)
+        self.assertTrue(json.loads(result)["applied"])
+        self.assertEqual(len(result.encode("utf-8")), size)
+        self.assertEqual(self.counts()["observations"], before["observations"] + 1)
+        self.assertEqual(self.counts()["audit_events"], before["audit_events"] + 1)
+
+    def test_cli_update_and_validation_receipt_bounds(self):
+        self.set_output_limit(512)
+        for action in ("update", "validate-update"):
+            for value in ("x" * 4096, "雪" * 64, '"\\' * 128):
+                with self.subTest(action=action, value=value):
+                    before = self.counts()
+                    code, result = self.cli([action, "--device-id", self.device, "--field", "os",
+                                             "--value-json", json.dumps(value)])
+                    self.assertEqual(code, 2)
+                    self.assertIn("error", result)
+                    self.assertEqual(self.counts(), before)
+        for action in ("update", "validate-update"):
+            code, result = self.cli([action, "--device-id", self.device, "--field", "os", "--value-json", '"ok"'])
+            self.assertEqual(code, 0)
+            self.assertEqual(result["persisted"], action == "update")
+
+    def test_cli_fixed_mutation_receipts_refuse_before_state_changes(self):
+        interface = core.add_interface(self.store, self.device, "eth0", now=NOW)
+        assignment = core.add_address(self.store, interface, "192.0.2.1", 24, now=NOW)
+        self.set_output_limit(32)
+        for argv in (["create", "--name", "No partial device"],
+                     ["interface", "--device-id", self.device, "--name", "eth1"],
+                     ["address", "--interface-id", interface, "--address", "192.0.2.2", "--prefix-length", "24"],
+                     ["end-address", "--assignment-id", assignment]):
+            with self.subTest(argv=argv):
+                before = self.counts()
+                code, result = self.cli(argv)
+                self.assertEqual(code, 2)
+                self.assertFalse(result["applied"])
+                self.assertEqual(self.counts(), before)
+                self.assertIsNone(self.store.connection.execute("SELECT ended_at FROM addresses WHERE id=?", (assignment,)).fetchone()[0])
+
+    def test_cli_status_respects_output_bound(self):
+        self.set_output_limit(128)
+        code, result = self.cli(["status"])
+        self.assertEqual(code, 2)
+        self.assertIn("error", result)
+        self.set_output_limit(4096)
+        self.assertEqual(self.cli(["status"])[0], 0)
+
+    def test_cli_update_exact_stdout_bound_includes_newline(self):
+        argv = ["update", "--device-id", self.device, "--field", "os", "--value-json", json.dumps('雪"\\')]
+        code, result = self.cli(argv)
+        self.assertEqual(code, 0)
+        expected = json.dumps(result, sort_keys=True) + "\n"
+        size = len(expected.encode("utf-8"))
+        self.set_output_limit(size - 1)
+        before = self.counts()
+        self.assertEqual(self.cli(argv)[0], 2)
+        self.assertEqual(self.counts(), before)
+        self.set_output_limit(size)
+        parser = argparse.ArgumentParser()
+        commands.setup_parser(parser)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = commands.run_command(parser.parse_args(argv), self.home)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(output.getvalue().encode("utf-8")), size)
+        self.assertTrue(json.loads(output.getvalue())["persisted"])
+
+    def test_receipt_overflow_rolls_back_alias_retirement_and_relationship(self):
+        other = core.create_device(self.store, "Synthetic endpoint", now=NOW)["device_id"]
+        self.set_output_limit(32)
+        for field, value in (("ssh_alias", "lab-router"), ("retired", True),
+                             ("relationship", {"target_device": other, "relationship_type": "hosted_on"})):
+            with self.subTest(field=field):
+                before = self.counts()
+                code, result = self.cli(["update", "--device-id", self.device, "--field", field,
+                                         "--value-json", json.dumps(value)])
+                self.assertEqual(code, 2)
+                self.assertFalse(result["applied"])
+                self.assertEqual(self.counts(), before)
+                self.assertFalse(self.detail()["retired"])
+
+    def test_alias_ambiguity_visible_in_every_map_and_export(self):
+        self.update("ssh_alias", "lab-router")
+        control = render.render_map(self.policy, now=NOW)
+        for content in control.values():
+            self.assertNotIn("uncertain", content)
+            self.assertNotIn("ambiguous alias association", content)
+        self.assertIn("Atlas SSH inspection authorized: lab-router", control["text"])
+        other = core.create_device(self.store, "Alias collision", now=NOW)["device_id"]
+        self.update("ssh_alias", "lab-router", device=other)
+        before = self.counts()
+        outputs = render.render_map(self.policy, now=NOW)
+        self.assertEqual(render.render_map(self.policy, now=NOW), outputs)
+        for format_name, content in outputs.items():
+            with self.subTest(format=format_name):
+                self.assertEqual(content.count("uncertain"), 2)
+                self.assertEqual(content.count("ambiguous alias association"), 2)
+                self.assertNotIn("Atlas SSH inspection authorized:", content)
+        self.assertNotIn(" --> ", outputs["mermaid"])
+        self.assertEqual(self.counts(), before)
+        for device in query.query(self.policy, {}, now=NOW)["devices"]:
+            self.assertEqual(device["interfaces"], [])
+            self.assertTrue(device["access"][0]["ambiguous_association"])
+            self.assertFalse(device["access"][0]["authorized_for_atlas_ssh_inspection"])
+        self.assertEqual(query.query(self.policy, {"access_method": "ssh"}, now=NOW)["devices"], [])
+        files = render.export_map(self.policy, outputs, now=NOW)
+        for path, format_name in zip(files, ("markdown", "mermaid")):
+            self.assertEqual(Path(path).read_text(), outputs[format_name])
+
     def test_golden_text_markdown_mermaid_and_negative_label_cases(self):
         fixture = json.loads((ROOT / "tests" / "fixtures" / "render-golden.json").read_text())
         empty = config.validate_policy({}, self.home / "empty")

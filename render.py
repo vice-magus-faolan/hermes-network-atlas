@@ -61,13 +61,29 @@ def _addresses(device: dict, policy: Policy) -> str:
 
 def _access(device: dict) -> str:
     authorized = [entry["alias"] for entry in device["access"] if entry["authorized_for_atlas_ssh_inspection"]]
-    return "Atlas SSH inspection authorized: " + ", ".join(authorized) if authorized else "not authorized by this profile"
+    result = "Atlas SSH inspection authorized: " + ", ".join(authorized) if authorized else "not authorized by this profile"
+    conflicts = _alias_conflicts(device)
+    if conflicts:
+        result += "; SSH alias identity unresolved: " + ", ".join(conflicts)
+    return result
+
+
+def _alias_conflicts(device: dict) -> list[str]:
+    return sorted({entry["alias"] for entry in device["access"] if entry["ambiguous_association"]})
 
 
 def _uncertain(device: dict) -> bool:
     return (any(field["conflict"] for field in device["fields"].values())
+            or bool(_alias_conflicts(device))
             or any(item["identity_uncertain"] for item in device["interfaces"])
             or any(address["ownership_conflict"] for interface in device["interfaces"] for address in interface["addresses"]))
+
+
+def _state(device: dict) -> str:
+    state = device["status"] + ("; uncertain" if _uncertain(device) else "")
+    if _alias_conflicts(device):
+        state += "; ambiguous alias association"
+    return state
 
 
 def _provenance(device: dict) -> str:
@@ -100,7 +116,7 @@ def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
     mm = ["graph TD"]
     for device in devices:
         name = _field(device, "canonical_name", device["id"])
-        state = device["status"] + ("; uncertain" if _uncertain(device) else "")
+        state = _state(device)
         state += "; isolated (no supported relations)" if device["id"] not in linked else ""
         label = name + " [" + state + "; " + _provenance(device) + "]"
         text.append(_plain(label + " | " + _addresses(device, policy) + " | " + _access(device)))

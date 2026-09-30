@@ -147,7 +147,13 @@ Queries are parameterized, explicitly read-only, and use a consistent snapshot.
 Limit <=100 and offset <=10000, or lower local limits. Strings <=4096 characters
 (or lower policy limits). Child evidence per entity is bounded too: oversized
 entity details fail explicitly rather than silently omit conflicts; history can
-still be paginated. Tool response bytes are bounded. Queries never discover.
+still be paginated. Successful tool and CLI responses are bounded by output_bytes
+after JSON escaping and UTF-8 encoding, including a trailing newline. Mutation
+receipts are checked before commit; overflow rolls back the assertion and event
+together (including alias, retirement, and relationship changes). Fixed-shape
+interface/address receipts are checked before mutation. Validation-only and status
+CLI responses are bounded too. Fixed refusal messages remain available even if
+the operator sets a byte limit too small to hold an error envelope. Queries never discover.
 Access answers separate "authorized for Atlas SSH inspection" from local-context
 last-inspection success/failure/time. Config alone does not establish reachability.
 
@@ -158,7 +164,10 @@ last-inspection success/failure/time. Config alone does not establish reachabili
 Only fixed profile-local exports/network_map.md and exports/network_map.mmd are
 written. Rendering uses stored supported edges, stable ID ordering, escaped labels,
 explicit provenance, stale/retired/isolated/uncertain states, and no regeneration
-time. Inference edges are dashed and labelled. No unknown physical connectivity
+time. Ambiguous alias associations mark nodes uncertain in every format, including
+Mermaid and fixed exports; text/Markdown name the unresolved aliases separately
+from inspection authorization. No owner or permission is selected for a colliding
+alias. Inference edges are dashed and labelled. No unknown physical connectivity
 is invented. The complete map is capped by observations (default 4096 devices),
 child detail limits, and output_bytes; overflow refuses instead of truncating a
 node/edge silently. Every export attempt is audited before file writes, and a
@@ -185,7 +194,9 @@ remain the cumulative A01 gate; this is not a claim that they have been run.
 A02/A10: PersistenceTests and BatchTests (reopen, FK, immutable history, rollback,
 interrupts, bounded concurrent writers, schema refusal, atomic batch insertion,
 unique/immutable application metadata). A04/A05: IdentityAndProvenanceTests.
-A06: QueryUpdateMapTests plus existing boundary tests. A11: escaping/golden,
+A06: QueryUpdateMapTests plus existing boundary tests, including lowered response
+limits, exact byte boundaries, Unicode/JSON expansion, and atomic receipt refusal
+across tool/CLI mutations. A11: alias ambiguity and unambiguous controls, escaping/golden,
 stale/isolated nodes, deterministic exports, injection and overflow tests. A12:
 shared store with independent profile authority and no second-profile mutation.
 A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. A07/A08/A09
