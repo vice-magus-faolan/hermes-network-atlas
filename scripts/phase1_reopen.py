@@ -14,8 +14,9 @@ from helpers import load_package
 
 
 def deny_network(event, args):
-    if event in {"socket.connect", "socket.getaddrinfo", "socket.bind"}:
-        raise RuntimeError("offline fixture only")
+    # A fresh read process must not rediscover/inspect even through an executable.
+    if event in {"socket.connect", "socket.getaddrinfo", "socket.bind", "subprocess.Popen", "os.system", "os.exec", "os.posix_spawn"}:
+        raise RuntimeError("offline read-only fixture only")
 
 
 def main():

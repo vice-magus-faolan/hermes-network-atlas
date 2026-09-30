@@ -179,9 +179,15 @@ an existing unique stable MAC can resolve only an interface already owned by
 that alias's device. A MAC owned by another host, distinct remote interface
 names sharing a MAC, or randomized/zero/multicast/colliding MACs produce explicit
 unresolved/conflicting evidence without overwriting ownership. Remote address
-sets are additive IPv4/IPv6 assignments, never scan authorization or evidence
-that other known addresses disappeared. Direct owned observations can refresh
-sighting clocks monotonically; failures cannot. Retirement stays sticky.
+sets are additive IPv4/IPv6 assignments, never scan authorization, per-address
+reachability, or evidence that other known addresses disappeared. Even an UP
+interface or an address matching a hostname does not prove contact with that
+address. Query preserves source/confidence/history and observed_in_batch, but
+returns reachable_by_this_probe=false for SSH inventory, including DOWN and
+IPv6 link-local addresses. Only a qualified exact-address ping_response can
+set that flag; SSH success/failure remains alias-scoped access evidence.
+Direct owned observations can refresh sighting clocks monotonically; failures
+cannot. Retirement stays sticky.
 
 Route and neighbor JSON is validated as capability metadata and discarded, apart
 from the probe outcome and successful exact-target alias marker. Remote neighbor
@@ -220,6 +226,11 @@ preservation, malicious scalar/JSON/os-release parsing, provenance and replay.
 MAC collisions/foreign ownership, failed unassociated attempts, concurrent
 mapping changes, latest/revoked-policy selection, access-write rollback/retry,
 actual scratch-child host deadlines/output cleanup and missing ssh without install.
+`tests/test_inspection_remediation.py` covers A02/A05/A09 multi-interface UP/DOWN
+and link-local inventory without per-address reachability, preserved alias success
+and history, exact-address ping positive control, reopened/fresh-process queries
+with network/process execution refused, and deterministic maps/fixed exports.
+The canonical verifier discovers these regressions with the other module tests.
 Existing Phase 2 tests exercise the shared runner/SQLite whole-operation boundary.
 
 `tests/test_runtime.py` and `scripts/runtime_smoke.py` exercise actual native

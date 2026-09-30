@@ -195,7 +195,9 @@ def _addresses(store: Store, interface: str) -> list[dict]:
             raise ValueError("address conflict candidates exceed configured result bound")
         item["current"] = row["ended_at"] is None
         item["observed_in_batch"] = row["batch_id"] is not None
-        item["reachable_by_this_probe"] = bool(row["qualified"] and row["evidence_kind"] in {"ping_response", "ssh_response"})
+        # SSH inventory establishes owned configuration, not contact with each
+        # address. Its successful inspection belongs to the alias/access evidence.
+        item["reachable_by_this_probe"] = bool(row["qualified"] and row["evidence_kind"] == "ping_response")
         item["ownership_conflict"] = item["current"] and len(owners) > 1
         item["candidate_device_ids"] = [owner[0] for owner in owners]
         result.append(item)

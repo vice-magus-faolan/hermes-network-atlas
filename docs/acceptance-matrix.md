@@ -13,7 +13,10 @@ These milestone checks do not claim A13 or full PM-managed A01 completion.
 Phase 3 evidence is indexed in [Authorized SSH Inspection](authorized-ssh-inspection.md):
 tests/test_inspection.py and tests/test_inspection_extra.py exercise A03/A04/A05/
 A08/A09/A10/A12 authorization, exact inputs/argv, failure/provenance/identity,
-shared profile isolation and atomic rollback/retry. tests/test_runtime.py uses
+shared profile isolation and atomic rollback/retry. tests/test_inspection_remediation.py
+covers A02/A05/A09 SSH inventory versus exact-address reachability, UP/DOWN/link-local
+addresses, preserved alias success/history, read-only fresh-process reopening,
+maps/exports and exact-address ping control. tests/test_runtime.py uses
 scripts/offline_ssh.py for real native tool/slash/CLI inspection and fresh-process
 replay without collection. Transport output and host-key refusal are synthetic,
 not claims of real host-key/live-network verification. Cumulative PM-managed A01,

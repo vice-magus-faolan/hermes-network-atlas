@@ -98,7 +98,7 @@ def _assignments(entries: object, anchor: Anchor, at: str, policy: Policy) -> li
 
 
 def addresses(data: bytes, alias: str, at: str, policy: Policy) -> tuple[Observation, ...]:
-    """Remote owned addresses can be IPv4/IPv6; they never grant scan authority."""
+    """Observe IPv4/IPv6 ownership, not address reachability or scan authority."""
     del alias
     return _interfaces(data, at, policy, addresses=True)
 
