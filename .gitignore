@@ -1,0 +1,25 @@
+# Python/build output
+__pycache__/
+*.py[cod]
+/.venv/
+/.pytest_cache/
+/.ruff_cache/
+/.coverage
+/htmlcov/
+/build/
+/dist/
+/*.egg-info/
+
+# Explicit local runtime roots only; docs/fixtures remain visible.
+/.network-atlas-runtime/
+/.hermes-test-home/
+/.local/
+/config.local.yaml
+/.env
+/.env.*
+!/.env.example
+/atlas.sqlite3
+/atlas.sqlite3-wal
+/atlas.sqlite3-shm
+/exports/network_map.md
+/exports/network_map.mmd
