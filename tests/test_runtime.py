@@ -13,7 +13,8 @@ from unittest.mock import patch
 from helpers import ROOT, scratch_home
 from test_boundaries import synthetic_policy
 
-PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py")
+PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
+                "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py")
 
 
 def runtime_root() -> Path:
@@ -56,6 +57,14 @@ class NativeRuntimeTests(unittest.TestCase):
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
+            if mode == "valid":
+                (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
+                restarted = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), "reopen"],
+                                           env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
+                self.assertEqual(restarted.returncode, 0, restarted.stdout + restarted.stderr)
+                persistence = json.loads(restarted.stdout.strip().splitlines()[-1])
+                self.assertTrue(persistence["fresh_native_process_persistence"])
+                receipt["fresh_native_process_persistence"] = True
             print("Native runtime smoke: " + json.dumps(receipt, sort_keys=True), flush=True)
             return receipt
 

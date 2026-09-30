@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Separate proposal paths: model inference versus trusted local operator CLI.
 
-These immutable envelopes are validation results, not database writes. Atlas Core
-will consume the validated envelope inside its audited transaction boundary.
+These validated envelopes are consumed inside Atlas Core's audited transaction.
 """
 from __future__ import annotations
 
@@ -12,6 +11,7 @@ from collections.abc import Mapping
 
 from .config import NAME_PATTERN, Policy
 from .schemas import TOOL_UPDATE_FIELDS, UPDATE_FIELDS
+from .facts import RELATION_TYPES
 
 DEVICE_TYPES = ("router", "switch", "access_point", "hypervisor", "server", "desktop", "laptop",
                 "nas", "vm", "lxc", "iot", "printer", "unknown")
@@ -23,7 +23,7 @@ class Update:
 
     device_id: str
     field: str
-    value: str | bool
+    value: str | bool | tuple[tuple[str, str], ...]
     source: str
     confidence: str
     explanation: str | None
@@ -35,8 +35,24 @@ def _text(value: object, limit: int) -> str:
     return value
 
 
-def _validate_value(field: str, value: object, policy: Policy) -> str | bool:
+def _relation(value: object, policy: Policy) -> tuple[tuple[str, str], ...]:
+    keys = {"target_device", "relationship_type", "source_interface", "target_interface"}
+    if not isinstance(value, dict) or not {"target_device", "relationship_type"} <= set(value) <= keys:
+        raise ValueError("typed relationship endpoints required")
+    for key, item in value.items():
+        if not isinstance(item, str) or re.fullmatch(NAME_PATTERN, item) is None:
+            raise ValueError("invalid relationship endpoint or type")
+        if len(item) > policy.limits.input_chars:
+            raise ValueError("relationship input exceeds configured bound")
+    if value["relationship_type"] not in RELATION_TYPES:
+        raise ValueError("invalid relationship type")
+    return tuple(sorted(value.items()))
+
+
+def _validate_value(field: str, value: object, policy: Policy) -> str | bool | tuple[tuple[str, str], ...]:
     """Check semantic scalar types and alias association without granting permission."""
+    if field == "relationship":
+        return _relation(value, policy)
     if field == "retired":
         if type(value) is not bool:
             raise ValueError("retired requires boolean value")

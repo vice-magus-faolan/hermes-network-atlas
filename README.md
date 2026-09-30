@@ -2,11 +2,13 @@
 
 A small Hermes-native plugin for durable, provenance-aware network knowledge.
 
-**Status: native contract scaffold; the V1 atlas is not implemented or released yet.**
-Policy validation, readiness, and separated inference/operator proposal validation
-are implemented. Receipts explicitly report applied=false and persisted=false.
-Persistence, querying inventory, maps, and collectors remain gated Phase 1–3 work.
-Passing scaffold checks does not establish V1 acceptance or live-network readiness.
+**Status: Phase 1 Atlas Core implemented; V1 is not complete or released.**
+Profile-aware SQLite, immutable provenance/history, interface-first identity,
+audited operator/inference updates, bounded read-only query, and deterministic
+maps/exports are implemented. Applying receipts report persisted=true; the
+compatibility validate-update command still reports applied=false/persisted=false.
+Discovery, reconciliation and SSH transport remain gated Phase 2–3 work.
+Passing core checks does not establish V1 acceptance or live-network readiness.
 
 Network Atlas observes and remembers infrastructure. It does not administer it.
 The planned implementation uses local SQLite, bounded allowlisted discovery,
@@ -21,7 +23,8 @@ external database, web app, MCP server, or background service is required.
 - [Delivery plan](docs/delivery-plan.md)
 - [Acceptance matrix](docs/acceptance-matrix.md)
 - [Concrete contract decisions](docs/contract-decisions.md)
-- [Scaffold compatibility and isolated verification](docs/scaffold-verification.md)
+- [Atlas Core usage and verification](docs/atlas-core.md)
+- [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)
 - [Security boundaries](SECURITY.md)
 
@@ -35,8 +38,8 @@ later work, not prerequisites. Unknown topology stays unknown.
 python3 scripts/verify.py
 ```
 
-This runs honestly scoped bootstrap contracts, real config/provenance/handler
-behavior, and mandatory isolated native Hermes runtime smoke tests. A compatible
+This runs bootstrap contracts, actual core persistence/identity/provenance/query/
+map tests, and mandatory isolated native Hermes runtime smoke and restart tests. A compatible
 Hermes source/dependency runtime and declared scratch directory are prerequisites;
 see the verification guide. Missing Hermes is a failure, not a silent test skip.
 The same command must expand with each implemented milestone.
@@ -47,9 +50,9 @@ a real LAN, inspect a real SSH host, or read the operator's live atlas.
 
 The repository root is a normal plugin.yaml/__init__.py native directory plugin.
 Tests copy its source into an isolated scratch Hermes home and exercise opt-in
-discovery/registration/dispatch. It is not a released atlas. Full dependency
-admission/install-command and persistent restart acceptance remain later A01/A02
-gates. Do not install this scaffold into a live profile or treat examples as scan
+discovery/registration/dispatch and persistent native restart queries/maps. It
+is not a released atlas. Full PM dependency admission/install-command and complete
+V1 acceptance remain cumulative gates. Do not install into a live profile or treat examples as scan
 authorization.
 
 ## License

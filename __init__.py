@@ -17,7 +17,7 @@ def register(ctx: PluginContext) -> None:
     from hermes_constants import get_hermes_home
     from .commands import run_command, setup_parser
     from .config import load_policy
-    from .schemas import QUERY_SCHEMA, UPDATE_SCHEMA
+    from .schemas import MAP_SCHEMA, QUERY_SCHEMA, UPDATE_SCHEMA
     from .tools import Handlers
 
     home = get_hermes_home().resolve()
@@ -27,7 +27,9 @@ def register(ctx: PluginContext) -> None:
                       handler=handlers.query)
     ctx.register_tool(name="network_update", toolset="network_atlas", schema=UPDATE_SCHEMA,
                       handler=handlers.update)
-    ctx.register_command("network", handlers.command, description="Atlas readiness; operator writes require local CLI",
-                         args_hint="status")
-    ctx.register_cli_command("network-atlas", "Network Atlas operator validation/readiness",
+    ctx.register_tool(name="network_map", toolset="network_atlas", schema=MAP_SCHEMA,
+                      handler=handlers.map)
+    ctx.register_command("network", handlers.command, description="Stored atlas; operator writes require local CLI",
+                         args_hint="status|show <id>|map [text|markdown|mermaid]")
+    ctx.register_cli_command("network-atlas", "Network Atlas operator updates and stored knowledge",
                              setup_parser, partial(run_command, home=home))

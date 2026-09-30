@@ -1,5 +1,10 @@
 # Scaffold verification and compatibility
 
+Historical contract/scaffold milestone evidence. Phase 1 now implements the
+applying CLI, persistence, query and map surfaces; see [Atlas Core](atlas-core.md).
+The validation-only descriptions below record the original parent artifact, not
+the current runtime behavior. Full PM-managed installation remains a later gate.
+
 This is the contract/harness milestone, not a functional persistent atlas or a
 release. No live install, profile mutation, scan, SSH, or gateway restart is part
 of verification. Native plugin code and the local operator are trusted.

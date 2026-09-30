@@ -4,7 +4,7 @@ version: "0.1.0"
 manifest_version: 2
 api_version: 1
 kind: standalone
-description: Fail-closed Network Atlas contract scaffold (no collection or persistence yet).
+description: Persistent provenance-aware Atlas Core (no discovery or SSH transport yet).
 license: GPL-3.0-or-later
 requires_hermes: ">=0.21.4,<0.22"
 python_dependencies:
@@ -12,4 +12,5 @@ python_dependencies:
 provides_tools:
   - network_query
   - network_update
+  - network_map
 provides_hooks: []

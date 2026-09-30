@@ -1,0 +1,8 @@
+{
+  "hostile_label": "\"|`<script>\n雪",
+  "markdown_label": "&quot;&#124;&#96;&#60;script&#62;&#92;u000a雪",
+  "mermaid_label": "#34;#124;#96;#60;script#62;#10;雪",
+  "text_empty": "Network Atlas — stored knowledge, not live reachability\n\nNo supported relationships recorded.\n",
+  "markdown_empty": "# Network Atlas\n\nStored knowledge only. Authorization is not reachability. Unknown links remain unknown.\n\n| Device (stable ID) | Type | Address | Status | Provenance | Access |\n| --- | --- | --- | --- | --- | --- |\n\n## Supported relationships\n\nNo supported relationships recorded. All devices are isolated.\n",
+  "mermaid_empty": "graph TD\n  %% Edges are stored assertions/evidence; never a reachability claim.\n"
+}

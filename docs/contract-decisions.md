@@ -4,6 +4,10 @@ This note makes the accepted addendum concrete for the serial V1 lane. It is not
 an implementation claim for storage, reconciliation, or collectors. Those remain
 owned by the existing Phase 1–3 cards. No generic framework or additional service.
 
+The normative decisions below were approved at the scaffold gate. Historical
+scaffold-only availability statements are not current feature claims: Phase 1
+implementation/usage evidence is tracked in [Atlas Core](atlas-core.md).
+
 ## 1. Canonical facts and identity
 
 Select facts per entity/field, never an entire device by one global source rank.

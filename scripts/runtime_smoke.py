@@ -52,7 +52,7 @@ def main() -> int:
         assert not plugin["enabled"], plugin
         if mode == "invalid":
             assert plugin["error"], plugin
-        for name in ("network_query", "network_update"):
+        for name in ("network_query", "network_update", "network_map"):
             assert registry.get_entry(name, scope=manager.scope_key) is None
         assert get_plugin_command_handler("network") is None
         assert "network-atlas" not in manager._cli_commands
@@ -60,37 +60,58 @@ def main() -> int:
         return 0
 
     assert plugin["enabled"] and not plugin["error"], plugin
-    definitions = registry.get_definitions({"network_query", "network_update"})
-    assert len(definitions) == 2, definitions
+    for unavailable in ("network_discover", "network_inspect", "network_reconcile"):
+        assert registry.get_entry(unavailable, scope=manager.scope_key) is None
+    definitions = registry.get_definitions({"network_query", "network_update", "network_map"})
+    assert len(definitions) == 3, definitions
     for definition in definitions:
         assert definition["function"]["parameters"]["additionalProperties"] is False
         assert "source" not in definition["function"]["parameters"]["properties"]
+    if mode == "reopen":
+        devices = dispatch("network_query", {})["devices"]
+        assert len(devices) == 1 and devices[0]["status"] == "retired"
+        history = dispatch("network_query", {"view": "history", "device_id": devices[0]["id"]})
+        assert {item["confidence"] for item in history["observations"]} == {"inferred", "user_supplied"}
+        topology = dispatch("network_map", {"format": "mermaid"})
+        assert topology["content"] == (home / "network-atlas" / "exports" / "network_map.mmd").read_text()
+        assert not topology["exports"]
+        manager.unload()
+        print(json.dumps({"mode": mode, "fresh_native_process_persistence": True, "discovery_performed": False}))
+        return 0
     query = dispatch("network_query", {"view": "status"})
-    assert query["stage"] == "contract_scaffold"
+    assert query["stage"] == "atlas_core"
     assert query["authorized_for_atlas_ssh_inspection"] == ["lab-router"]
     assert query["last_inspection"] is None
-    params = {"device_id": "fixture-router", "field": "description", "value": "Synthetic fixture",
+    entry = manager._cli_commands["network-atlas"]
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    entry["setup_fn"](parser)
+    def cli(argv):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            assert entry["handler_fn"](parser.parse_args(argv)) == 0
+        return json.loads(output.getvalue())
+    device = cli(["create", "--name", "Synthetic native router"])["device_id"]
+    params = {"device_id": device, "field": "description", "value": "Synthetic fixture",
               "explanation": "fixture inference"}
     inference = dispatch("network_update", params, source="user", operator=True)
-    assert inference["update"]["source"] == "inference" and not inference["applied"]
+    assert inference["update"]["source"] == "inference" and inference["applied"] and inference["persisted"]
     for key in ("source", "command", "permissions", "attestation"):
         bad = dispatch("network_update", {**params, key: "user"})
         assert "error" in bad and not bad["applied"]
     command = get_plugin_command_handler("network")
     assert command is not None
-    assert json.loads(command("status")) == query
+    assert json.loads(command("status"))["known_devices"] == 1
+    assert json.loads(command("show " + device))["devices"][0]["id"] == device
     assert "error" in json.loads(command('update {"source":"user"}'))
-    entry = manager._cli_commands["network-atlas"]
-    parser = argparse.ArgumentParser(allow_abbrev=False)
-    entry["setup_fn"](parser)
-    args = parser.parse_args(["validate-update", "--device-id", "fixture-router", "--field", "retired", "--value-json", "true"])
-    output = io.StringIO()
-    with redirect_stdout(output):
-        assert entry["handler_fn"](args) == 0
-    operator = json.loads(output.getvalue())
+    operator = cli(["update", "--device-id", device, "--field", "retired", "--value-json", "true"])
     assert operator["update"]["source"] == "user" and operator["update"]["confidence"] == "user_supplied"
-    assert not operator["applied"] and not operator["persisted"]
-    assert not (home / "network-atlas" / "atlas.sqlite3").exists()
+    assert operator["applied"] and operator["persisted"]
+    assert (home / "network-atlas" / "atlas.sqlite3").exists()
+    topology = dispatch("network_map", {"format": "mermaid", "export": True})
+    assert "retired" in topology["content"]
+    assert [Path(path).name for path in topology["exports"]] == ["network_map.md", "network_map.mmd"]
+    assert cli(["query"])["devices"][0]["id"] == device
+    assert "retired" in json.loads(command("map"))["content"]
     # Re-check policy after registration: a now-invalid policy cannot use old grants.
     (home / "network-atlas" / "config.yaml").write_text("ssh: {enabled: true, command: bad}", encoding="utf-8")
     assert "error" in dispatch("network_query", {"view": "status"})
@@ -98,7 +119,7 @@ def main() -> int:
     manager.unload()
     assert registry.get_entry("network_query", scope=manager.scope_key) is None
     print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
-                      "operator_cli_source": "user", "tool_source": "inference", "no_persistence": True,
+                      "operator_cli_source": "user", "tool_source": "inference", "persistent_core": True,
                       "third_party_imports": sorted({name.split(".")[0] for name, module in sys.modules.items()
                           if "site-packages" in str(getattr(module, "__file__", ""))})}))
     return 0
