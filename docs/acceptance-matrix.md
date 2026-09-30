@@ -4,7 +4,9 @@ All entries below are implementation requirements, not bootstrap completion
 claims. Tests use synthetic fixtures and isolated homes by default.
 
 Phase 2 implementation evidence is indexed in [Local Discovery](local-discovery.md):
-tests/test_discovery.py and tests/test_discovery_extra.py exercise A03/A07/A08/A10,
+tests/test_discovery.py and tests/test_discovery_extra.py exercise A03/A07/A08/A10;
+tests/test_discovery_remediation.py covers duplicate-MAC local interface refusal
+and shared deadline/SQL interruption/atomic retry regressions for A04/A07/A08/A10,
 with actual native dispatch and fresh-process replay in tests/test_runtime.py.
 These milestone checks do not claim A09/A13 or full PM-managed A01 completion.
 

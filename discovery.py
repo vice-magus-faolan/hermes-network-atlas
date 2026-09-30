@@ -99,8 +99,7 @@ def collect(policy: Policy, params: object) -> dict:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise ValueError("operation deadline before persistence")
-    limited = replace(policy, limits=replace(policy.limits, busy_timeout_ms=max(1, min(policy.limits.busy_timeout_ms, int(remaining * 1000)))))
-    with Store(limited, writable=True) as store:
+    with Store(policy, writable=True, deadline=deadline) as store:
         result = store_batch(store, "local_passive" if mode == "passive" else "ping", network.name,
                              started, timestamp(utc_now()), completion, probes, receipt=True, deadline=deadline)
         assert isinstance(result, dict)

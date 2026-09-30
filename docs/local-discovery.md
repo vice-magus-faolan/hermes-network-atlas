@@ -46,6 +46,24 @@ original applied_at and event IDs, without adding history/events or refreshing
 clocks. An omitted ID is a new selection, not an idempotency key. Smaller output
 limits can refuse an old large result without altering it.
 
+Reconciliation starts one monotonic operation budget before opening SQLite. The
+same absolute deadline covers schema initialization, every lock wait, SQL work,
+Python application phases and the precommit check; it is never reset when a
+transaction begins. Busy allowances are the lesser of configured busy_timeout_ms
+and the remaining budget. SQLite's progress handler interrupts running statements
+every 1,000 VM instructions. Expiry rolls back canonical evidence, clocks, audit
+events and application metadata, leaving the immutable input batch retryable.
+Rollback/connection cleanup is allowed after expiry so locks cannot be stranded.
+These are cooperative process/SQLite bounds, not real-time guarantees against OS
+descheduling or a blocked filesystem syscall.
+
+Fact ranking uses indexed entity/field-specific history before windowing. Each
+touched scalar field is selected once before and once after all its batch copies,
+not twice per observation. The report/events describe the final batch change;
+intermediate assertions remain immutable history, and field events reference the
+selected canonical evidence IDs. Ordinary source precedence/append ordering is
+unchanged. A large history may still exhaust the lowered budget and must roll back.
+
 ## Fixed transports and enforced bounds
 
 Passive argv is exactly:
@@ -125,6 +143,16 @@ reported and never merged or stripped of interfaces. Remote neighbors never
 become interfaces of the local host merely because it reported them. No physical
 or hosting topology is fabricated by these collectors.
 
+Distinct local interface names sharing a MAC are not a unique identity anchor.
+Reconciliation preflights the entire batch before applying any observation: all
+observations for that MAC remain unresolved, with a duplicate_local_interface_mac
+conflict and the local names retained. Existing interfaces, addresses and clocks
+are not overwritten by that ambiguous evidence. Row reversal cannot select a
+winner. Multiple addresses on one named interface are not a MAC collision. The
+parser rejects duplicate interface names, and retains colliding local names even
+when one has no selected-scope address; it still excludes out-of-scope IPs.
+These protections apply to legacy unapplied batches that retain distinct names.
+
 Observations are immutable: reconciliation appends canonical references retaining
 batch/probe/source/time/qualification/neighbor state, not edits to raw evidence.
 Operator assertions and losing values survive. Current assignment sets are
@@ -172,6 +200,12 @@ output, actual output/host/operation deadlines, concurrency, direct-child reapin
 descendant group cleanup and unrelated-process control, missing dependencies.
 A10: atomic rollback/receipt overflow, write-lock exclusion during subprocesses,
 busy writer retry, immutable application persistence and fresh native reopen.
+Review regressions in tests/test_discovery_remediation.py add duplicate-MAC rows
+in both orders, existing-interface preservation, multi-address/distinct-MAC
+controls, out-of-scope collision metadata, deterministic deadline rollback/reopen/
+retry, actual SQLite VM interruption, shared initialization/lock budgets, targeted
+selection and a 2,000-observation two-selection control. All are discovered by
+the canonical verifier; deterministic budget tests avoid tight timing assumptions.
 These are tests/test_discovery.py, tests/test_discovery_extra.py and the actual
 native fixture in tests/test_runtime.py / scripts/runtime_smoke.py. The native
 loader/registry/handlers are real; transport is a scratch-only executable fixture

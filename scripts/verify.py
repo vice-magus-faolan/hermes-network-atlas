@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Run bootstrap, implemented boundary behavior, and mandatory real-runtime smoke.
+"""Run bootstrap, implemented behavior/review regressions, and native-runtime smoke.
 
 Requires a compatible Hermes runtime (NETWORK_ATLAS_HERMES_ROOT or importable
 hermes_cli), its admitted dependencies, and an existing TMPDIR scratch directory.

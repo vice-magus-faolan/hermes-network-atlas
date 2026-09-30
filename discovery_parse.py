@@ -53,20 +53,39 @@ def _address(anchor: Anchor, ip: str, prefix: int, at: str, state: str | None = 
 def addresses(data: bytes, scope: str, at: str, policy: Policy) -> tuple[Observation, ...]:
     """Only scoped local addresses; metadata does not authorize other ranges."""
     network = ip_network(scope)
+    rows = _records(data, policy)
+    collisions = _duplicate_local_macs(rows)
     observations = []
-    for index, row in enumerate(_records(data, policy)):
+    names = set()
+    for index, row in enumerate(rows):
         name = _text(row.get("ifname"), policy.limits.input_chars)
+        if name in names:
+            raise ValueError("duplicate local interface name")
+        names.add(name)
         anchor = _anchor(row.get("address"), "local_" + str(index))
         entries = row.get("addr_info")
         if not isinstance(entries, list) or len(entries) > policy.limits.observations:
             raise ValueError("bounded address entries required")
         scoped = _local_addresses(entries, anchor, network, at)
-        if scoped:
+        # Retain colliding local names even when the other interface has no
+        # scoped IP. Metadata is local-only; out-of-scope IPs stay excluded.
+        if scoped or anchor.value in collisions:
             observations.extend(scoped)
             observations.append(Observation("interface", anchor, "name", name, at))
             if "operstate" in row:
                 observations.append(Observation("interface", anchor, "state", _text(row["operstate"], 32), at))
     return _bounded(observations, policy)
+
+
+def _duplicate_local_macs(rows: list[dict]) -> set[str]:
+    seen, collisions = set(), set()
+    for row in rows:
+        if row.get("address") is not None:
+            mac, _ = mac_address(row["address"])
+            if mac in seen:
+                collisions.add(mac)
+            seen.add(mac)
+    return collisions
 
 
 def _local_addresses(entries: list, anchor: Anchor, network, at: str) -> list[Observation]:

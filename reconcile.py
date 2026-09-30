@@ -14,6 +14,7 @@ from ipaddress import ip_address, ip_network
 import json
 import re
 import sqlite3
+import time
 
 from .batches import _scope
 from .config import NAME_PATTERN, Policy
@@ -34,6 +35,8 @@ class Application:
     seen: set[str] = field(default_factory=set)
     touched: set[str] = field(default_factory=set)
     changed: set[str] = field(default_factory=set)
+    ambiguous_macs: set[str] = field(default_factory=set)
+    scalars: dict[tuple[str, str, str], tuple[str, dict]] = field(default_factory=dict)
     local_device: str | None = None
 
     def event(self, action: str, entity: str | None, details: object) -> None:
@@ -73,6 +76,7 @@ def _select(store: Store, batch_id: str | None):
 
 def reconcile(policy: Policy, params: object, *, now: datetime | None = None) -> dict:
     """Apply one selected/latest stored batch atomically; exact retries add no events."""
+    deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     if not isinstance(params, dict) or not set(params) <= {"batch_id"}:
         raise ValueError("invalid reconciliation arguments")
     batch_id = params.get("batch_id")
@@ -81,7 +85,7 @@ def reconcile(policy: Policy, params: object, *, now: datetime | None = None) ->
     if not policy.database.exists():
         raise ValueError("no stored batches")
     clock = now or utc_now()
-    with Store(policy, writable=True) as store, store.transaction():
+    with Store(policy, writable=True, deadline=deadline) as store, store.transaction():
         batch = _select(store, batch_id)
         previous = store.connection.execute("SELECT result_json FROM applications WHERE batch_id=?", (batch["id"],)).fetchone()
         if previous is not None:
@@ -99,9 +103,12 @@ def _apply(store: Store, batch, now: datetime) -> dict:
               **{name: [] for name in ("new", "changed", "unchanged", "missing", "conflicting", "unresolved", "audit_event_ids")}}
     app = Application(store, batch, now, result)
     observations = _rows(store, "SELECT * FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY rowid", (batch["id"],))
+    _local_collisions(app, observations)
     _local_identity(app, observations)
     for observation in observations:
+        store.check_deadline()
         _apply_observation(app, observation)
+    _scalar_changes(app)
     _absence(app, observations)
     _statuses(app)
     result["changed"] = sorted(app.changed - set(result["new"]))
@@ -113,6 +120,22 @@ def _apply(store: Store, batch, now: datetime) -> dict:
     return result
 
 
+def _local_collisions(app: Application, observations: list) -> None:
+    # Check the complete immutable input before resolving anything. Two names
+    # in one ip addr result are two interfaces, even when their MACs coincide.
+    # Older stored batches receive the same protection as new collection.
+    names = {}
+    for row in observations:
+        if row["evidence_kind"] == "local_interface" and row["field"] == "name":
+            anchor = json.loads(row["subject_anchor"])
+            if anchor["kind"] == "mac":
+                names.setdefault(anchor["value"], set()).add(json.loads(row["value_json"]))
+    app.ambiguous_macs = {mac for mac, values in names.items() if len(values) > 1}
+    for mac in sorted(app.ambiguous_macs):
+        app.result["conflicting"].append({"reason": "duplicate_local_interface_mac",
+                                          "mac_address": mac, "interface_names": sorted(names[mac])})
+
+
 def _local_identity(app: Application, observations: list) -> None:
     # A single ip addr command is direct same-host evidence. Reuse an already
     # anchored device only if all of its resolved interfaces agree; never merge
@@ -122,7 +145,7 @@ def _local_identity(app: Application, observations: list) -> None:
         if row["evidence_kind"] != "local_interface":
             continue
         anchor = json.loads(row["subject_anchor"])
-        if anchor["kind"] == "mac":
+        if anchor["kind"] == "mac" and anchor["value"] not in app.ambiguous_macs:
             candidates = _rows(app.store, "SELECT * FROM interfaces WHERE mac_address=? ORDER BY id", (anchor["value"],))
             if len(candidates) == 1 and candidates[0]["stable_mac"]:
                 owners.add(candidates[0]["device_id"])
@@ -141,10 +164,10 @@ def _resolve(app: Application, row) -> tuple[tuple[str, str] | None, list[str]]:
     if anchor["kind"] == "mac":
         mac, stable = mac_address(anchor["value"])
         candidates = _rows(app.store, "SELECT * FROM interfaces WHERE mac_address=? ORDER BY id", (mac,))
-        if stable and len(candidates) == 1:
+        if stable and mac not in app.ambiguous_macs and len(candidates) == 1:
             app.anchors[key] = (candidates[0]["device_id"], candidates[0]["id"])
             return app.anchors[key], []
-        if stable and not candidates:
+        if stable and mac not in app.ambiguous_macs and not candidates:
             return _new_interface(app, row, mac), []
     # Unstable/colliding/absent anchors remain explicit; do not pick IP owners.
     owners = {candidate["device_id"] for candidate in candidates}
@@ -205,15 +228,27 @@ def _apply_observation(app: Application, row) -> None:
 
 
 def _scalar(app: Application, row, device: str, entity: str) -> None:
-    before = selected_facts(app.store.connection, row["subject_kind"], entity, app.now, app.store.policy.stale_after_days)
+    key = (row["subject_kind"], entity, row["field"])
+    if key not in app.scalars:
+        before = selected_facts(app.store.connection, key[0], entity, app.now, app.store.policy.stale_after_days,
+                                app.store.policy.limits.result_count, field=key[2])
+        app.scalars[key] = (device, before)
     _copy_fact(app, row, entity)
-    after = selected_facts(app.store.connection, row["subject_kind"], entity, app.now, app.store.policy.stale_after_days)
-    old, new = before.get(row["field"]), after.get(row["field"])
-    if (old or {}).get("value") != (new or {}).get("value"):
-        app.changed.add(device)
-        app.event("field_observed", entity, {"field": row["field"], "evidence_id": row["id"]})
-    if new and new["conflict"]:
-        app.result["conflicting"].append({"entity_id": entity, "field": row["field"], "reason": "equal_rank_disagreement"})
+
+
+def _scalar_changes(app: Application) -> None:
+    # Select before/after once per touched field, not once per historical copy.
+    # Every observation survives; the change report describes the final batch.
+    for (kind, entity, field_name), (device, before) in app.scalars.items():
+        after = selected_facts(app.store.connection, kind, entity, app.now, app.store.policy.stale_after_days,
+                               app.store.policy.limits.result_count, field=field_name)
+        old, new = before.get(field_name), after.get(field_name)
+        if (old or {}).get("value") != (new or {}).get("value"):
+            app.changed.add(device)
+            app.event("field_observed", entity, {"field": field_name,
+                      "selected_evidence_ids": [entry["id"] for entry in (new or {}).get("evidence", [])]})
+        if new and new["conflict"]:
+            app.result["conflicting"].append({"entity_id": entity, "field": field_name, "reason": "equal_rank_disagreement"})
 
 
 def _assignment(app: Application, row, device: str, interface: str) -> None:

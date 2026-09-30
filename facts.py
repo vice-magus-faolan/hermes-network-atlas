@@ -14,7 +14,8 @@ INTERFACE_FIELDS = ("name", "interface_type", "state", "mac_address")
 RELATION_TYPES = ("physical", "virtual", "parent", "bridge_member", "routes_via", "hosted_on", "unknown")
 
 
-def selection_cte(now: datetime, stale_days: int) -> tuple[str, tuple[str, str]]:
+def selection_cte(now: datetime, stale_days: int, *, subject: tuple[str, str] | None = None,
+                  field: str | None = None) -> tuple[str, tuple[str, ...]]:
     """SQL selects latest assertions per source then keeps every top-tier disagreement.
 
     Same-time writes from one source follow append order. Ordering across sources
@@ -23,11 +24,17 @@ def selection_cte(now: datetime, stale_days: int) -> tuple[str, tuple[str, str]]
     """
     cutoff = timestamp(now - timedelta(days=stale_days))
     current = timestamp(now)
+    where, bindings = "", ()
+    if subject is not None:
+        where, bindings = " AND subject_kind=? AND entity_id=?", subject
+    if field is not None:
+        where += " AND field=?"
+        bindings += (field,)
     sql = """WITH latest AS (
       SELECT *, ROW_NUMBER() OVER (
         PARTITION BY subject_kind,entity_id,field,source,confidence,qualified
         ORDER BY observed_at DESC,rowid DESC) AS seq
-      FROM observations WHERE entity_id IS NOT NULL AND observed_at<=?
+      FROM observations WHERE entity_id IS NOT NULL AND observed_at<=?""" + where + """
     ), ranked AS (
       SELECT *, CASE
         WHEN field IN ('canonical_name','description','device_type','retired')
@@ -52,13 +59,14 @@ def selection_cte(now: datetime, stale_days: int) -> tuple[str, tuple[str, str]]
         COUNT(DISTINCT value_json)>1 AS conflict FROM chosen
       GROUP BY subject_kind,entity_id,field
     ) """
-    return sql, (current, cutoff)
+    return sql, (current, *bindings, cutoff)
 
 
 def selected_facts(connection: sqlite3.Connection, kind: str, entity: str,
-                   now: datetime, stale_days: int, maximum: int = 100) -> dict:
+                   now: datetime, stale_days: int, maximum: int = 100, *, field: str | None = None) -> dict:
     """Expose canonical values, winning provenance, assertions, and explicit conflicts."""
-    cte, params = selection_cte(now, stale_days)
+    # Restrict indexed history before windowing, not just the final chosen rows.
+    cte, params = selection_cte(now, stale_days, subject=(kind, entity), field=field)
     rows = connection.execute(cte + "SELECT * FROM chosen WHERE subject_kind=? AND entity_id=? "
                               "ORDER BY field,source,observed_at,id LIMIT ?", (*params, kind, entity, maximum + 1)).fetchall()
     if len(rows) > maximum:

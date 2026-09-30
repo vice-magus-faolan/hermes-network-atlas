@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import time
 from uuid import uuid4
 from collections.abc import Iterator
 
@@ -92,7 +93,8 @@ def _initialize(connection: sqlite3.Connection) -> None:
         _initialize_locked(connection)
         connection.execute("COMMIT")
     except BaseException:
-        connection.execute("ROLLBACK")
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
         raise
 
 
@@ -112,21 +114,62 @@ def _initialize_locked(connection: sqlite3.Connection) -> None:
                                "BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
 
 
+class _DeadlineConnection(sqlite3.Connection):
+    """Internal execute-only store boundary with one shared monotonic SQL budget.
+
+    Refresh the busy allowance before each statement, and interrupt long-running
+    SQL every 1,000 VM instructions. Rollback is deliberately outside the budget:
+    expiration must release locks, not prevent cleanup. No model receives this
+    connection; store code uses execute, never raw cursors/executescript.
+    """
+
+    def bind(self, deadline: float, busy_timeout_ms: int) -> None:
+        self.deadline = deadline
+        self.busy_timeout_ms = busy_timeout_ms
+        self.check_deadline()
+        self.set_progress_handler(self._expired, 1000)
+
+    def _expired(self) -> bool:
+        return time.monotonic() >= self.deadline
+
+    def check_deadline(self) -> None:
+        if self._expired():
+            raise ValueError("operation deadline during persistence")
+
+    def execute(self, sql: str, parameters=(), /) -> sqlite3.Cursor:
+        if sql.strip().upper() == "ROLLBACK":
+            self.set_progress_handler(None, 0)
+            try:
+                return super().execute(sql, parameters)
+            finally:
+                self.set_progress_handler(self._expired, 1000)
+        self.check_deadline()
+        remaining_ms = max(0, int((self.deadline - time.monotonic()) * 1000))
+        allowance = min(self.busy_timeout_ms, remaining_ms)
+        super().execute(f"PRAGMA busy_timeout={allowance}")
+        return super().execute(sql, parameters)
+
+
 class Store:
     """Profile-policy-selected store with bounded waits and explicitly owned lifetime."""
 
-    def __init__(self, policy: Policy, *, writable: bool = False):
+    def __init__(self, policy: Policy, *, writable: bool = False, deadline: float | None = None):
         self.policy = policy
         self.writable = writable
         if writable:
             _prepare_file(policy.database)
         uri = policy.database.as_uri() + ("?mode=rw" if writable else "?mode=ro")
         self.connection = sqlite3.connect(uri, uri=True, isolation_level=None,
-                                          timeout=policy.limits.busy_timeout_ms / 1000)
+                                          timeout=policy.limits.busy_timeout_ms / 1000,
+                                          factory=_DeadlineConnection if deadline is not None else sqlite3.Connection)
         self.connection.row_factory = sqlite3.Row
         try:
+            if isinstance(self.connection, _DeadlineConnection):
+                assert deadline is not None
+                self.connection.bind(deadline, policy.limits.busy_timeout_ms)
             self.connection.execute("PRAGMA foreign_keys=ON")
-            self.connection.execute(f"PRAGMA busy_timeout={policy.limits.busy_timeout_ms}")
+            if deadline is None:
+                self.connection.execute(f"PRAGMA busy_timeout={policy.limits.busy_timeout_ms}")
             if writable:
                 _initialize(self.connection)
                 os.chmod(policy.database, 0o600)
@@ -145,6 +188,11 @@ class Store:
     def __exit__(self, *exc: object) -> None:
         self.connection.close()
 
+    def check_deadline(self) -> None:
+        """Check a bound operation between Python phases as well as SQL work."""
+        if isinstance(self.connection, _DeadlineConnection):
+            self.connection.check_deadline()
+
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         """Acquire a bounded write lock; rollback every exception, including interrupts."""
@@ -155,7 +203,8 @@ class Store:
             yield self.connection
             self.connection.execute("COMMIT")
         except BaseException:
-            self.connection.execute("ROLLBACK")
+            if self.connection.in_transaction:
+                self.connection.execute("ROLLBACK")
             raise
 
     @contextmanager
