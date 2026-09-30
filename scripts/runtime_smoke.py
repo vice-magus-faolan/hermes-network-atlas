@@ -170,7 +170,7 @@ def main() -> int:
         print(json.dumps({"mode": mode, "fresh_native_process_persistence": True, "discovery_performed": False}))
         return 0
     query = dispatch("network_query", {"view": "status"})
-    assert query["stage"] == "ssh_inspection"
+    assert query["stage"] == "v1"
     assert query["authorized_for_atlas_ssh_inspection"] == ["lab-router"]
     assert query["last_inspection"] is None
     entry = manager._cli_commands["network-atlas"]

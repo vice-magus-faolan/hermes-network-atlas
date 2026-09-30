@@ -17,6 +17,9 @@ from .discovery import collect
 from .reconcile import reconcile
 from .inspection import collect as inspect_host
 
+COMMAND_USAGE = ("status|show <id>|map [text|markdown|mermaid]|discover <network> <passive|ping>|"
+                 "inspect <alias-or-id>|reconcile [batch-id]|help")
+
 
 def update_receipt(update: Update) -> str:
     """Make validation visibly distinct from an applied/audited database update."""
@@ -27,9 +30,10 @@ def update_receipt(update: Update) -> str:
 def status(home: Path) -> str:
     """Summarize stored knowledge separately from profile-local authorization."""
     policy = load_policy(home)
-    return response_json({**query(policy, {"view": "status"}), "stage": "ssh_inspection", "persistence_available": True,
+    return response_json({**query(policy, {"view": "status"}), "stage": "v1", "persistence_available": True,
                           "collection_available": True, "ssh_transport_available": True,
                           "configured_networks": [network.name for network in policy.networks],
+                          "configured_scopes": [asdict(network) for network in policy.networks],
                           "authorized_for_atlas_ssh_inspection": list(policy.authorized_aliases),
                           "operator_update_route": "hermes network-atlas update"},
                          policy.limits.output_bytes)
@@ -116,6 +120,8 @@ class Handlers:
 
     def command(self, raw_args: str) -> str:
         """Slash origin is not attested by this runtime; refuse all operator writes."""
+        if raw_args.strip() == "help":
+            return json.dumps({"usage": COMMAND_USAGE, "operator_update_route": "hermes network-atlas update"})
         if raw_args.strip() == "status":
             return self.query({"view": "status"})
         parts = raw_args.split()
@@ -126,8 +132,8 @@ class Handlers:
         collected = self._collection_command(parts)
         if collected is not None:
             return collected
-        return json.dumps({"error": "slash update origin cannot be attested; use the local operator CLI",
-                           "applied": False})
+        error = "slash update origin cannot be attested; use the local operator CLI" if parts and parts[0] == "update" else "invalid network command"
+        return json.dumps({"error": error, "usage": COMMAND_USAGE, "applied": False})
 
     def _collection_command(self, parts: list[str]) -> str | None:
         """Exact slash collection arities route through the same validated handlers."""

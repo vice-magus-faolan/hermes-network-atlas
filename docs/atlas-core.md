@@ -157,6 +157,24 @@ the operator sets a byte limit too small to hold an error envelope. Queries neve
 Access answers separate "authorized for Atlas SSH inspection" from local-context
 last-inspection success/failure/time. Config alone does not establish reachability.
 
+Status reports `known_devices` as total inventory, `observed_devices` and
+`stale_devices` as age-qualified subsets, and `status_counts` for known/retired
+records too. Observed does not mean reachable now. `configured_scopes` lists each
+current named CIDR and enabled discovery modes. `last_discovery` is the latest
+local-profile LAN batch, distinct from `last_collection` (which can be SSH) and
+`last_inspection`. It includes immutable scope, start/end time, complete/partial/
+failed qualification, bounded per-probe outcomes, and `scope_absence_eligible`.
+Even eligible ping absence means only not observed in that exact run. Shared
+foreign batches do not claim a local last discovery. Availability flags and
+`stage=v1` describe implemented code, not executable installation, successful
+connectivity, cumulative acceptance, publication or live activation.
+
+`/network help` lists exact command arities and the trusted local operator update
+route. Unknown commands/extra arguments return usage and apply nothing. Status,
+show, map, discover, inspect and reconcile share the same validated model/CLI
+core paths; slash updates still fail closed on unattested origin. Regression
+evidence: `tests/test_commands.py::OperatorStatusTests`.
+
 `network_map` supports text, markdown and mermaid plus export=true. CLI equivalent:
 
     hermes network-atlas map --format markdown --export

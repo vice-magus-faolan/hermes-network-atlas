@@ -227,18 +227,32 @@ def _inventory(store: Store, params: dict, now: datetime) -> dict:
             "discovery_performed": False}
 
 
+def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | None:
+    """Report this profile's immutable completion/coverage, not another profile's run."""
+    restriction = " AND collector IN ('local_passive','ping')" if discovery_only else ""
+    row = store.connection.execute("SELECT * FROM batches WHERE policy_context=?" + restriction +
+                                   " ORDER BY ended_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
+    if row is None:
+        return None
+    probes = bounded_rows(store, "SELECT probe_name,outcome,diagnostic_code,coverage_kind,coverage_value,absence_eligible "
+                          "FROM probes WHERE batch_id=? ORDER BY probe_name", (row["id"],))
+    return {**dict(row), "probes": [dict(probe) for probe in probes],
+            "scope_absence_eligible": row["completion"] == "complete" and any(probe["absence_eligible"] for probe in probes)}
+
+
 def summary(store: Store, now: datetime) -> dict:
     sql, cutoff = _status_sql(now, store.policy.stale_after_days)
     counts = {row[0]: row[1] for row in store.connection.execute("SELECT " + sql + ",COUNT(*) FROM devices d GROUP BY 1", (cutoff,))}
     access_sql, bindings = _access_filter(store.policy)
     accessible = store.connection.execute("SELECT COUNT(*) FROM devices d WHERE " + access_sql, bindings).fetchone()[0]
-    last = store.connection.execute("SELECT id,collector,completion,ended_at FROM batches ORDER BY ended_at DESC,id DESC LIMIT 1").fetchone()
+
     inspection = store.connection.execute("SELECT * FROM access_evidence WHERE policy_context=? "
                                          "ORDER BY checked_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
     attempt = latest_inspection(store)
     return {"known_devices": sum(counts.values()), "status_counts": counts,
+            "observed_devices": counts.get("observed", 0), "stale_devices": counts.get("stale", 0),
             "authorized_devices_for_atlas_ssh_inspection": accessible,
-            "last_collection": dict(last) if last else None,
+            "last_collection": _last_collection(store), "last_discovery": _last_collection(store, discovery_only=True),
             "last_inspection": most_recent_inspection(attempt, inspection)}
 
 
@@ -261,7 +275,9 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
         if args.get("view") == "history":
             raise ValueError("unknown atlas entity")
         return {"devices": [], "has_more": False, "discovery_performed": False,
-                "known_devices": 0, "status_counts": {}, "last_collection": None, "last_inspection": None}
+                "known_devices": 0, "observed_devices": 0, "stale_devices": 0, "status_counts": {},
+                "authorized_devices_for_atlas_ssh_inspection": 0,
+                "last_collection": None, "last_discovery": None, "last_inspection": None}
     with Store(policy) as store, store.snapshot():
         if args.get("view") == "status":
             return summary(store, clock)

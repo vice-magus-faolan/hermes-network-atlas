@@ -4,7 +4,7 @@ version: "0.1.0"
 manifest_version: 2
 api_version: 1
 kind: standalone
-description: Persistent provenance-aware Atlas Core (no discovery or SSH transport yet).
+description: Persistent provenance-aware atlas with bounded LAN discovery and authorized read-only SSH inspection.
 license: GPL-3.0-or-later
 requires_hermes: ">=0.21.4,<0.22"
 python_dependencies:
@@ -13,4 +13,7 @@ provides_tools:
   - network_query
   - network_update
   - network_map
+  - network_discover
+  - network_reconcile
+  - network_inspect
 provides_hooks: []

@@ -18,7 +18,7 @@ def register(ctx: PluginContext) -> None:
     from .commands import run_command, setup_parser
     from .config import load_policy
     from .schemas import DISCOVER_SCHEMA, INSPECT_SCHEMA, MAP_SCHEMA, QUERY_SCHEMA, RECONCILE_SCHEMA, UPDATE_SCHEMA
-    from .tools import Handlers
+    from .tools import COMMAND_USAGE, Handlers
 
     home = get_hermes_home().resolve()
     load_policy(home)
@@ -36,6 +36,6 @@ def register(ctx: PluginContext) -> None:
     ctx.register_tool(name="network_inspect", toolset="network_atlas", schema=INSPECT_SCHEMA,
                       handler=handlers.inspect)
     ctx.register_command("network", handlers.command, description="Stored atlas; operator writes require local CLI",
-                         args_hint="status|show <id>|map [format]|discover <network> <mode>|inspect <alias-or-id>|reconcile [batch-id]")
+                         args_hint=COMMAND_USAGE)
     ctx.register_cli_command("network-atlas", "Network Atlas operator updates and stored knowledge",
                              setup_parser, partial(run_command, home=home))
