@@ -13,6 +13,8 @@ __pycache__/
 # Explicit local runtime roots only; docs/fixtures remain visible.
 /.network-atlas-runtime/
 /.hermes-test-home/
+/.hermes-runtime-source/
+/.test-scratch/
 /.local/
 /config.local.yaml
 /.env

@@ -2,8 +2,11 @@
 
 A small Hermes-native plugin for durable, provenance-aware network knowledge.
 
-**Status: project bootstrap; the plugin is not implemented or released yet.**
-Passing bootstrap checks does not establish V1 acceptance or live-network readiness.
+**Status: native contract scaffold; the V1 atlas is not implemented or released yet.**
+Policy validation, readiness, and separated inference/operator proposal validation
+are implemented. Receipts explicitly report applied=false and persisted=false.
+Persistence, querying inventory, maps, and collectors remain gated Phase 1–3 work.
+Passing scaffold checks does not establish V1 acceptance or live-network readiness.
 
 Network Atlas observes and remembers infrastructure. It does not administer it.
 The planned implementation uses local SQLite, bounded allowlisted discovery,
@@ -17,6 +20,8 @@ external database, web app, MCP server, or background service is required.
   with examples or ambiguous wording in the original specification.
 - [Delivery plan](docs/delivery-plan.md)
 - [Acceptance matrix](docs/acceptance-matrix.md)
+- [Concrete contract decisions](docs/contract-decisions.md)
+- [Scaffold compatibility and isolated verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)
 - [Security boundaries](SECURITY.md)
 
@@ -30,18 +35,22 @@ later work, not prerequisites. Unknown topology stays unknown.
 python3 scripts/verify.py
 ```
 
-This currently runs the bootstrap contract tests only. Phase 1 must extend this
-same command to execute the real plugin tests and integration smoke checks; it
-must not remain a documentation-only green check as implementation grows.
+This runs honestly scoped bootstrap contracts, real config/provenance/handler
+behavior, and mandatory isolated native Hermes runtime smoke tests. A compatible
+Hermes source/dependency runtime and declared scratch directory are prerequisites;
+see the verification guide. Missing Hermes is a failure, not a silent test skip.
+The same command must expand with each implemented milestone.
 Tests must use synthetic fixtures and isolated Hermes homes. They must not scan
 a real LAN, inspect a real SSH host, or read the operator's live atlas.
 
 ## Installation
 
-No installable plugin exists in this bootstrap. Supported installation and
-configuration instructions will ship with the implementation after real Hermes
-registration and restart/reopen verification. Do not install this planning
-checkout into a live profile or enable discovery from its examples.
+The repository root is a normal plugin.yaml/__init__.py native directory plugin.
+Tests copy its source into an isolated scratch Hermes home and exercise opt-in
+discovery/registration/dispatch. It is not a released atlas. Full dependency
+admission/install-command and persistent restart acceptance remain later A01/A02
+gates. Do not install this scaffold into a live profile or treat examples as scan
+authorization.
 
 ## License
 

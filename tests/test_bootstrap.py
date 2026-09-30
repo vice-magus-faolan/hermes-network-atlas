@@ -15,10 +15,11 @@ class BootstrapContractTests(unittest.TestCase):
                 self.assertTrue((ROOT / name).is_file())
                 self.assertTrue((ROOT / name).read_text().strip())
 
-    def test_bootstrap_is_not_advertised_as_implemented(self) -> None:
+    def test_scaffold_is_not_advertised_as_v1_acceptance(self) -> None:
         readme = (ROOT / "README.md").read_text()
-        self.assertIn("plugin is not implemented or released yet", readme)
-        self.assertIn("bootstrap contract tests only", readme)
+        self.assertIn("V1 atlas is not implemented or released yet", readme)
+        self.assertIn("applied=false and persisted=false", readme)
+        self.assertIn("Missing Hermes is a failure", readme)
 
     def test_license_has_later_version_grant_and_full_text(self) -> None:
         self.assertIn("GPL-3.0-or-later", (ROOT / "README.md").read_text())

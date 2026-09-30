@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: network-atlas
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+kind: standalone
+description: Fail-closed Network Atlas contract scaffold (no collection or persistence yet).
+license: GPL-3.0-or-later
+requires_hermes: ">=0.21.4,<0.22"
+python_dependencies:
+  - "ruamel.yaml>=0.18.16,<0.19"
+provides_tools:
+  - network_query
+  - network_update
+provides_hooks: []

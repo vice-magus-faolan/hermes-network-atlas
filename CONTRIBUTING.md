@@ -5,7 +5,9 @@ implementation addendum together before coding; the addendum resolves conflicts.
 Keep V1 limited to phases 1–3. Prefer simple standard-library Python and small,
 typed boundaries. Explain non-obvious intent and failure behavior.
 
-Run `python3 scripts/verify.py`. Extend it when adding real plugin behavior so
+Run `python3 scripts/verify.py` with the prerequisites in
+docs/scaffold-verification.md (real Hermes/dependencies and scratch). Extend it
+when adding real plugin behavior so
 that every delivered module is canonically tested. A bootstrap green check is
 not implementation acceptance. Regression tests should prove the prior failure
 where practical. Tests never use live network/device/config/credential data.

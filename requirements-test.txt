@@ -1,0 +1,4 @@
+# Offline test runtime subset; mirrors pins in the inspected Hermes dependency set.
+# Not a production installation or replacement for native plugin dependency admission.
+ruamel.yaml==0.18.16
+python-dotenv==1.2.2
