@@ -1,7 +1,7 @@
 # Local Discovery and Reconciliation (Phase 2)
 
-Phase 1 Atlas Core and Phase 2 are implemented; V1 is not complete or released.
-SSH transport, cumulative PM-managed install/enable acceptance, integration,
+Phase 1 Atlas Core, Phase 2 and Phase 3 are implemented; V1 is not complete or released.
+Cumulative PM-managed install/enable acceptance, independent review, integration,
 publication and live activation remain separate gates. No real LAN was scanned
 and no live profile was installed, changed, seeded or restarted for this work.
 
@@ -23,11 +23,12 @@ they are never installed automatically. iproute2 is required for passive mode;
 Nmap is optional and ping must be explicitly enabled by the operator.
 
 `network_reconcile` takes only an optional stored batch_id. Omitting it selects
-the latest eligible unapplied LAN batch from this profile, skipping revoked scopes.
+the latest eligible unapplied LAN/SSH batch from this profile, skipping revoked scopes.
 The saved network/mode/scope
 must still match current local policy. Another profile's shared evidence is
 readable knowledge, not permission to apply its batches under this profile.
-No probes run during reconciliation. SSH batch application remains Phase 3.
+No probes run during reconciliation. SSH batch application is documented in
+[Authorized SSH Inspection](authorized-ssh-inspection.md).
 
 Equivalent commands (synthetic examples, not permission for live effects):
 
@@ -214,6 +215,6 @@ binary and uses a fixture-only PATH to prove stored querying/replay without
 collection. Synthetic output is explicitly a fixture, not reported live evidence.
 
 Phase 1 checks remain in the same verifier. Existing schema version 1 is retained.
-Full PM-managed install/enable, three-alias SSH transport and cumulative A13 V1
+Full PM-managed install/enable, three-alias cumulative A13 V1
 acceptance remain downstream. GitHub CI, other runtime combinations, real network
 reachability, publication, main advancement and live activation are unperformed.

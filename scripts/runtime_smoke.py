@@ -22,6 +22,59 @@ def _deny_network(event: str, args: tuple) -> None:
         raise RuntimeError("runtime smoke must remain network-free")
 
 
+def _inspection_smoke(mode, home, manager, dispatch, command):
+    entry = manager._cli_commands["network-atlas"]
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    entry["setup_fn"](parser)
+    def cli(argv):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            assert entry["handler_fn"](parser.parse_args(argv)) == 0
+        return json.loads(output.getvalue())
+    saved = home.parent / "phase3-receipt.json"
+    if mode == "ssh_inspection":
+        receipt = dispatch("network_inspect", {"target": "lab-router"}, command="id", source="user")
+        assert receipt["completion"] == "complete" and not receipt["applied"], receipt
+        assert dispatch("network_query", {})["devices"] == []
+        result = dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})
+        assert len(result["new"]) == 1 and not result["missing"], result
+        device = result["new"][0]
+        for receipt in (json.loads(command("inspect " + device)), cli(["inspect", "--target", "lab-router"])):
+            assert receipt["completion"] == "complete", receipt
+            assert not dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})["new"]
+        for key in ("command", "probe", "flags", "source", "hostname", "port", "username", "limits"):
+            assert "error" in dispatch("network_inspect", {"target": "lab-router", key: "bad"})
+        assert "error" in dispatch("network_inspect", {"target": "-oProxyCommand=id"})
+        before = dispatch("network_query", {"device_id": device})["devices"][0]
+        fixture = Path(os.environ["NETWORK_ATLAS_OFFLINE_FIXTURE_DIR"])
+        (fixture / "ssh-outcome").write_text("synthetic-host-key-refusal")
+        failed = dispatch("network_inspect", {"target": device})
+        assert failed["completion"] == "failed", failed
+        assert {p["outcome"] for p in failed["probes"]} == {"command_failed"}, failed
+        assert not dispatch("network_query", {"view": "status"})["last_inspection"]["succeeded"]
+        failed_result = dispatch("network_reconcile", {"batch_id": failed["batch_id"]})
+        after = dispatch("network_query", {"device_id": device})["devices"][0]
+        assert after["last_seen"] == before["last_seen"] and after["fields"] == before["fields"]
+        assert "SECRET_FIXTURE_DIAGNOSTIC" not in json.dumps(after)
+        assert dispatch("network_query", {"access_method": "ssh"})["devices"][0]["id"] == device
+        content = dispatch("network_map", {"format": "text"})["content"]
+        saved.write_text(json.dumps({"result": failed_result, "device": device, "content": content}))
+    data = json.loads(saved.read_text())
+    assert dispatch("network_reconcile", {"batch_id": data["result"]["batch_id"]}) == data["result"]
+    detail = dispatch("network_query", {"device_id": data["device"]})["devices"][0]
+    assert detail["fields"]["hostname"]["value"] == "fixture-ssh-host"
+    assert len(detail["interfaces"]) == 1
+    assert detail["interfaces"][0]["addresses"][0]["address"] == "198.51.100.7"
+    assert detail["access"][0]["authorized_for_atlas_ssh_inspection"]
+    assert not detail["access"][0]["last_inspection"]["succeeded"]
+    assert dispatch("network_map", {"format": "text"})["content"] == data["content"]
+    assert {row["source"] for row in dispatch("network_query", {"view": "history", "device_id": detail["id"]})["observations"]} == {"ssh:lab-router"}
+    manager.unload()
+    print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
+                      "persistent_ssh_batches": True, "fresh_native_process_persistence": True}))
+    return 0
+
+
 def main() -> int:
     home = Path(os.environ["HERMES_HOME"]).resolve()
     scratch = Path(os.environ["TMPDIR"]).resolve()
@@ -52,7 +105,7 @@ def main() -> int:
         assert not plugin["enabled"], plugin
         if mode == "invalid":
             assert plugin["error"], plugin
-        for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile"):
+        for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile", "network_inspect"):
             assert registry.get_entry(name, scope=manager.scope_key) is None
         assert get_plugin_command_handler("network") is None
         assert "network-atlas" not in manager._cli_commands
@@ -60,13 +113,13 @@ def main() -> int:
         return 0
 
     assert plugin["enabled"] and not plugin["error"], plugin
-    for unavailable in ("network_inspect",):
-        assert registry.get_entry(unavailable, scope=manager.scope_key) is None
-    definitions = registry.get_definitions({"network_query", "network_update", "network_map", "network_discover", "network_reconcile"})
-    assert len(definitions) == 5, definitions
+    definitions = registry.get_definitions({"network_query", "network_update", "network_map", "network_discover", "network_reconcile", "network_inspect"})
+    assert len(definitions) == 6, definitions
     for definition in definitions:
         assert definition["function"]["parameters"]["additionalProperties"] is False
         assert "source" not in definition["function"]["parameters"]["properties"]
+    if mode in {"ssh_inspection", "ssh_inspection_reopen"}:
+        return _inspection_smoke(mode, home, manager, dispatch, get_plugin_command_handler("network"))
     if mode in {"local_discovery", "local_discovery_reopen"}:
         command = get_plugin_command_handler("network")
         assert command is not None
@@ -117,7 +170,7 @@ def main() -> int:
         print(json.dumps({"mode": mode, "fresh_native_process_persistence": True, "discovery_performed": False}))
         return 0
     query = dispatch("network_query", {"view": "status"})
-    assert query["stage"] == "local_discovery"
+    assert query["stage"] == "ssh_inspection"
     assert query["authorized_for_atlas_ssh_inspection"] == ["lab-router"]
     assert query["last_inspection"] is None
     entry = manager._cli_commands["network-atlas"]

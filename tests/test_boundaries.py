@@ -237,7 +237,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_slash_update_refuses_unattested_origin(self):
         self.assertIn("error", json.loads(self.handlers.command('update {"source":"user"}')))
-        self.assertEqual(json.loads(self.handlers.command("status"))["stage"], "local_discovery")
+        self.assertEqual(json.loads(self.handlers.command("status"))["stage"], "ssh_inspection")
 
     def test_local_cli_operator_path_and_unknown_options(self):
         parser = argparse.ArgumentParser()

@@ -15,6 +15,7 @@ from .render import export_map, render_map
 from .storage import Store, response_json
 from .discovery import collect
 from .reconcile import reconcile
+from .inspection import collect as inspect_host
 
 
 def update_receipt(update: Update) -> str:
@@ -26,8 +27,8 @@ def update_receipt(update: Update) -> str:
 def status(home: Path) -> str:
     """Summarize stored knowledge separately from profile-local authorization."""
     policy = load_policy(home)
-    return response_json({**query(policy, {"view": "status"}), "stage": "local_discovery", "persistence_available": True,
-                          "collection_available": True, "ssh_transport_available": False,
+    return response_json({**query(policy, {"view": "status"}), "stage": "ssh_inspection", "persistence_available": True,
+                          "collection_available": True, "ssh_transport_available": True,
                           "configured_networks": [network.name for network in policy.networks],
                           "authorized_for_atlas_ssh_inspection": list(policy.authorized_aliases),
                           "operator_update_route": "hermes network-atlas update"},
@@ -103,6 +104,16 @@ class Handlers:
         except (OSError, ConfigError, ValueError, sqlite3.Error):
             return json.dumps({"error": "invalid stored batch, bounds, store, or local policy", "applied": False})
 
+    def inspect(self, params: object, **runtime_context: object) -> str:
+        """Fixed probes only; runtime kwargs cannot supply target policy or commands."""
+        del runtime_context
+        try:
+            policy = load_policy(self.home)
+            return response_json(inspect_host(policy, params), policy.limits.output_bytes)
+        except (OSError, ConfigError, ValueError, sqlite3.Error):
+            return json.dumps({"error": "invalid inspection target, bounds, store, or local policy",
+                               "applied": False, "persisted": False})
+
     def command(self, raw_args: str) -> str:
         """Slash origin is not attested by this runtime; refuse all operator writes."""
         if raw_args.strip() == "status":
@@ -112,9 +123,18 @@ class Handlers:
             return self.query({"device_id": parts[1]})
         if parts and parts[0] == "map" and len(parts) <= 2:
             return self.map({"format": parts[1] if len(parts) == 2 else "text"})
+        collected = self._collection_command(parts)
+        if collected is not None:
+            return collected
+        return json.dumps({"error": "slash update origin cannot be attested; use the local operator CLI",
+                           "applied": False})
+
+    def _collection_command(self, parts: list[str]) -> str | None:
+        """Exact slash collection arities route through the same validated handlers."""
+        if len(parts) == 2 and parts[0] == "inspect":
+            return self.inspect({"target": parts[1]})
         if len(parts) == 3 and parts[0] == "discover":
             return self.discover({"network": parts[1], "mode": parts[2]})
         if parts and parts[0] == "reconcile" and len(parts) <= 2:
             return self.reconcile({"batch_id": parts[1]} if len(parts) == 2 else {})
-        return json.dumps({"error": "slash update origin cannot be attested; use the local operator CLI",
-                           "applied": False})
+        return None

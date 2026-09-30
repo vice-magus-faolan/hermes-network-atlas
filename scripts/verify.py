@@ -16,7 +16,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
-                "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py")
+                "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py")
 
 
 def check_source() -> bool:
@@ -59,7 +60,7 @@ def main() -> int:
     if count == 0:
         print("ERROR: no tests discovered")
         return 1
-    print(f"Canonical verification: {count} tests discovered; Phase 1–2, NOT full V1 acceptance", flush=True)
+    print(f"Canonical verification: {count} tests discovered; Phase 1–3, NOT full V1 acceptance", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

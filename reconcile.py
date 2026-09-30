@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Transactional application of immutable LAN batches; no subprocesses or deletion.
+"""Transactional application of immutable LAN/SSH batches; no subprocesses or deletion.
 
 MACs resolve interfaces first. IP-only/randomized/colliding observations remain
 unresolved evidence, never merge keys. A scan response at a known IP prevents a
@@ -21,6 +21,7 @@ from .config import NAME_PATTERN, Policy
 from .core import _positive
 from .facts import freshness, selected_facts
 from .identity import mac_address
+from .ssh_identity import alias_candidates
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
 
 
@@ -38,6 +39,8 @@ class Application:
     ambiguous_macs: set[str] = field(default_factory=set)
     scalars: dict[tuple[str, str, str], tuple[str, dict]] = field(default_factory=dict)
     local_device: str | None = None
+    ssh_device: str | None = None
+    ssh_candidates: list[str] = field(default_factory=list)
 
     def event(self, action: str, entity: str | None, details: object) -> None:
         event = self.store.audit(self.result["id"], action, self.batch["source"], self.result["applied_at"],
@@ -52,10 +55,15 @@ def _rows(store: Store, sql: str, args: tuple = ()) -> list:
     return rows
 
 
+def _eligible_scopes(store: Store) -> list[tuple[str, str, str]]:
+    allowed = [(collector, network.name, network.cidr) for network in store.policy.networks
+               for collector, enabled in (("local_passive", network.passive), ("ping", network.ping)) if enabled]
+    return allowed + [("ssh", alias, alias) for alias in store.policy.authorized_aliases]
+
+
 def _select(store: Store, batch_id: str | None):
     if batch_id is None:
-        allowed = [(collector, network.name, network.cidr) for network in store.policy.networks
-                   for collector, enabled in (("local_passive", network.passive), ("ping", network.ping)) if enabled]
+        allowed = _eligible_scopes(store)
         scope_sql = " OR ".join("(b.collector=? AND b.scope_name=? AND b.scope_value=?)" for _ in allowed) or "0"
         bindings = tuple(value for scope in allowed for value in scope)
         row = store.connection.execute("""SELECT b.* FROM batches b WHERE b.policy_context=?
@@ -63,11 +71,11 @@ def _select(store: Store, batch_id: str | None):
           (SELECT 1 FROM applications a WHERE a.batch_id=b.id) ORDER BY b.ended_at DESC,b.id DESC LIMIT 1""",
           (str(store.policy.home), *bindings)).fetchone()
         if row is None:
-            raise ValueError("no unapplied local discovery batch")
+            raise ValueError("no unapplied locally authorized batch")
     else:
         row = store.require("batches", batch_id)
-    if row["policy_context"] != str(store.policy.home) or row["collector"] not in {"local_passive", "ping"}:
-        raise ValueError("batch is not this profile's LAN evidence")
+    if row["policy_context"] != str(store.policy.home):
+        raise ValueError("batch is not this profile's evidence")
     kind, scope, _ = _scope(store, row["collector"], row["scope_name"])
     if kind != row["scope_kind"] or scope != row["scope_value"]:
         raise ValueError("batch scope no longer matches local policy")
@@ -105,10 +113,14 @@ def _apply(store: Store, batch, now: datetime) -> dict:
     observations = _rows(store, "SELECT * FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY rowid", (batch["id"],))
     _local_collisions(app, observations)
     _local_identity(app, observations)
+    if batch["collector"] == "ssh":
+        _ssh_identity(app, observations)
     for observation in observations:
         store.check_deadline()
         _apply_observation(app, observation)
     _scalar_changes(app)
+    if batch["collector"] == "ssh":
+        _ssh_access(app)
     _absence(app, observations)
     _statuses(app)
     result["changed"] = sorted(app.changed - set(result["new"]))
@@ -126,13 +138,14 @@ def _local_collisions(app: Application, observations: list) -> None:
     # Older stored batches receive the same protection as new collection.
     names = {}
     for row in observations:
-        if row["evidence_kind"] == "local_interface" and row["field"] == "name":
+        if row["subject_kind"] == "interface" and row["field"] == "name":
             anchor = json.loads(row["subject_anchor"])
             if anchor["kind"] == "mac":
                 names.setdefault(anchor["value"], set()).add(json.loads(row["value_json"]))
     app.ambiguous_macs = {mac for mac, values in names.items() if len(values) > 1}
     for mac in sorted(app.ambiguous_macs):
-        app.result["conflicting"].append({"reason": "duplicate_local_interface_mac",
+        reason = "duplicate_remote_interface_mac" if app.batch["collector"] == "ssh" else "duplicate_local_interface_mac"
+        app.result["conflicting"].append({"reason": reason,
                                           "mac_address": mac, "interface_names": sorted(names[mac])})
 
 
@@ -156,6 +169,8 @@ def _local_identity(app: Application, observations: list) -> None:
 
 
 def _resolve(app: Application, row) -> tuple[tuple[str, str] | None, list[str]]:
+    if app.batch["collector"] == "ssh":
+        return _resolve_ssh(app, row)
     key = row["subject_anchor"]
     if key in app.anchors:
         return app.anchors[key], []
@@ -181,7 +196,9 @@ def _resolve(app: Application, row) -> tuple[tuple[str, str] | None, list[str]]:
 
 def _new_interface(app: Application, row: sqlite3.Row, mac: str) -> tuple[str, str]:
     local = row["evidence_kind"] == "local_interface"
-    device = app.local_device if local else None
+    device = app.ssh_device if app.batch["collector"] == "ssh" else None
+    if local:
+        device = app.local_device
     if device is None:
         device = identifier()
         app.store.connection.execute("INSERT INTO devices(id,created_at) VALUES (?,?)", (device, app.result["applied_at"]))
@@ -233,7 +250,72 @@ def _scalar(app: Application, row, device: str, entity: str) -> None:
         before = selected_facts(app.store.connection, key[0], entity, app.now, app.store.policy.stale_after_days,
                                 app.store.policy.limits.result_count, field=key[2])
         app.scalars[key] = (device, before)
-    _copy_fact(app, row, entity)
+    copied = _copy_fact(app, row, entity)
+    if app.batch["collector"] == "ssh" and row["field"] == "ssh_alias":
+        app.store.connection.execute("INSERT INTO aliases VALUES (?,?,?,?,?) ON CONFLICT(device_id,policy_context,alias) DO NOTHING",
+          (identifier(), device, str(app.store.policy.home), app.batch["scope_value"], copied))
+
+
+def _ssh_identity(app: Application, observations: list) -> None:
+    """The context-qualified alias owns the host; MAC/IP/name cannot steal it."""
+    candidates = alias_candidates(app.store, app.batch["scope_value"])
+    app.ssh_candidates = candidates
+    if len(candidates) > 1:
+        app.result["conflicting"].append({"reason": "ambiguous_ssh_alias", "alias": app.batch["scope_value"],
+                                          "candidate_device_ids": candidates})
+        return
+    if candidates:
+        app.ssh_device = candidates[0]
+    elif any(row["subject_kind"] == "device" and row["field"] == "ssh_alias" for row in observations):
+        app.ssh_device = identifier()
+        app.store.connection.execute("INSERT INTO devices(id,created_at) VALUES (?,?)", (app.ssh_device, app.result["applied_at"]))
+        app.result["new"].append(app.ssh_device)
+        app.event("device_discovered", app.ssh_device, {"alias": app.batch["scope_value"]})
+
+
+def _resolve_ssh(app: Application, row) -> tuple[tuple[str, str] | None, list[str]]:
+    if app.ssh_device is None:
+        return None, app.ssh_candidates
+    key = row["subject_anchor"]
+    if key in app.anchors:
+        return app.anchors[key], []
+    anchor = json.loads(key)
+    if anchor["kind"] == "alias":
+        if (row["subject_kind"] == "device" and anchor["value"] == app.batch["scope_value"]
+                and anchor["policy_context"] == str(app.store.policy.home)):
+            return (app.ssh_device, ""), []
+        return None, []
+    if anchor["kind"] != "mac":
+        return None, []
+    return _ssh_interface(app, row, anchor["value"])
+
+
+def _ssh_interface(app: Application, row, value: str) -> tuple[tuple[str, str] | None, list[str]]:
+    assert app.ssh_device is not None
+    mac, stable = mac_address(value)
+    candidates = _rows(app.store, "SELECT * FROM interfaces WHERE mac_address=? ORDER BY id", (mac,))
+    if not stable or mac in app.ambiguous_macs:
+        return None, sorted({candidate["device_id"] for candidate in candidates})
+    if not candidates:
+        return _new_interface(app, row, mac), []
+    if len(candidates) == 1 and candidates[0]["device_id"] == app.ssh_device:
+        app.anchors[row["subject_anchor"]] = (app.ssh_device, candidates[0]["id"])
+        return app.anchors[row["subject_anchor"]], []
+    # A remotely seen MAC belonging to another device is a conflict, not a merge
+    # or an excuse to rewrite that other host's interface/address/clock.
+    return None, sorted({candidate["device_id"] for candidate in candidates})
+
+
+def _ssh_access(app: Application) -> None:
+    if app.ssh_device is None:
+        return
+    succeeded = app.store.connection.execute("SELECT 1 FROM probes WHERE batch_id=? AND outcome='success' LIMIT 1",
+                                            (app.batch["id"],)).fetchone() is not None
+    record = identifier()
+    app.store.connection.execute("INSERT INTO access_evidence VALUES (?,?,?,?,?,?,?,?)",
+      (record, app.ssh_device, str(app.store.policy.home), app.batch["scope_value"], int(succeeded),
+       app.batch["ended_at"], "parsed_probe_succeeded" if succeeded else "no_successful_probe", app.batch["id"]))
+    app.event("inspection_outcome", app.ssh_device, {"access_evidence_id": record})
 
 
 def _scalar_changes(app: Application) -> None:

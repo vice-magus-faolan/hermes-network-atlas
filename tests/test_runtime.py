@@ -15,7 +15,8 @@ from test_boundaries import synthetic_policy
 
 PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
-                "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py")
+                "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py")
 
 
 def runtime_root() -> Path:
@@ -54,11 +55,13 @@ class NativeRuntimeTests(unittest.TestCase):
                    "XDG_CONFIG_HOME": str(scratch / "xdg-config"), "XDG_CACHE_HOME": str(scratch / "xdg-cache"),
                    "XDG_DATA_HOME": str(scratch / "xdg-data")}
             fixture_bin = scratch / "fixture-bin"
-            if mode == "local_discovery":
+            binary = "ip" if mode == "local_discovery" else "ssh"
+            if mode in {"local_discovery", "ssh_inspection"}:
                 fixture_bin.mkdir()
                 (fixture_bin / "offline-fixture").touch()
-                shutil.copy2(ROOT / "scripts" / "offline_probe.py", fixture_bin / "ip")
-                (fixture_bin / "ip").chmod(0o700)
+                source = "offline_probe.py" if binary == "ip" else "offline_ssh.py"
+                shutil.copy2(ROOT / "scripts" / source, fixture_bin / binary)
+                (fixture_bin / binary).chmod(0o700)
                 env["PATH"] = str(fixture_bin) + os.pathsep + env["PATH"]
                 env["NETWORK_ATLAS_OFFLINE_FIXTURE_DIR"] = str(fixture_bin)
             child = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), mode],
@@ -66,13 +69,13 @@ class NativeRuntimeTests(unittest.TestCase):
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
-            if mode in {"valid", "local_discovery"}:
+            if mode in {"valid", "local_discovery", "ssh_inspection"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
-                reopen_mode = "reopen" if mode == "valid" else "local_discovery_reopen"
-                if mode == "local_discovery":
+                reopen_mode = "reopen" if mode == "valid" else mode + "_reopen"
+                if mode in {"local_discovery", "ssh_inspection"}:
                     # If reopen accidentally collected, only a missing fake binary
                     # may be resolved, never the host's actual ip/nmap commands.
-                    (fixture_bin / "ip").unlink()
+                    (fixture_bin / binary).unlink()
                     env["PATH"] = str(fixture_bin)
                 restarted = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), reopen_mode],
                                            env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
@@ -95,6 +98,9 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_real_native_local_discovery_reconcile_and_fresh_process(self):
         self.assertTrue(self.run_smoke("local_discovery")["persistent_batches"])
+
+    def test_real_native_ssh_inspect_alias_device_slash_cli_failure_and_restart(self):
+        self.assertTrue(self.run_smoke("ssh_inspection")["persistent_ssh_batches"])
 
     def test_native_plugin_remains_disabled_without_explicit_opt_in(self):
         self.assertTrue(self.run_smoke("disabled")["registration_refused"])

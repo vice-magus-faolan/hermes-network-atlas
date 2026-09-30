@@ -48,6 +48,8 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     discover.add_argument("--mode", choices=("passive", "ping"), required=True)
     reconcile_parser = commands.add_parser("reconcile", allow_abbrev=False)
     reconcile_parser.add_argument("--batch-id")
+    inspect_parser = commands.add_parser("inspect", allow_abbrev=False)
+    inspect_parser.add_argument("--target", required=True)
 
 
 def run_command(args: argparse.Namespace, home: Path) -> int:
@@ -73,6 +75,8 @@ def _decode(text: str, policy: Policy) -> object:
 
 
 def _read_command(args: argparse.Namespace, home: Path, policy: Policy) -> dict | None:
+    if args.atlas_action == "inspect":
+        return json.loads(Handlers(home).inspect({"target": args.target}))
     if args.atlas_action == "discover":
         return json.loads(Handlers(home).discover({"network": args.network, "mode": args.mode}))
     if args.atlas_action == "reconcile":

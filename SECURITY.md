@@ -21,6 +21,18 @@ Owned POSIX process groups have output/deadline cleanup and direct-child reaping
 trusted executables are not an OS sandbox. See docs/local-discovery.md for the
 exact argv, ARP/TCP behavior, identity limits and offline fixture evidence.
 
+Phase 3 resolves only a current profile-authorized alias or uniquely mapped
+device ID. All seven remote commands are code-owned read-only Linux probes.
+BatchMode/strict host keys, no PTY/forwarding/LocalCommand/multiplex reuse/key
+updates/backgrounding are explicit. Shared/cached knowledge and past success
+cannot grant access. Remote neighbor records are not imported as interfaces of
+the inspected host. Failure evidence is bounded and canonical facts survive.
+See docs/authorized-ssh-inspection.md for exact argv, host/operation budgets,
+parser/identity controls and synthetic-only native restart verification.
+ProxyJump/ProxyCommand and Match exec remain operator-trusted config, not a
+sandboxed jump path; killing local SSH cannot guarantee remote descendant
+cancellation. No runtime tool can supply or modify a command or SSH option.
+
 Configuration examples and fixtures are synthetic, never live authorization.
 No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,

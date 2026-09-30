@@ -170,13 +170,17 @@ def _scalar_value(obs: Observation, store: Store) -> None:
 
 def store_batch(store: Store, collector: str, scope_name: str, started_at: str, ended_at: str,
                 completion: str, probes: tuple[Probe, ...], *, receipt: bool = False,
-                deadline: float | None = None) -> str | dict:
+                deadline: float | None = None, inspection_target: str | None = None) -> str | dict:
     """Validate all evidence first, then atomically append batch, probes, facts and event."""
     kind, scope, source = _scope(store, collector, scope_name)
     _times(started_at, ended_at, started_at, ended_at)
     _validate_probes(store, collector, kind, scope, started_at, ended_at, completion, probes)
     batch, operation = identifier(), identifier()
     with store.transaction():
+        if inspection_target is not None:
+            from .ssh_identity import resolve_in_store
+            if collector != "ssh" or resolve_in_store(store, inspection_target) != scope_name:
+                raise ValueError("inspection mapping changed during collection")
         store.connection.execute("INSERT INTO batches VALUES (?,?,?,?,?,?,?,?,?,?,?)",
           (batch, 1, collector, source, str(store.policy.home), kind, scope_name, scope, started_at, ended_at, completion))
         for probe in probes:

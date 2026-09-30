@@ -10,6 +10,7 @@ from .config import NAME_PATTERN, Policy
 from .facts import RELATION_TYPES, evidence, freshness, selected_facts, selection_cte
 from .storage import Store, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
+from .inspection_evidence import latest_inspection, most_recent_inspection
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
               "relationship", "related_to", "text", "limit", "offset"}
@@ -78,7 +79,8 @@ def _access_filter(policy: Policy) -> tuple[str, list]:
     marks = ",".join("?" for _ in aliases)
     return ("EXISTS (SELECT 1 FROM aliases a JOIN observations o ON o.id=a.observation_id "
             f"WHERE a.device_id=d.id AND a.policy_context=? AND a.alias IN ({marks}) "
-            "AND o.confidence='user_supplied' AND (SELECT COUNT(DISTINCT device_id) FROM aliases b "
+            "AND (o.confidence='user_supplied' OR (o.confidence='observed' AND o.qualified=1)) "
+            "AND (SELECT COUNT(DISTINCT device_id) FROM aliases b "
             "WHERE b.policy_context=a.policy_context AND b.alias=a.alias)=1)",
             [str(policy.home), *aliases])
 
@@ -153,10 +155,11 @@ def access_answers(store: Store, device: str) -> list[dict]:
         latest = store.connection.execute("SELECT * FROM access_evidence WHERE device_id=? AND policy_context=? AND alias=? "
                                          "ORDER BY checked_at DESC,rowid DESC LIMIT 1",
                                          (device, str(store.policy.home), row["alias"])).fetchone() if local else None
+        attempt = latest_inspection(store, row["alias"]) if local else None
         answers.append({"alias": row["alias"], "policy_context": row["policy_context"],
                         "authorized_for_atlas_ssh_inspection": local and anchors == 1 and row["alias"] in store.policy.authorized_aliases,
                         "ambiguous_association": anchors != 1,
-                        "last_inspection": dict(latest) if latest else None,
+                        "last_inspection": most_recent_inspection(attempt, latest),
                         "reachability": "not established by configuration"})
     return answers
 
@@ -230,10 +233,11 @@ def summary(store: Store, now: datetime) -> dict:
     last = store.connection.execute("SELECT id,collector,completion,ended_at FROM batches ORDER BY ended_at DESC,id DESC LIMIT 1").fetchone()
     inspection = store.connection.execute("SELECT * FROM access_evidence WHERE policy_context=? "
                                          "ORDER BY checked_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
+    attempt = latest_inspection(store)
     return {"known_devices": sum(counts.values()), "status_counts": counts,
             "authorized_devices_for_atlas_ssh_inspection": accessible,
             "last_collection": dict(last) if last else None,
-            "last_inspection": dict(inspection) if inspection else None}
+            "last_inspection": most_recent_inspection(attempt, inspection)}
 
 
 def _history(store: Store, params: dict) -> dict:

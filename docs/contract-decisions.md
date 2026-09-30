@@ -7,7 +7,8 @@ owned by the existing Phase 1–3 cards. No generic framework or additional serv
 The normative decisions below were approved at the scaffold gate. Historical
 scaffold-only availability statements are not current feature claims: Phase 1
 implementation/usage evidence is tracked in [Atlas Core](atlas-core.md) and
-[Local Discovery](local-discovery.md). Availability claims later in this document
+[Local Discovery](local-discovery.md) and
+[Authorized SSH Inspection](authorized-ssh-inspection.md). Availability claims later in this document
 record the original contract gate, not the current milestone's implementation.
 
 ## 1. Canonical facts and identity

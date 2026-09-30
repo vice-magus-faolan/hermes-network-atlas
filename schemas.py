@@ -60,7 +60,16 @@ DISCOVER_SCHEMA = {
 
 RECONCILE_SCHEMA = {
     "name": "network_reconcile",
-    "description": "Apply a stored local LAN batch (or latest unapplied). Exact retries are idempotent. Missing means not observed, never offline/deleted.",
+    "description": "Apply a stored locally authorized LAN/SSH batch (or latest unapplied). Exact retries are idempotent. Missing means not observed, never offline/deleted.",
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"batch_id": {"type": "string", "maxLength": 64}}, "required": []},
+}
+
+INSPECT_SCHEMA = {
+    "name": "network_inspect",
+    "description": "Collect one currently authorized SSH alias or uniquely mapped device with fixed read-only Linux probes. Stores an immutable attempt, does not reconcile or grant access.",
+    "parameters": {"type": "object", "additionalProperties": False,
+                   "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 64,
+                                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}},
+                   "required": ["target"]},
 }

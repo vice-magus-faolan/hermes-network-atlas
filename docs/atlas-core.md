@@ -2,8 +2,9 @@
 
 This guide describes the Phase 1 structured-knowledge milestone. Phase 2 now adds
 explicit discovery and reconciliation; see [Local Discovery](local-discovery.md).
-SSH transport, service enumeration, live installation and gateway changes are not
-part of this milestone. Phase 3 and cumulative acceptance retain their gates.
+Phase 3 adds [Authorized SSH Inspection](authorized-ssh-inspection.md).
+Service enumeration, live installation and gateway changes are not part of these
+milestones. Independent review and cumulative acceptance retain their gates.
 
 ## Storage and profile boundary
 
@@ -183,7 +184,7 @@ Follow the runtime/scratch prerequisites in scaffold-verification.md, then:
     python3 scripts/verify.py
 
 Tests use synthetic scratch homes and never live data/networks. Native smoke
-exercises supported directory discovery, all three real tools, actual native
+exercises supported directory discovery, all six registered tools, actual native
 slash/CLI handlers, applying operator/inference persistence, policy revocation,
 exports, and a second native process re-query/map without discovery. Independent
 fresh-process storage tests also retain IDs, assignments, relations, history and
@@ -199,7 +200,8 @@ across tool/CLI mutations. A11: alias ambiguity and unambiguous controls, escapi
 stale/isolated nodes, deterministic exports, injection and overflow tests. A12:
 shared store with independent profile authority and no second-profile mutation.
 A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
-A07/A08 discovery/reconciliation separately; A09 and full A13 remain downstream.
+A07/A08 discovery/reconciliation separately; Phase 3 documents A09 inspection
+evidence. Full A13 remains downstream.
 
 Native source remains the inspected f42f579cf8bac4918ac9599bece71618afadd846.
 Phase 1 local execution uses its existing admitted Python 3.11.15 environment

@@ -2,15 +2,17 @@
 
 A small Hermes-native plugin for durable, provenance-aware network knowledge.
 
-**Status: Phase 1 Atlas Core implemented; Phase 2 Local Discovery implemented;
+**Status: Phase 1 Atlas Core, Phase 2 Local Discovery and Phase 3 SSH implemented;
 V1 is not complete or released.**
 Profile-aware SQLite, immutable provenance/history, interface-first identity,
 audited operator/inference updates, bounded read-only query, and deterministic
 maps/exports are implemented. Applying receipts report persisted=true; the
 compatibility validate-update command still reports applied=false/persisted=false.
 Explicit bounded passive/Nmap discovery, immutable evidence batches and
-transactional idempotent reconciliation are implemented. SSH transport remains
-gated Phase 3 work. Discovery alone never rewrites canonical inventory.
+transactional idempotent reconciliation are implemented. Explicit current-policy
+SSH inspection uses fixed read-only probes and immutable attempt evidence.
+Collection alone never rewrites canonical inventory. Phase 3 independent review
+and cumulative V1 acceptance remain separate gates.
 Passing core checks does not establish V1 acceptance or live-network readiness.
 
 Network Atlas observes and remembers infrastructure. It does not administer it.
@@ -28,6 +30,7 @@ external database, web app, MCP server, or background service is required.
 - [Concrete contract decisions](docs/contract-decisions.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
+- [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
 - [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)
 - [Security boundaries](SECURITY.md)
@@ -43,7 +46,7 @@ python3 scripts/verify.py
 ```
 
 This runs bootstrap contracts, core persistence/identity/provenance/query/map,
-offline collection/reconciliation/bounds, and mandatory isolated native Hermes
+offline LAN/SSH collection/reconciliation/bounds, and mandatory isolated native Hermes
 runtime dispatch and restart tests. A compatible
 Hermes source/dependency runtime and declared scratch directory are prerequisites;
 see the verification guide. Missing Hermes is a failure, not a silent test skip.
