@@ -1,10 +1,9 @@
 # Atlas Core (Phase 1)
 
-This milestone implements persistent structured knowledge, not network collection.
-There is no discovery, reconciliation tool, SSH transport, service enumeration,
-installation into a live profile, or gateway change. The contract/scaffold guide
-is historical evidence; this guide describes the current applying surfaces.
-The existing Phase 2/3 and cumulative acceptance cards retain those gates.
+This guide describes the Phase 1 structured-knowledge milestone. Phase 2 now adds
+explicit discovery and reconciliation; see [Local Discovery](local-discovery.md).
+SSH transport, service enumeration, live installation and gateway changes are not
+part of this milestone. Phase 3 and cumulative acceptance retain their gates.
 
 ## Storage and profile boundary
 
@@ -44,8 +43,8 @@ relations, context-qualified aliases, access evidence, observations, immutable
 batches/probes, unique application/result metadata, and audit events. Triggers
 reject updates/deletes of observations, batches, probes, applications, access
 evidence, and audit events. Evidence insertions and their events are atomic.
-Application storage is ready for Phase 2; no reconciliation algorithm or applied
-collector batch is claimed here. Typed batch storage validates counts, times,
+Application storage was established in Phase 1 and is now used by Phase 2;
+that algorithm/evidence is documented separately. Typed batch storage validates counts, times,
 allowlisted scope, per-probe outcomes, neighbor state and address scope before
 inserting anything, and never rewrites canonical identities.
 
@@ -115,8 +114,8 @@ and same-subject evidence before invoking native core primitives.
 
 UUIDs are independent of names/IPs. A stable unicast globally administered MAC
 anchors an interface first. Local/randomized, multicast, zero, or colliding MACs
-remain uncertain. Explicit operator same-device association is required to join
-interfaces in this milestone. Identical IPs or hostnames never merge devices.
+remain uncertain. Explicit operator same-device association joins interfaces in the core; Phase 2
+also accepts direct local same-host evidence. Identical IPs or hostnames never merge devices.
 Current IP collisions expose all bounded candidate owners. New address assertions
 preserve other valid IPv4/IPv6 assignments; only explicit end-address closes an
 assignment. Historical addresses and their provenance remain queryable. Address
@@ -199,8 +198,8 @@ limits, exact byte boundaries, Unicode/JSON expansion, and atomic receipt refusa
 across tool/CLI mutations. A11: alias ambiguity and unambiguous controls, escaping/golden,
 stale/isolated nodes, deterministic exports, injection and overflow tests. A12:
 shared store with independent profile authority and no second-profile mutation.
-A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. A07/A08/A09
-transport/reconciliation and full A13 remain downstream work, not Phase 1 proof.
+A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
+A07/A08 discovery/reconciliation separately; A09 and full A13 remain downstream.
 
 Native source remains the inspected f42f579cf8bac4918ac9599bece71618afadd846.
 Phase 1 local execution uses its existing admitted Python 3.11.15 environment

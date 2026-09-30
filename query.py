@@ -180,7 +180,7 @@ def device_detail(store: Store, row, now: datetime) -> dict:
 
 
 def _addresses(store: Store, interface: str) -> list[dict]:
-    rows = bounded_rows(store, "SELECT a.*,o.confidence,o.evidence_kind,o.qualified FROM addresses a "
+    rows = bounded_rows(store, "SELECT a.*,o.confidence,o.evidence_kind,o.qualified,o.batch_id,o.neighbor_state FROM addresses a "
                         "JOIN observations o ON o.id=a.observation_id WHERE a.interface_id=? ORDER BY address,id", (interface,))
     result = []
     for row in rows:
@@ -191,6 +191,8 @@ def _addresses(store: Store, interface: str) -> list[dict]:
         if len(owners) > store.policy.limits.result_count:
             raise ValueError("address conflict candidates exceed configured result bound")
         item["current"] = row["ended_at"] is None
+        item["observed_in_batch"] = row["batch_id"] is not None
+        item["reachable_by_this_probe"] = bool(row["qualified"] and row["evidence_kind"] in {"ping_response", "ssh_response"})
         item["ownership_conflict"] = item["current"] and len(owners) > 1
         item["candidate_device_ids"] = [owner[0] for owner in owners]
         result.append(item)

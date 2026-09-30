@@ -52,7 +52,7 @@ def main() -> int:
         assert not plugin["enabled"], plugin
         if mode == "invalid":
             assert plugin["error"], plugin
-        for name in ("network_query", "network_update", "network_map"):
+        for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile"):
             assert registry.get_entry(name, scope=manager.scope_key) is None
         assert get_plugin_command_handler("network") is None
         assert "network-atlas" not in manager._cli_commands
@@ -60,13 +60,51 @@ def main() -> int:
         return 0
 
     assert plugin["enabled"] and not plugin["error"], plugin
-    for unavailable in ("network_discover", "network_inspect", "network_reconcile"):
+    for unavailable in ("network_inspect",):
         assert registry.get_entry(unavailable, scope=manager.scope_key) is None
-    definitions = registry.get_definitions({"network_query", "network_update", "network_map"})
-    assert len(definitions) == 3, definitions
+    definitions = registry.get_definitions({"network_query", "network_update", "network_map", "network_discover", "network_reconcile"})
+    assert len(definitions) == 5, definitions
     for definition in definitions:
         assert definition["function"]["parameters"]["additionalProperties"] is False
         assert "source" not in definition["function"]["parameters"]["properties"]
+    if mode in {"local_discovery", "local_discovery_reopen"}:
+        command = get_plugin_command_handler("network")
+        assert command is not None
+        if mode == "local_discovery":
+            receipt = dispatch("network_discover", {"network": "lab", "mode": "passive"})
+            assert receipt["completion"] == "complete" and receipt["persisted"] and not receipt["applied"], receipt
+            result = dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})
+            assert len(result["new"]) == 2 and not result["missing"], result
+            assert dispatch("network_reconcile", {"batch_id": receipt["batch_id"]}) == result
+            assert json.loads(command("reconcile " + receipt["batch_id"])) == result
+            entry = manager._cli_commands["network-atlas"]
+            parser = argparse.ArgumentParser(allow_abbrev=False)
+            entry["setup_fn"](parser)
+            output = io.StringIO()
+            with redirect_stdout(output):
+                assert entry["handler_fn"](parser.parse_args(["discover", "--network", "lab", "--mode", "passive"])) == 0
+            cli_batch = json.loads(output.getvalue())["batch_id"]
+            output = io.StringIO()
+            with redirect_stdout(output):
+                assert entry["handler_fn"](parser.parse_args(["reconcile", "--batch-id", cli_batch])) == 0
+            cli_result = json.loads(output.getvalue())
+            assert not cli_result["new"] and len(cli_result["unchanged"]) == 2, cli_result
+            for key in ("command", "flags", "source", "target", "limits"):
+                assert "error" in dispatch("network_discover", {"network": "lab", "mode": "passive", key: "bad"})
+                assert "error" in dispatch("network_reconcile", {"batch_id": receipt["batch_id"], key: "bad"})
+            (home.parent / "phase2-receipt.json").write_text(json.dumps(result))
+        else:
+            result = json.loads((home.parent / "phase2-receipt.json").read_text())
+            assert dispatch("network_reconcile", {"batch_id": result["batch_id"]}) == result
+        devices = dispatch("network_query", {})["devices"]
+        assert len(devices) == 2
+        assert {device["status"] for device in devices} == {"observed", "known"}
+        assert "cached_neighbor" in json.dumps(devices)
+        assert "observed" in dispatch("network_map", {"format": "text"})["content"]
+        manager.unload()
+        print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
+                          "persistent_batches": True, "fresh_native_process_persistence": True}))
+        return 0
     if mode == "reopen":
         devices = dispatch("network_query", {})["devices"]
         assert len(devices) == 1 and devices[0]["status"] == "retired"
@@ -79,7 +117,7 @@ def main() -> int:
         print(json.dumps({"mode": mode, "fresh_native_process_persistence": True, "discovery_performed": False}))
         return 0
     query = dispatch("network_query", {"view": "status"})
-    assert query["stage"] == "atlas_core"
+    assert query["stage"] == "local_discovery"
     assert query["authorized_for_atlas_ssh_inspection"] == ["lab-router"]
     assert query["last_inspection"] is None
     entry = manager._cli_commands["network-atlas"]

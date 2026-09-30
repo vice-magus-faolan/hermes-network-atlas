@@ -12,6 +12,15 @@ tools or same-UID processes. Remote output and discovered labels are untrusted.
 An SSH allowlist restricts this plugin, not every ability of the agent account.
 Sharing atlas state does not share profile-local inspection authority.
 
+Phase 2 collection is explicit and uses only named configured networks/modes.
+Fixed passive ip JSON commands or code-derived bounded Nmap -sn/-n/-PS80,443
+host-discovery commands run outside DB write locks. Passive neighbors never
+establish reachability or absence; only successful complete exact ping coverage
+can report not observed in that run. No response deletes a device or un-retires it.
+Owned POSIX process groups have output/deadline cleanup and direct-child reaping;
+trusted executables are not an OS sandbox. See docs/local-discovery.md for the
+exact argv, ARP/TCP behavior, identity limits and offline fixture evidence.
+
 Configuration examples and fixtures are synthetic, never live authorization.
 No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,

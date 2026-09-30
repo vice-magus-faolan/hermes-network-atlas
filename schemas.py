@@ -48,3 +48,19 @@ MAP_SCHEMA = {
                    "properties": {"format": {"type": "string", "enum": ["text", "markdown", "mermaid"]},
                                   "export": {"type": "boolean"}}, "required": []},
 }
+
+DISCOVER_SCHEMA = {
+    "name": "network_discover",
+    "description": "Collect a bounded immutable LAN batch for a configured network/mode. Does not reconcile. Passive neighbors are cached, not reachability.",
+    "parameters": {"type": "object", "additionalProperties": False,
+                   "properties": {"network": {"type": "string", "maxLength": 64},
+                                  "mode": {"type": "string", "enum": ["passive", "ping"]}},
+                   "required": ["network", "mode"]},
+}
+
+RECONCILE_SCHEMA = {
+    "name": "network_reconcile",
+    "description": "Apply a stored local LAN batch (or latest unapplied). Exact retries are idempotent. Missing means not observed, never offline/deleted.",
+    "parameters": {"type": "object", "additionalProperties": False,
+                   "properties": {"batch_id": {"type": "string", "maxLength": 64}}, "required": []},
+}

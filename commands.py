@@ -43,6 +43,11 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     map_parser = commands.add_parser("map", allow_abbrev=False)
     map_parser.add_argument("--format", choices=("text", "markdown", "mermaid"), default="text")
     map_parser.add_argument("--export", action="store_true")
+    discover = commands.add_parser("discover", allow_abbrev=False)
+    discover.add_argument("--network", required=True)
+    discover.add_argument("--mode", choices=("passive", "ping"), required=True)
+    reconcile_parser = commands.add_parser("reconcile", allow_abbrev=False)
+    reconcile_parser.add_argument("--batch-id")
 
 
 def run_command(args: argparse.Namespace, home: Path) -> int:
@@ -68,6 +73,10 @@ def _decode(text: str, policy: Policy) -> object:
 
 
 def _read_command(args: argparse.Namespace, home: Path, policy: Policy) -> dict | None:
+    if args.atlas_action == "discover":
+        return json.loads(Handlers(home).discover({"network": args.network, "mode": args.mode}))
+    if args.atlas_action == "reconcile":
+        return json.loads(Handlers(home).reconcile({"batch_id": args.batch_id} if args.batch_id else {}))
     if args.atlas_action == "status":
         return json.loads(status(home))
     if args.atlas_action == "query":

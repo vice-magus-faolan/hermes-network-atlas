@@ -221,7 +221,7 @@ class BoundaryTests(unittest.TestCase):
         with patch("subprocess.Popen", side_effect=AssertionError("query must not collect")):
             result = json.loads(self.handlers.query({"view": "status"}))
         self.assertTrue(result["persistence_available"])
-        self.assertFalse(result["collection_available"])
+        self.assertTrue(result["collection_available"])
         self.assertIsNone(result["last_inspection"])
         self.assertEqual(list(self.home.iterdir()), [])
 
@@ -237,7 +237,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_slash_update_refuses_unattested_origin(self):
         self.assertIn("error", json.loads(self.handlers.command('update {"source":"user"}')))
-        self.assertEqual(json.loads(self.handlers.command("status"))["stage"], "atlas_core")
+        self.assertEqual(json.loads(self.handlers.command("status"))["stage"], "local_discovery")
 
     def test_local_cli_operator_path_and_unknown_options(self):
         parser = argparse.ArgumentParser()

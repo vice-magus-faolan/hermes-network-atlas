@@ -11,13 +11,13 @@ if TYPE_CHECKING:
 
 
 def register(ctx: PluginContext) -> None:
-    """Fail closed on unsupported Python or malformed policy; never activate live collection."""
+    """Fail closed on unsupported Python or malformed policy; never collect at startup."""
     if not (3, 11) <= sys.version_info[:2] < (3, 15):
         raise RuntimeError("Network Atlas supports Python >=3.11,<3.15")
     from hermes_constants import get_hermes_home
     from .commands import run_command, setup_parser
     from .config import load_policy
-    from .schemas import MAP_SCHEMA, QUERY_SCHEMA, UPDATE_SCHEMA
+    from .schemas import DISCOVER_SCHEMA, MAP_SCHEMA, QUERY_SCHEMA, RECONCILE_SCHEMA, UPDATE_SCHEMA
     from .tools import Handlers
 
     home = get_hermes_home().resolve()
@@ -29,7 +29,11 @@ def register(ctx: PluginContext) -> None:
                       handler=handlers.update)
     ctx.register_tool(name="network_map", toolset="network_atlas", schema=MAP_SCHEMA,
                       handler=handlers.map)
+    ctx.register_tool(name="network_discover", toolset="network_atlas", schema=DISCOVER_SCHEMA,
+                      handler=handlers.discover)
+    ctx.register_tool(name="network_reconcile", toolset="network_atlas", schema=RECONCILE_SCHEMA,
+                      handler=handlers.reconcile)
     ctx.register_command("network", handlers.command, description="Stored atlas; operator writes require local CLI",
-                         args_hint="status|show <id>|map [text|markdown|mermaid]")
+                         args_hint="status|show <id>|map [format]|discover <network> <mode>|reconcile [batch-id]")
     ctx.register_cli_command("network-atlas", "Network Atlas operator updates and stored knowledge",
                              setup_parser, partial(run_command, home=home))

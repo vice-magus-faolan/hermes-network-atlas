@@ -14,7 +14,8 @@ from helpers import ROOT, scratch_home
 from test_boundaries import synthetic_policy
 
 PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
-                "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py")
+                "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
+                "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py")
 
 
 def runtime_root() -> Path:
@@ -52,14 +53,28 @@ class NativeRuntimeTests(unittest.TestCase):
                    "HERMES_DISABLE_LAZY_INSTALLS": "1", "HERMES_MANAGED": "false",
                    "XDG_CONFIG_HOME": str(scratch / "xdg-config"), "XDG_CACHE_HOME": str(scratch / "xdg-cache"),
                    "XDG_DATA_HOME": str(scratch / "xdg-data")}
+            fixture_bin = scratch / "fixture-bin"
+            if mode == "local_discovery":
+                fixture_bin.mkdir()
+                (fixture_bin / "offline-fixture").touch()
+                shutil.copy2(ROOT / "scripts" / "offline_probe.py", fixture_bin / "ip")
+                (fixture_bin / "ip").chmod(0o700)
+                env["PATH"] = str(fixture_bin) + os.pathsep + env["PATH"]
+                env["NETWORK_ATLAS_OFFLINE_FIXTURE_DIR"] = str(fixture_bin)
             child = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
-            if mode == "valid":
+            if mode in {"valid", "local_discovery"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
-                restarted = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), "reopen"],
+                reopen_mode = "reopen" if mode == "valid" else "local_discovery_reopen"
+                if mode == "local_discovery":
+                    # If reopen accidentally collected, only a missing fake binary
+                    # may be resolved, never the host's actual ip/nmap commands.
+                    (fixture_bin / "ip").unlink()
+                    env["PATH"] = str(fixture_bin)
+                restarted = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), reopen_mode],
                                            env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
                 self.assertEqual(restarted.returncode, 0, restarted.stdout + restarted.stderr)
                 persistence = json.loads(restarted.stdout.strip().splitlines()[-1])
@@ -77,6 +92,9 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_invalid_config_registers_no_tools_or_commands_in_real_runtime(self):
         self.assertTrue(self.run_smoke("invalid")["registration_refused"])
+
+    def test_real_native_local_discovery_reconcile_and_fresh_process(self):
+        self.assertTrue(self.run_smoke("local_discovery")["persistent_batches"])
 
     def test_native_plugin_remains_disabled_without_explicit_opt_in(self):
         self.assertTrue(self.run_smoke("disabled")["registration_refused"])

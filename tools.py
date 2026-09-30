@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Native handlers: stored knowledge, inference-only updates, no collection."""
+"""Native handlers: explicit bounded discovery, stored knowledge and inference writes."""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -13,6 +13,8 @@ from .core import apply_update
 from .query import query
 from .render import export_map, render_map
 from .storage import Store, response_json
+from .discovery import collect
+from .reconcile import reconcile
 
 
 def update_receipt(update: Update) -> str:
@@ -24,8 +26,8 @@ def update_receipt(update: Update) -> str:
 def status(home: Path) -> str:
     """Summarize stored knowledge separately from profile-local authorization."""
     policy = load_policy(home)
-    return response_json({**query(policy, {"view": "status"}), "stage": "atlas_core", "persistence_available": True,
-                          "collection_available": False,
+    return response_json({**query(policy, {"view": "status"}), "stage": "local_discovery", "persistence_available": True,
+                          "collection_available": True, "ssh_transport_available": False,
                           "configured_networks": [network.name for network in policy.networks],
                           "authorized_for_atlas_ssh_inspection": list(policy.authorized_aliases),
                           "operator_update_route": "hermes network-atlas update"},
@@ -83,6 +85,24 @@ class Handlers:
         except (OSError, ConfigError, ValueError, sqlite3.Error):
             return json.dumps({"error": "invalid map, bound, store, or local policy", "applied": False})
 
+    def discover(self, params: object, **runtime_context: object) -> str:
+        """Collect only an explicitly named current-policy network/mode; ignore kwargs."""
+        del runtime_context
+        try:
+            policy = load_policy(self.home)
+            return response_json(collect(policy, params), policy.limits.output_bytes)
+        except (OSError, ConfigError, ValueError, sqlite3.Error):
+            return json.dumps({"error": "invalid discovery request, bounds, store, or local policy", "applied": False, "persisted": False})
+
+    def reconcile(self, params: object, **runtime_context: object) -> str:
+        """Apply stored evidence only; no probe runs on this path."""
+        del runtime_context
+        try:
+            policy = load_policy(self.home)
+            return response_json(reconcile(policy, params), policy.limits.output_bytes)
+        except (OSError, ConfigError, ValueError, sqlite3.Error):
+            return json.dumps({"error": "invalid stored batch, bounds, store, or local policy", "applied": False})
+
     def command(self, raw_args: str) -> str:
         """Slash origin is not attested by this runtime; refuse all operator writes."""
         if raw_args.strip() == "status":
@@ -92,5 +112,9 @@ class Handlers:
             return self.query({"device_id": parts[1]})
         if parts and parts[0] == "map" and len(parts) <= 2:
             return self.map({"format": parts[1] if len(parts) == 2 else "text"})
+        if len(parts) == 3 and parts[0] == "discover":
+            return self.discover({"network": parts[1], "mode": parts[2]})
+        if parts and parts[0] == "reconcile" and len(parts) <= 2:
+            return self.reconcile({"batch_id": parts[1]} if len(parts) == 2 else {})
         return json.dumps({"error": "slash update origin cannot be attested; use the local operator CLI",
                            "applied": False})

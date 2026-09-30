@@ -11,10 +11,11 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from ipaddress import ip_address, ip_network
 import re
+import time
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
 from .identity import mac_address
-from .storage import Store, encode, identifier, parse_time, timestamp, utc_now
+from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
 from .core import INTERFACE_TYPES
 
@@ -168,7 +169,8 @@ def _scalar_value(obs: Observation, store: Store) -> None:
 
 
 def store_batch(store: Store, collector: str, scope_name: str, started_at: str, ended_at: str,
-                completion: str, probes: tuple[Probe, ...]) -> str:
+                completion: str, probes: tuple[Probe, ...], *, receipt: bool = False,
+                deadline: float | None = None) -> str | dict:
     """Validate all evidence first, then atomically append batch, probes, facts and event."""
     kind, scope, source = _scope(store, collector, scope_name)
     _times(started_at, ended_at, started_at, ended_at)
@@ -181,7 +183,20 @@ def store_batch(store: Store, collector: str, scope_name: str, started_at: str, 
             _insert_probe(store, batch, probe, collector, source, completion)
         store.audit(operation, "batch_stored", source, ended_at, batch=batch,
                     details={"completion": completion, "probe_count": len(probes)})
-    return batch
+        result = batch_receipt(batch, completion, probes)
+        if receipt:
+            response_json(result, store.policy.limits.output_bytes)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise ValueError("operation deadline during persistence")
+    return result if receipt else batch
+
+
+def batch_receipt(batch: str, completion: str, probes: tuple[Probe, ...]) -> dict:
+    """Code-owned exact receipt checked before commit; no raw command output."""
+    return {"batch_id": batch, "completion": completion, "persisted": True, "applied": False,
+            "probes": [{"name": probe.probe_name, "outcome": probe.outcome,
+                        "diagnostic_code": probe.diagnostic_code,
+                        "observation_count": len(probe.observations)} for probe in probes]}
 
 
 def _validate_probes(store: Store, collector: str, kind: str, scope: str, start: str, end: str,
