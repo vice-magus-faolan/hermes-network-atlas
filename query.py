@@ -11,6 +11,7 @@ from .facts import RELATION_TYPES, evidence, freshness, selected_facts, selectio
 from .storage import Store, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
 from .inspection_evidence import latest_inspection, most_recent_inspection
+from .batches import OUTCOMES
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
               "relationship", "related_to", "text", "limit", "offset"}
@@ -227,6 +228,28 @@ def _inventory(store: Store, params: dict, now: datetime) -> dict:
             "discovery_performed": False}
 
 
+def _probe_totals(store: Store, batch: str) -> dict:
+    """Aggregate the whole batch into fixed enums, independently of inventory pages."""
+    outcomes = dict.fromkeys(OUTCOMES, 0)
+    coverage = dict.fromkeys(("none", "local_host", "exact_network", "exact_target"), 0)
+    group_bound = len(outcomes) * len(coverage) * 2
+    rows = store.connection.execute(
+        "SELECT outcome,coverage_kind,absence_eligible,COUNT(*) AS count FROM probes WHERE batch_id=? "
+        "GROUP BY outcome,coverage_kind,absence_eligible LIMIT ?", (batch, group_bound + 1)).fetchall()
+    if len(rows) > group_bound:
+        raise ValueError("invalid probe summary groups")
+    eligible = 0
+    for row in rows:
+        if row["outcome"] not in outcomes or row["coverage_kind"] not in coverage:
+            raise ValueError("invalid stored probe summary enum")
+        outcomes[row["outcome"]] += row["count"]
+        coverage[row["coverage_kind"]] += row["count"]
+        eligible += row["absence_eligible"] * row["count"]
+    total = sum(outcomes.values())
+    return {"total_count": total, "outcome_counts": outcomes, "coverage_counts": coverage,
+            "failure_count": total - outcomes["success"], "absence_eligible_count": eligible}
+
+
 def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | None:
     """Report this profile's immutable completion/coverage, not another profile's run."""
     restriction = " AND collector IN ('local_passive','ping')" if discovery_only else ""
@@ -234,10 +257,20 @@ def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | No
                                    " ORDER BY ended_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
     if row is None:
         return None
-    probes = bounded_rows(store, "SELECT probe_name,outcome,diagnostic_code,coverage_kind,coverage_value,absence_eligible "
-                          "FROM probes WHERE batch_id=? ORDER BY probe_name", (row["id"],))
+    totals = _probe_totals(store, row["id"])
+    # Details are an explicit bounded sample, failures first. Counts and absence
+    # qualification above cover every probe, including any omitted from the sample.
+    probes = store.connection.execute(
+        "SELECT probe_name,outcome,diagnostic_code,coverage_kind,coverage_value,absence_eligible "
+        "FROM probes WHERE batch_id=? ORDER BY (outcome='success'),absence_eligible DESC,probe_name LIMIT ?",
+        (row["id"], store.policy.limits.result_count)).fetchall()
+    shown_failures = sum(probe["outcome"] != "success" for probe in probes)
+    totals.update({"detail_limit": store.policy.limits.result_count, "returned_count": len(probes),
+                   "omitted_count": totals["total_count"] - len(probes),
+                   "omitted_failure_count": totals["failure_count"] - shown_failures})
     return {**dict(row), "probes": [dict(probe) for probe in probes],
-            "scope_absence_eligible": row["completion"] == "complete" and any(probe["absence_eligible"] for probe in probes)}
+            "probe_summary": totals,
+            "scope_absence_eligible": row["completion"] == "complete" and totals["absence_eligible_count"] > 0}
 
 
 def summary(store: Store, now: datetime) -> dict:

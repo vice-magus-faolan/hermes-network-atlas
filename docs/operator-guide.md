@@ -100,10 +100,22 @@ Passive neighbors and failed/partial scans cannot prove absence. Age-based stale
 status is distinct from latest scan absence. User retirement is sticky.
 
 Status reports total known inventory, observed/stale subsets, configured scopes,
-authorized aliases/device count, last discovery scope/completion/per-probe evidence,
+authorized aliases/device count, last discovery scope/completion/whole-batch evidence,
 and separate last inspection success/failure. Neither configuration nor an old
 successful attempt proves present reachability. SSH inventory does not prove every
 stored IP is reachable. Only qualified exact-address ping evidence can say that.
+
+Last discovery/collection `probe_summary` always counts the entire batch, including
+the scope-coverage probe: total_count, outcome_counts, coverage_counts,
+failure_count and absence_eligible_count. Inventory pagination cannot suppress
+these aggregates, including after /24 or /25 discovery. `probes` is explicitly a
+bounded sample (`detail_limit=limits.result_count`), with failures first and stable
+ordering. Check returned_count, omitted_count and omitted_failure_count before
+treating it as complete detail. Omitted failures remain in whole-batch outcome/
+coverage totals. Status does not offer probe pagination, and device history is not
+batch probe detail; collection returns the full bounded outcome/diagnostic receipt.
+See [Atlas Core](atlas-core.md) for exact field semantics. Public status still obeys
+the serialized output_bytes ceiling; a too-small ceiling refuses read-only.
 
 The slash runtime cannot attest human origin, so `/network update` refuses.
 Use the trusted local operator CLI for user-supplied knowledge:

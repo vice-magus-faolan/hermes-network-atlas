@@ -163,7 +163,30 @@ records too. Observed does not mean reachable now. `configured_scopes` lists eac
 current named CIDR and enabled discovery modes. `last_discovery` is the latest
 local-profile LAN batch, distinct from `last_collection` (which can be SSH) and
 `last_inspection`. It includes immutable scope, start/end time, complete/partial/
-failed qualification, bounded per-probe outcomes, and `scope_absence_eligible`.
+failed qualification, whole-batch `probe_summary`, bounded per-probe detail, and
+`scope_absence_eligible`. Status totals are independent of inventory pagination:
+even a /24 batch with 257 probes remains reportable with `result_count=1`.
+`probe_summary` includes `total_count`, fixed-enum `outcome_counts` and
+`coverage_counts` (none/local_host/exact_network/exact_target), `failure_count`
+and `absence_eligible_count`, aggregated over ALL stored probes. These counts
+describe probe outcomes, not reachable device counts; the synthetic scope-coverage
+probe is included. Absence qualification likewise uses the whole batch, never
+just displayed details.
+
+`probes` is a sample capped at `limits.result_count`, not a complete list when
+`omitted_count>0`. It orders failures first, then absence-eligible coverage, then
+probe name, deterministically. `probe_summary.detail_limit`, `returned_count`,
+`omitted_count` and `omitted_failure_count` make omitted detail explicit; even
+undisplayed failures contribute to every outcome/coverage total. No failure is
+silently presented as success. For example, /24 with one timeout has 257 probes,
+255 successes and two failures (timeout plus unsuccessful scope coverage).
+With detail_limit=1 it reports both failures in totals and one omitted failure.
+Status has no per-probe pagination; device history is NOT a route to batch probe
+metadata. The original bounded collection receipt contains all per-probe outcome/
+diagnostic entries at collection time. Inventory/history limits are unchanged,
+and serialized public status responses still enforce `output_bytes` (too small
+a byte ceiling refuses without mutation). `last_inspection` retains its separate
+observation-bounded fixed-probe attempt evidence, not inventory pagination.
 Even eligible ping absence means only not observed in that exact run. Shared
 foreign batches do not claim a local last discovery. Availability flags and
 `stage=v1` describe implemented code, not executable installation, successful
@@ -174,6 +197,9 @@ route. Unknown commands/extra arguments return usage and apply nothing. Status,
 show, map, discover, inspect and reconcile share the same validated model/CLI
 core paths; slash updates still fail closed on unattested origin. Regression
 evidence: `tests/test_commands.py::OperatorStatusTests`.
+Full-size /24 and /25 complete/partial/failed, /26 control, lowered-limit passive/
+SSH, output-cap and fresh-process tool/slash/operator status regressions:
+`tests/test_status_remediation.py::StatusBatchBoundsTests`.
 
 `network_map` supports text, markdown and mermaid plus export=true. CLI equivalent:
 
