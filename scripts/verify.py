@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run bootstrap, implemented behavior/review regressions, and native-runtime smoke.
 
-Requires a compatible Hermes runtime (NETWORK_ATLAS_HERMES_ROOT or importable
-hermes_cli), its admitted dependencies, and an existing TMPDIR scratch directory.
+Requires a compatible Hermes runtime, an existing TMPDIR, and a candidate-bound
+NETWORK_ATLAS_ACCEPTANCE_FIXTURE prepared OUTSIDE this network-denied process.
 Missing prerequisites are failures, not skipped integration coverage.
 """
 from __future__ import annotations
@@ -12,6 +12,8 @@ import ast
 import os
 from pathlib import Path
 import unittest
+
+from offline_guard import deny_network
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
@@ -29,6 +31,12 @@ def check_source() -> bool:
     """
     valid = True
     maximum = 0
+    actual = {path.name for path in ROOT.glob("*.py")}
+    if actual != set(PLUGIN_FILES):
+        print(f"ERROR: undeclared/absent plugin modules: {actual ^ set(PLUGIN_FILES)}")
+        valid = False
+    for path in (ROOT / "scripts").glob("*.py"):
+        compile(path.read_text(encoding="utf-8"), str(path), "exec")
     for filename in PLUGIN_FILES:
         path = ROOT / filename
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=filename)
@@ -52,6 +60,7 @@ def check_source() -> bool:
 def main() -> int:
     """Run discovered tests and refuse a misleading zero-test success."""
     os.chdir(ROOT)
+    deny_network()
     if not check_source():
         print("ERROR: refactor function(s) estimated above 15 before review")
         return 1
@@ -60,7 +69,7 @@ def main() -> int:
     if count == 0:
         print("ERROR: no tests discovered")
         return 1
-    print(f"Canonical verification: {count} tests discovered; Phase 1–3, NOT full V1 acceptance", flush=True)
+    print(f"Canonical verification: {count} tests discovered; cumulative synthetic V1, NOT live validation", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

@@ -34,6 +34,11 @@ sandboxed jump path; killing local SSH cannot guarantee remote descendant
 cancellation. No runtime tool can supply or modify a command or SSH option.
 
 Configuration examples and fixtures are synthetic, never live authorization.
+Supported isolated native install/enable may acquire dependencies during explicit
+scratch-only setup. Canonical Atlas acceptance is a separate socket-denied process
+with non-forwarding synthetic transports. Admission evidence is candidate-bound;
+security scan/refusal/consent controls are not mocked or disabled. This test guard
+is not a production sandbox. See docs/operator-guide.md for the exact boundary.
 No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,
 private exports, SSH keys, passwords, tokens, or live config to a public issue.

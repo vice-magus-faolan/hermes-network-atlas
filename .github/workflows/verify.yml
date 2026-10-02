@@ -7,7 +7,7 @@ permissions:
 jobs:
   offline-verification:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       NETWORK_ATLAS_HERMES_ROOT: ${{ github.workspace }}/.hermes-runtime-source
       TMPDIR: ${{ github.workspace }}/.test-scratch
@@ -29,5 +29,9 @@ jobs:
         run: |
           mkdir -p "$TMPDIR"
           python3 -m pip install --disable-pip-version-check -r requirements-test.txt
+      - name: Online prerequisite setup — isolated supported install and enable
+        run: |
+          python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT" | tee "$TMPDIR/native-setup.log"
+          python3 -c 'import os,pathlib; lines=pathlib.Path(os.environ["TMPDIR"],"native-setup.log").read_text().splitlines(); value=next(x for x in lines if x.startswith("NETWORK_ATLAS_ACCEPTANCE_FIXTURE=")); pathlib.Path(os.environ["GITHUB_ENV"]).open("a").write(value+"\n")'
       - name: Canonical offline verification
         run: python3 scripts/verify.py

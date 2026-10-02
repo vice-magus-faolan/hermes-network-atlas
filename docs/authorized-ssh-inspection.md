@@ -1,8 +1,9 @@
 # Authorized SSH Inspection (Phase 3)
 
 Phase 3 implements an explicitly invoked, fixed read-only Linux collector and
-SSH batch reconciliation. Independent review, cumulative V1 acceptance,
-PM-managed install/enable, target integration and publication are separate gates.
+SSH batch reconciliation. Cumulative synthetic V1 acceptance and supported
+PM-managed install/enable are documented in operator-guide.md. Independent final
+review, target integration and publication retain separate gates.
 No actual SSH host, LAN, live profile or private atlas was used for this work.
 
 ## Input and authority
@@ -213,7 +214,8 @@ Maps still use only stored supported relationships; no edges are fabricated.
 
 ## Offline verification and remaining gates
 
-Use the admitted compatible Hermes runtime and declared scratch prerequisites:
+Use a compatible verifier and candidate-bound native fixture prepared separately
+as documented in operator-guide.md:
 
     python3 -m unittest discover -s tests -p 'test_inspection*.py' -v
     python3 -m unittest discover -s tests -p test_runtime.py -v
@@ -240,6 +242,7 @@ validates fixed argv and cannot run SSH. It simulates valid output and a client
 refusal; a fresh native process replays/queries/maps with that executable removed
 and a fixture-only PATH. No live host key or real reachability is claimed tested.
 
-Full PM-managed install/enable, three-alias cumulative V1 acceptance, GitHub CI,
-other OS/OpenSSH/runtime versions, integration/publication and live installation,
+Supported PM-managed install/enable and three-alias cumulative V1 evidence are
+indexed in acceptance-matrix.md. GitHub CI execution, other OS/OpenSSH/runtime
+versions, integration/publication and live installation,
 private seeding, scans/SSH or gateway restarts remain unperformed/downstream.

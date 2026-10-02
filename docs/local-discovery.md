@@ -1,8 +1,8 @@
 # Local Discovery and Reconciliation (Phase 2)
 
-Phase 1 Atlas Core, Phase 2 and Phase 3 are implemented; V1 is not complete or released.
-Cumulative PM-managed install/enable acceptance, independent review, integration,
-publication and live activation remain separate gates. No real LAN was scanned
+V1 phases 1–3 and cumulative synthetic acceptance are implemented; not released.
+Independent final review, integration, publication and live activation remain
+separate gates. No real LAN was scanned
 and no live profile was installed, changed, seeded or restarted for this work.
 
 ## Explicit lifecycle and policy
@@ -185,8 +185,9 @@ batch provides no new sightings; failure itself is not evidence of absence.
 
 ## Verification and remaining gates
 
-Use an existing compatible admitted Hermes interpreter read-only and a declared
-scratch TMPDIR. No live home/config/atlas is a test fixture. Canonical command:
+Use a compatible verifier interpreter and declared scratch TMPDIR. Prepare the
+candidate-bound native fixture separately as documented in operator-guide.md.
+No live home/config/atlas is a test fixture. Canonical command:
 
     python3 scripts/verify.py
     python3 -m unittest discover -s tests -p 'test_discovery*.py' -v
@@ -215,6 +216,7 @@ binary and uses a fixture-only PATH to prove stored querying/replay without
 collection. Synthetic output is explicitly a fixture, not reported live evidence.
 
 Phase 1 checks remain in the same verifier. Existing schema version 1 is retained.
-Full PM-managed install/enable, three-alias cumulative A13 V1
-acceptance remain downstream. GitHub CI, other runtime combinations, real network
+Supported PM-managed install/enable and three-alias A13 cumulative evidence are
+indexed in acceptance-matrix.md and operator-guide.md. GitHub CI execution,
+other runtime combinations, real network
 reachability, publication, main advancement and live activation are unperformed.

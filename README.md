@@ -2,8 +2,8 @@
 
 A small Hermes-native plugin for durable, provenance-aware network knowledge.
 
-**Status: Phase 1 Atlas Core, Phase 2 Local Discovery and Phase 3 SSH implemented;
-V1 is not complete or released.**
+**Status: V1 phases 1–3 implemented with cumulative synthetic acceptance;
+independent final review, target delivery and release remain separately gated.**
 Profile-aware SQLite, immutable provenance/history, interface-first identity,
 audited operator/inference updates, bounded read-only query, and deterministic
 maps/exports are implemented. Applying receipts report persisted=true; the
@@ -11,12 +11,13 @@ compatibility validate-update command still reports applied=false/persisted=fals
 Explicit bounded passive/Nmap discovery, immutable evidence batches and
 transactional idempotent reconciliation are implemented. Explicit current-policy
 SSH inspection uses fixed read-only probes and immutable attempt evidence.
-Collection alone never rewrites canonical inventory. Phase 3 independent review
-and cumulative V1 acceptance remain separate gates.
-Passing core checks does not establish V1 acceptance or live-network readiness.
+Collection alone never rewrites canonical inventory. Supported native scratch
+install/enable and a three-alias fixture workflow/restart are exercised by the
+canonical verifier. Passing synthetic checks does not establish live-network
+readiness, reviewer approval, target integration or publication.
 
 Network Atlas observes and remembers infrastructure. It does not administer it.
-The planned implementation uses local SQLite, bounded allowlisted discovery,
+The implementation uses local SQLite, bounded allowlisted discovery,
 fixed read-only SSH probes, and deterministic Markdown/Mermaid exports. No
 external database, web app, MCP server, or background service is required.
 
@@ -28,6 +29,7 @@ external database, web app, MCP server, or background service is required.
 - [Delivery plan](docs/delivery-plan.md)
 - [Acceptance matrix](docs/acceptance-matrix.md)
 - [Concrete contract decisions](docs/contract-decisions.md)
+- [Operator installation, configuration and cumulative verification](docs/operator-guide.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
 - [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
@@ -45,23 +47,30 @@ later work, not prerequisites. Unknown topology stays unknown.
 python3 scripts/verify.py
 ```
 
-This runs bootstrap contracts, core persistence/identity/provenance/query/map,
+This runs repository contracts, core persistence/identity/provenance/query/map,
 offline LAN/SSH collection/reconciliation/bounds, and mandatory isolated native Hermes
-runtime dispatch and restart tests. A compatible
-Hermes source/dependency runtime and declared scratch directory are prerequisites;
-see the verification guide. Missing Hermes is a failure, not a silent test skip.
-The same command must expand with each implemented milestone.
+runtime dispatch and restart tests, including the complete three-alias scenario.
+A compatible verifier runtime, exact Hermes source, declared scratch directory and
+candidate-bound native admission fixture are prerequisites; run the separate
+online setup in docs/operator-guide.md first. Canonical tests and their children
+are socket-denied. Missing Hermes is a failure, not a silent test skip; missing or
+stale admission evidence also fails. CI uses the same setup/verifier path, but
+GitHub CI execution has not been performed on this unpushed implementation.
 Tests must use synthetic fixtures and isolated Hermes homes. They must not scan
 a real LAN, inspect a real SSH host, or read the operator's live atlas.
 
 ## Installation
 
 The repository root is a normal plugin.yaml/__init__.py native directory plugin.
-Tests copy its source into an isolated scratch Hermes home and exercise opt-in
-discovery/registration/dispatch and persistent native restart queries/maps. It
-is not a released atlas. Full PM dependency admission/install-command and complete
-V1 acceptance remain cumulative gates. Do not install into a live profile or treat examples as scan
-authorization.
+The isolated setup uses real supported install/enable entrypoints, exact synthetic
+candidate pinning, native security scanning and PM member-union admission, then
+reads back installed bytes and selected dependency generations. Acceptance runs
+separately with synthetic non-forwarding transports through real native discovery,
+registration/tool/slash/CLI dispatch and fresh-process restart queries/maps.
+See docs/operator-guide.md for reproducible setup, dependency failure handling,
+shared-state trust boundaries and operator updates. It is not a released atlas.
+Live installation/activation, LAN discovery, actual SSH and gateway restart remain
+unperformed and require separate explicit authorization. Examples are not permission.
 
 ## License
 

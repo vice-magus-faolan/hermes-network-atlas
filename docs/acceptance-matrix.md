@@ -1,26 +1,34 @@
 # Acceptance matrix
 
-All entries below are implementation requirements, not bootstrap completion
-claims. Tests use synthetic fixtures and isolated homes by default.
+The requirements below are backed by cumulative synthetic offline tests, not
+live validation or self approval. Run `python3 scripts/verify.py` after supported
+isolated setup in [operator-guide.md](operator-guide.md). Missing native admission
+evidence fails; it is never skipped. All production modules are declared/compiled
+and all test modules discovered by the same verifier and CI workflow.
 
-Phase 2 implementation evidence is indexed in [Local Discovery](local-discovery.md):
-tests/test_discovery.py and tests/test_discovery_extra.py exercise A03/A07/A08/A10;
-tests/test_discovery_remediation.py covers duplicate-MAC local interface refusal
-and shared deadline/SQL interruption/atomic retry regressions for A04/A07/A08/A10,
-with actual native dispatch and fresh-process replay in tests/test_runtime.py.
-These milestone checks do not claim A13 or full PM-managed A01 completion.
+## Executable evidence index
 
-Phase 3 evidence is indexed in [Authorized SSH Inspection](authorized-ssh-inspection.md):
-tests/test_inspection.py and tests/test_inspection_extra.py exercise A03/A04/A05/
-A08/A09/A10/A12 authorization, exact inputs/argv, failure/provenance/identity,
-shared profile isolation and atomic rollback/retry. tests/test_inspection_remediation.py
-covers A02/A05/A09 SSH inventory versus exact-address reachability, UP/DOWN/link-local
-addresses, preserved alias success/history, read-only fresh-process reopening,
-maps/exports and exact-address ping control. tests/test_runtime.py uses
-scripts/offline_ssh.py for real native tool/slash/CLI inspection and fresh-process
-replay without collection. Transport output and host-key refusal are synthetic,
-not claims of real host-key/live-network verification. Cumulative PM-managed A01,
-three-alias A13, and independent exact-SHA approval/delivery remain separate gates.
+Each named test is discovered by the canonical verifier. The matrix/reference
+contract is checked by `tests/test_documentation.py::DocumentationTests`.
+
+| ID | Exact executable evidence | Operator/contract documentation |
+| --- | --- | --- |
+| A01 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `tests/test_runtime.py::NativeRuntimeTests::test_actual_native_discovery_schemas_tools_commands_and_operator_split` | `docs/operator-guide.md`; `plugin.yaml`; `scripts/prepare_acceptance.py`; `scripts/native_install.py` |
+| A02 | `tests/test_core.py::PersistenceTests::test_fresh_process_reopen_preserves_manual_seed_query_history_access_and_map`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection` | `docs/atlas-core.md`; `docs/operator-guide.md` |
+| A03 | `tests/test_boundaries.py::PolicyTests::test_cidr_scope_and_ipv6_active_boundaries`; `tests/test_boundaries.py::PolicyTests::test_each_limit_rejects_zero_negative_bool_fraction_nan_and_over_ceiling`; `tests/test_inspection.py::InspectionTests::test_exact_schema_and_request_boundary_before_any_effect` | `docs/contract-decisions.md`; `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
+| A04 | `tests/test_core.py::IdentityAndProvenanceTests::test_ip_hostname_never_merge_and_mac_anchors_interface_only`; `tests/test_discovery_remediation.py::LocalCollisionTests::test_duplicate_mac_local_rows_both_orders_are_unresolved`; `tests/test_inspection_extra.py::ExtraInspectionTests::test_duplicate_remote_macs_and_foreign_interface_preserved` | `docs/contract-decisions.md`; `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
+| A05 | `tests/test_core.py::IdentityAndProvenanceTests::test_field_precedence_assertions_preserved_and_same_source_supersession`; `tests/test_core.py::IdentityAndProvenanceTests::test_equal_rank_cross_source_disagreement_has_no_arbitrary_winner`; `tests/test_boundaries.py::BoundaryTests::test_runtime_kwargs_do_not_attest_operator_origin` | `docs/atlas-core.md`; `docs/contract-decisions.md` |
+| A06 | `tests/test_core.py::QueryUpdateMapTests::test_query_filters_pagination_and_literal_sql_like_injection`; `tests/test_core.py::QueryUpdateMapTests::test_cli_create_operator_update_and_validated_interface_relations`; `tests/test_boundaries.py::BoundaryTests::test_alias_association_cannot_grant_permission`; `tests/test_commands.py::OperatorStatusTests::test_slash_exact_arities_and_usage_no_origin_promotion` | `docs/atlas-core.md`; `docs/operator-guide.md` |
+| A07 | `tests/test_discovery.py::ReconciliationTests::test_new_changed_unchanged_ip_movement_multi_address_idempotent_reopen`; `tests/test_discovery.py::ReconciliationTests::test_missing_not_offline_stale_threshold_never_seen_reappearance_retired`; `tests/test_discovery_extra.py::AdditionalDiscoveryTests::test_active_partial_keeps_positive_but_never_asserts_scope_absence` | `docs/local-discovery.md`; `docs/operator-guide.md` |
+| A08 | `tests/test_discovery.py::RunnerTests::test_actual_stream_combined_output_limit_and_success`; `tests/test_discovery_extra.py::AdditionalRunnerTests::test_successful_leader_exit_cleans_descendant_not_unrelated_process`; `tests/test_inspection_extra.py::ActualInspectionBoundsTests::test_host_wide_deadline_real_owned_child_only_once_and_persisted_failures` | `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
+| A09 | `tests/test_inspection.py::InspectionTests::test_fixed_transport_strict_keys_and_no_config_side_channels`; `tests/test_inspection.py::InspectionParserTests::test_os_release_is_parsed_as_data_not_sourced_and_negative_formats`; `tests/test_inspection_remediation.py::InspectionReachabilityTests::test_up_down_and_link_local_inventory_preserves_alias_success_and_history` | `docs/authorized-ssh-inspection.md`; `SECURITY.md` |
+| A10 | `tests/test_core.py::PersistenceTests::test_interrupt_rolls_back_and_busy_writer_is_bounded`; `tests/test_discovery.py::DiscoveryTests::test_passive_fixed_argv_scope_atomic_no_canonical_mutation`; `tests/test_discovery_remediation.py::ReconcileBudgetTests::test_sql_progress_interrupts_running_statement_and_rolls_back`; `tests/test_inspection_extra.py::ExtraInspectionTests::test_reconcile_deadline_after_access_write_rolls_back_and_retry_is_exact` | `docs/atlas-core.md`; `docs/local-discovery.md` |
+| A11 | `tests/test_core.py::QueryUpdateMapTests::test_golden_text_markdown_mermaid_and_negative_label_cases`; `tests/test_core.py::QueryUpdateMapTests::test_render_deterministic_escaped_isolated_stale_and_inferred_edges`; `tests/test_core.py::QueryUpdateMapTests::test_map_rejects_arbitrary_export_path_symlink_and_oversized_output` | `docs/atlas-core.md`; `docs/operator-guide.md`; `tests/fixtures/render-golden.json` |
+| A12 | `tests/test_core.py::QueryUpdateMapTests::test_shared_knowledge_never_transfers_inspection_authority`; `tests/test_inspection.py::InspectionTests::test_disabled_revoked_shared_profile_and_ambiguous_mappings_fail_closed`; `tests/test_commands.py::OperatorStatusTests::test_shared_foreign_batches_do_not_claim_local_last_discovery` | `docs/atlas-core.md`; `docs/operator-guide.md`; `SECURITY.md` |
+| A13 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `tests/test_harness.py::AcceptanceHarnessTests::test_socket_denial_is_inherited_through_exec`; `tests/test_harness.py::AcceptanceHarnessTests::test_code_and_native_selection_changes_invalidate_receipt` | `docs/operator-guide.md`; `scripts/cumulative_acceptance.py`; `scripts/cumulative_transport.py`; `scripts/offline_guard.py` |
+| A14 | `tests/test_documentation.py::DocumentationTests::test_matrix_paths_and_exact_test_symbols_exist`; `tests/test_documentation.py::DocumentationTests::test_readme_distinguishes_implementation_from_live_delivery`; `tests/test_commands.py::OperatorStatusTests::test_empty_status_has_consistent_counts_scopes_and_no_file_effects`; `tests/test_commands.py::OperatorStatusTests::test_discovery_and_inspection_are_distinct_local_qualified_summaries` | `README.md`; `docs/operator-guide.md`; `SECURITY.md`; `CONTRIBUTING.md` |
+
+## Acceptance requirements
 
 - **A01 Native plugin**: supported install/enable, discovery, schemas, actual
   tool invocation, and operator commands under a temporary Hermes home.
@@ -55,6 +63,21 @@ three-alias A13, and independent exact-SHA approval/delivery remain separate gat
   checks on target, final artifact ancestry, clean checkout, guarded cleanup,
   later external publication kept behind an operator approval gate.
 
-The cumulative card must provide paths/tests covering every ID, run the canonical
-verifier, and identify residual or unperformed live checks without claiming V1
-activation. Reviewer completion is not evidence of integration/publication.
+## Residual and unperformed checks
+
+A01 setup is a real native CLI-entrypoint install/enable and PM publication in
+marked disposable homes. A13 uses real discovery/registry/command/core APIs and
+the admitted selected Python, but transport is deliberately synthetic. Neither
+proves a live host key, real reachability or provider chat behavior. All subprocesses
+in canonical acceptance inherit socket denial; setup runs separately online.
+
+Other OS/OpenSSH/Hermes versions, GitHub CI execution, production installation,
+private seeding, LAN scans, actual SSH and gateway restart remain unperformed.
+SSH config/executables and same-UID code are trusted; time/SQLite cancellation is
+cooperative, and local cleanup cannot guarantee remote descendant cancellation.
+Two-file generated export replacement is not a cross-file atomic transaction.
+
+A15 is NOT closed by this cumulative component. Exact independent Gilfoyle approval
+is required on its final SHA; the existing delivery owner proves target ancestry,
+canonical checks on main and guarded integration/cleanup. Publication/live effects
+remain separately authorized. Reviewer completion is not integration/publication.

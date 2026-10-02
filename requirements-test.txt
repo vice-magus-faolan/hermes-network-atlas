@@ -2,3 +2,5 @@
 # Not a production installation or replacement for native plugin dependency admission.
 ruamel.yaml==0.18.16
 python-dotenv==1.2.2
+# Native supported installer console, not plugin runtime dependency expansion.
+rich==14.3.3

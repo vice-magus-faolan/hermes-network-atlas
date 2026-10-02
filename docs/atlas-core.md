@@ -195,7 +195,7 @@ Regenerate both from SQLite to recover. Symlink export destinations are refused.
 
 ## Verification and evidence
 
-Follow the runtime/scratch prerequisites in scaffold-verification.md, then:
+Follow current cumulative setup prerequisites in operator-guide.md, then:
 
     python3 -m unittest discover -s tests -p test_core.py -v
     python3 -m unittest discover -s tests -p test_runtime.py -v
@@ -206,8 +206,9 @@ exercises supported directory discovery, all six registered tools, actual native
 slash/CLI handlers, applying operator/inference persistence, policy revocation,
 exports, and a second native process re-query/map without discovery. Independent
 fresh-process storage tests also retain IDs, assignments, relations, history and
-failed access evidence. Full PM-managed install/enable and full chat acceptance
-remain the cumulative A01 gate; this is not a claim that they have been run.
+failed access evidence. The cumulative A01/A13 supported PM install/enable and
+three-alias fixture scenario are now in tests/test_acceptance.py; see
+operator-guide.md. Provider chat/live network validation is not claimed.
 
 A02/A10: PersistenceTests and BatchTests (reopen, FK, immutable history, rollback,
 interrupts, bounded concurrent writers, schema refusal, atomic batch insertion,
@@ -219,7 +220,7 @@ stale/isolated nodes, deterministic exports, injection and overflow tests. A12:
 shared store with independent profile authority and no second-profile mutation.
 A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
 A07/A08 discovery/reconciliation separately; Phase 3 documents A09 inspection
-evidence. Full A13 remains downstream.
+evidence. A13 is indexed in acceptance-matrix.md, not proved by Phase 1 alone.
 
 Native source remains the inspected f42f579cf8bac4918ac9599bece71618afadd846.
 Phase 1 local execution uses its existing admitted Python 3.11.15 environment

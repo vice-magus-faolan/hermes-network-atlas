@@ -3,7 +3,9 @@
 Historical contract/scaffold milestone evidence. Phase 1 now implements the
 applying CLI, persistence, query and map surfaces; see [Atlas Core](atlas-core.md).
 The validation-only descriptions below record the original parent artifact, not
-the current runtime behavior. Full PM-managed installation remains a later gate.
+the current runtime behavior. For current supported PM install/enable, the
+candidate-bound fixture and cumulative verification, use operator-guide.md.
+All remaining-gate statements below are historical scaffold evidence only.
 
 This is the contract/harness milestone, not a functional persistent atlas or a
 release. No live install, profile mutation, scan, SSH, or gateway restart is part
@@ -31,7 +33,9 @@ Do not run pip against a production Hermes interpreter. On current Hermes,
 plugin.yaml python_dependencies are surfaced at discovery and admitted via native
 PM/install/enable flows; declaring them does not silently install them. The CI
 workflow checks out the exact inspected Hermes commit and prepares only a disposable
-verifier runtime. Changes to that pin or dependency admission require review.
+verifier runtime at this historical milestone. Current CI additionally prepares
+supported isolated native admission before socket-denied verification. Changes to
+that pin or dependency admission require review.
 
 ## Commands
 

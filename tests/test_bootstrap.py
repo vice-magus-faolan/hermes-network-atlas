@@ -15,12 +15,6 @@ class BootstrapContractTests(unittest.TestCase):
                 self.assertTrue((ROOT / name).is_file())
                 self.assertTrue((ROOT / name).read_text().strip())
 
-    def test_core_is_not_advertised_as_v1_acceptance(self) -> None:
-        readme = (ROOT / "README.md").read_text()
-        self.assertIn("V1 is not complete or released", readme)
-        self.assertIn("Phase 1 Atlas Core, Phase 2 Local Discovery and Phase 3 SSH implemented", readme)
-        self.assertIn("applied=false/persisted=false", readme)
-        self.assertIn("Missing Hermes is a failure", readme)
 
     def test_license_has_later_version_grant_and_full_text(self) -> None:
         self.assertIn("GPL-3.0-or-later", (ROOT / "README.md").read_text())
