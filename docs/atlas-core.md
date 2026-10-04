@@ -127,7 +127,7 @@ read-only from an injected UTC clock and stale_after_days; retirement is sticky.
 
 ## Read-only query and maps
 
-`network_query` defaults to a device page. It supports view=devices/status/history,
+`network_query` defaults to a device page. It supports view=devices/status/history/unresolved,
 device_id, name (friendly name or hostname), address (current assignments),
 device_type, status, access_method=ssh, relationship, related_to, text, limit and
 offset. Filters intersect; relationship queries match either endpoint. Inferred
@@ -136,6 +136,15 @@ literally, not SQL or an embedded query language. Conflicting fields have no
 canonical value and do not match a text/value filter. History requires device_id
 and returns immutable observation pages including losing operator assertions and
 inference explanations. Scalar selection provenance is in fields.evidence.
+
+`view=unresolved` is a separate original-evidence page, accepting only exact
+address, optional batch_id and pagination. It does not require a canonical ID.
+It includes original resolved history with explicit application/identity lineage,
+not a naive NULL-entity unresolved predicate. Qualified historical responses,
+unqualified caches, freshness, origin/policy_context and batch/probe coverage stay
+visible; shared foreign knowledge never transfers authority. Zero canonical
+devices can coexist with positive response evidence. See the complete
+[evidence request/response and schema-v1 lineage contract](unresolved-evidence.md).
 
     hermes network-atlas query --query-json '{"access_method":"ssh","limit":10}'
     hermes network-atlas query --query-json '{"view":"history","device_id":"<device-id>","limit":10}'

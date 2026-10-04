@@ -16,7 +16,7 @@ from test_boundaries import synthetic_policy
 PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
                 "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
-                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py")
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py")
 
 
 def runtime_root() -> Path:

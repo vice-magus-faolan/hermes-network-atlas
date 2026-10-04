@@ -12,9 +12,10 @@ from .storage import Store, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
 from .inspection_evidence import latest_inspection, most_recent_inspection
 from .batches import OUTCOMES
+from .unresolved import query_evidence
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
-              "relationship", "related_to", "text", "limit", "offset"}
+              "relationship", "related_to", "text", "limit", "offset", "batch_id"}
 STATUSES = ("known", "observed", "stale", "retired", "unknown")
 
 
@@ -26,15 +27,15 @@ def validate_query(params: object, policy: Policy) -> dict:
     for key, value in result.items():
         if key not in {"limit", "offset"}:
             _text(value, policy.limits.input_chars)
-    _enum(result, "view", ("devices", "status", "history"))
+    _enum(result, "view", ("devices", "status", "history", "unresolved"))
     _enum(result, "device_type", DEVICE_TYPES)
     _enum(result, "status", STATUSES)
     _enum(result, "access_method", ("ssh",))
     _enum(result, "relationship", RELATION_TYPES)
-    for key in ("device_id", "related_to"):
+    for key in ("device_id", "related_to", "batch_id"):
         if key in result and re.fullmatch(NAME_PATTERN, result[key]) is None:
             raise ValueError("invalid stable device reference")
-    if "address" in result and str(ip_address(result["address"])) != result["address"]:
+    if "address" in result and (str(ip_address(result["address"])) != result["address"] or "%" in result["address"]):
         raise ValueError("canonical address required")
     result["limit"] = _page(result.get("limit", policy.limits.result_count), 1, policy.limits.result_count)
     result["offset"] = _page(result.get("offset", 0), 0, policy.limits.page_offset)
@@ -43,10 +44,12 @@ def validate_query(params: object, policy: Policy) -> dict:
 
 
 def _validate_view(params: dict) -> None:
-    if params.get("view") == "status" and set(params) != {"view"}:
-        raise ValueError("status takes no filters")
-    if params.get("view") == "history" and not set(params) <= {"view", "device_id", "limit", "offset"}:
-        raise ValueError("history takes device_id and pagination only")
+    view = params.get("view", "devices")
+    allowed = {"status": {"view"}, "history": {"view", "device_id", "limit", "offset"},
+               "unresolved": {"view", "address", "batch_id", "limit", "offset"},
+               "devices": QUERY_KEYS - {"batch_id"}}
+    if not set(params) <= allowed[view]:
+        raise ValueError("unsupported filters for query view")
     if params.get("view") == "history" and "device_id" not in params:
         raise ValueError("history requires existing device_id")
 
@@ -324,6 +327,8 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
     """Query an existing store using one read snapshot. A missing store is empty, not created."""
     args = validate_query(params, policy)
     clock = now or utc_now()
+    if args.get("view") == "unresolved":
+        return query_evidence(policy, args, clock)
     if not policy.database.exists():
         if args.get("view") == "history":
             raise ValueError("unknown atlas entity")
