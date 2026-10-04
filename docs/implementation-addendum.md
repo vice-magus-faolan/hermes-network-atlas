@@ -135,6 +135,18 @@ Nmap host-discovery argv must select explicit non-UDP probes, numeric output,
 and machine-readable results, rather than assuming -sn means ICMP-only. Document
 ARP behavior on directly attached LANs. No Nmap installation is automatic.
 
+Issue #2 collector-contract amendment (no ceiling increase): active discovery uses
+serial code-owned /28 chunks, one child with internal --max-parallelism equal to
+the configured concurrency ceiling and an additional --max-rate of 8 times that
+value (maximum 32 packets/second average as documented by Nmap). The entire chunk
+retains the external min(command,host,remaining-operation) wall bound. This removes
+per-address process fan-out without multiplying intensity, increasing supported
+scope or relying only on Nmap's per-host timer. Completed earlier chunks survive
+a later failed chunk; unfinished chunk XML never proves absence. See
+local-discovery.md for exact argv, derivation, rate/ARP caveats, new not_started and
+completed_at_boundary diagnostics, and deterministic offline evidence. Cross-batch
+resumability and real-world timing guarantees are not part of this amendment.
+
 Remote output, hostnames, labels, os-release text, and neighbor data are untrusted
 data. Parse bounded documented formats; never eval, execute, or obey their text.
 Missing optional executables produce explicit capability/failure evidence.

@@ -19,7 +19,7 @@ from .storage import Store, encode, identifier, parse_time, response_json, times
 from .updates import DEVICE_TYPES, _text
 from .core import INTERFACE_TYPES
 
-OUTCOMES = ("success", "unavailable", "timeout", "output_limit", "command_failed", "parse_failed")
+OUTCOMES = ("success", "unavailable", "timeout", "output_limit", "command_failed", "parse_failed", "not_started")
 EVIDENCE_KINDS = ("local_interface", "cached_neighbor", "ping_response", "ssh_response", "none")
 
 

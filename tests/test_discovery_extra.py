@@ -45,13 +45,13 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         self.assertEqual(result["batch_id"], ping)
 
     def test_active_partial_keeps_positive_but_never_asserts_scope_absence(self):
-        self.raw["networks"]["lab"]["cidr"] = "192.0.2.8/30"
+        self.raw["networks"]["lab"]["cidr"] = "192.0.2.0/27"
         policy = fixture.config.validate_policy(self.raw, self.home)
         iface = fixture.core.add_interface(self.store, self.device, "known", fixture.MAC2, now=fixture.NOW)
         fixture.core.add_address(self.store, iface, "192.0.2.9", 32, now=fixture.NOW)
         def fake(argv, *args, **kwargs):
-            if argv[-1] == "192.0.2.10":
-                return fixture.runner.CommandResult("success", fixture.xml(argv[-1]))
+            if argv[-1] == "192.0.2.0/28":
+                return fixture.runner.CommandResult("success", fixture.xml(argv[-1], responder="192.0.2.10"))
             return fixture.runner.CommandResult("timeout", diagnostic_code="deadline_exceeded")
         with patch.object(fixture.discovery, "run", fake):
             receipt = fixture.discovery.collect(policy, {"network": "lab", "mode": "ping"})
@@ -63,7 +63,7 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         self.assertEqual(self.store.connection.execute("SELECT SUM(absence_eligible) FROM probes").fetchone()[0], 0)
 
     def test_whole_operation_bounds_real_owned_children_and_no_late_spawn(self):
-        self.raw["networks"]["lab"]["cidr"] = "192.0.2.8/30"
+        self.raw["networks"]["lab"]["cidr"] = "192.0.2.0/27"
         self.raw["limits"].update(operation_timeout_seconds=1, concurrent_probes=1)
         policy = fixture.config.validate_policy(self.raw, self.home)
         (self.home / "offline-fixture").touch()
@@ -82,6 +82,8 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         self.assertEqual(receipt["completion"], "failed")
         self.assertEqual(len(children), 1)
         self.assertIsNotNone(children[0].poll())
+        self.assertEqual({p["outcome"] for p in receipt["probes"][:16]}, {"timeout"})
+        self.assertEqual({p["outcome"] for p in receipt["probes"][16:-1]}, {"not_started"})
         self.assertEqual(self.store.connection.execute("SELECT SUM(absence_eligible) FROM probes").fetchone()[0], 0)
 
     def test_aggregate_observation_overflow_disqualifies_coverage(self):

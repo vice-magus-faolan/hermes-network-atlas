@@ -186,6 +186,19 @@ class ExtraInspectionTests(AtlasFixture):
 
 
 class ActualInspectionBoundsTests(AtlasFixture):
+    def test_shared_runner_completion_and_not_started_are_not_relabelled_after_parsing(self):
+        for result in (runner.CommandResult("success", b'fixture\n'),
+                       runner.CommandResult("not_started", diagnostic_code="operation_deadline_exceeded")):
+            with patch.object(inspection, "run", return_value=result), patch.object(inspection.time, "monotonic", return_value=2.0):
+                probe = inspection._probe(self.policy, ALIAS, inspection.PROBES[0], 1.0)
+            self.assertEqual(probe.outcome, result.outcome)
+            if result.outcome == "success":
+                self.assertEqual(probe.diagnostic_code, "completed_at_boundary")
+                self.assertTrue(probe.observations)
+            else:
+                self.assertEqual(probe.diagnostic_code, "operation_deadline_exceeded")
+                self.assertFalse(probe.observations)
+
     def test_host_wide_deadline_real_owned_child_only_once_and_persisted_failures(self):
         fixture = self.home / "fixture"
         fixture.mkdir()
@@ -205,7 +218,8 @@ class ActualInspectionBoundsTests(AtlasFixture):
         self.assertIsNotNone(spawned[0].returncode)
         self.assertFalse(Path("/proc", str(spawned[0].pid)).exists())
         self.assertEqual(receipt["completion"], "failed")
-        self.assertEqual({probe["outcome"] for probe in receipt["probes"]}, {"timeout"})
+        self.assertEqual(receipt["probes"][0]["outcome"], "timeout")
+        self.assertEqual({probe["outcome"] for probe in receipt["probes"][1:]}, {"not_started"})
         self.assertEqual(query.query(policy, {"view": "status"})["last_inspection"]["batch_id"], receipt["batch_id"])
 
     def test_real_output_cap_and_missing_ssh_never_installs_or_persists_raw_stderr(self):

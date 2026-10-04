@@ -152,9 +152,17 @@ observations plus batch_stored audit. Receipt includes persisted=true,
 applied=false and every probe's outcome/diagnostic/count. Output receipt overflow,
 SQL errors, interruptions or operation expiry roll back insertion. Every batch
 uses source=ssh:<alias>, observed confidence and canonical UTC times. Raw command
-output is discarded. Per-probe failed/unavailable/timeout/output_limit/parse_failed
+output is discarded. Per-probe failed/unavailable/timeout/output_limit/parse_failed/not_started
 results are retained when finalization fits the operation budget; an operation
 that cannot atomically finalize refuses without a persisted batch.
+
+The issue #2 shared-runner accounting fix applies here too without changing SSH
+probes/permissions: not_started/operation_deadline_exceeded means no child launched
+after budget exhaustion; timeout/deadline_exceeded is started work interrupted at
+its effective deadline. Valid completed responses are not overwritten during
+postprocessing; success/completed_at_boundary retains their evidence. Remaining
+probes still cannot spawn late. The host/operation/atomic-finalization bounds above
+remain unchanged; this adds no inspection capability.
 
 The immutable SSH batch itself is attempt evidence. Query status exposes the
 last local-context attempt immediately, before reconciliation. This also allows

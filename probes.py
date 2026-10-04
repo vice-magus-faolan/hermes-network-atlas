@@ -79,10 +79,12 @@ def run(argv: tuple[str, ...], limits: Limits, operation_deadline: float, *, hos
     duration = min(limits.command_timeout_seconds, limits.host_timeout_seconds) if host else limits.command_timeout_seconds
     deadline = min(operation_deadline, time.monotonic() + duration)
     if time.monotonic() >= deadline:
-        return CommandResult("timeout", diagnostic_code="operation_deadline_exceeded")
+        return CommandResult("not_started", diagnostic_code="operation_deadline_exceeded")
     if os.name != "posix" or not hasattr(os, "WNOWAIT"):
         return CommandResult("unavailable", diagnostic_code="posix_runner_required")
     try:
+        if time.monotonic() >= deadline:
+            return CommandResult("not_started", diagnostic_code="operation_deadline_exceeded")
         child = subprocess.Popen(argv, shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, start_new_session=True, close_fds=True)
     except FileNotFoundError:

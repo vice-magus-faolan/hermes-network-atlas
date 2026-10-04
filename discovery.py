@@ -2,7 +2,6 @@
 """Named policy-only LAN collection. Collect first, atomically store evidence second."""
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from dataclasses import replace
 from ipaddress import ip_network
@@ -17,6 +16,11 @@ from .storage import Store, timestamp, utc_now
 PASSIVE = (("ip_addr", ("ip", "-j", "addr"), "local_interface", parse.addresses),
            ("ip_route", ("ip", "-j", "route"), "none", parse.routes),
            ("ip_neigh", ("ip", "-j", "neigh"), "cached_neighbor", parse.neighbors))
+
+# One child at a time: internal parallelism consumes, not multiplies, the
+# existing concurrency budget. Rate is an additional code-owned restriction.
+PING_CHUNK_PREFIX = 28
+PING_RATE_PER_SLOT = 8
 
 
 Parser = Callable[[bytes, str, str, Policy], tuple[Observation, ...]]
@@ -59,29 +63,29 @@ def _probe(name: str, argv: tuple[str, ...], evidence: str, parser: Parser, scop
             observations = parser(result.stdout, scope, at, policy)
         except (ValueError, TypeError, KeyError, RecursionError, UnicodeError, parse.ElementTree.ParseError):
             result = replace(result, outcome="parse_failed", diagnostic_code="invalid_bounded_output")
-    if time.monotonic() > deadline:
-        result = replace(result, outcome="timeout", diagnostic_code="operation_deadline_exceeded")
-        observations = ()
+    if result.outcome == "success" and time.monotonic() >= deadline:
+        result = replace(result, diagnostic_code="completed_at_boundary")
     return Probe(name, result.outcome, start, timestamp(utc_now()), "none" if host else "local_host",
                  "" if host else scope, evidence, result.diagnostic_code, observations)
 
 
-def _ping(target, policy, deadline) -> Probe:
-    index, address = target
+def _ping(chunk: str, policy: Policy, deadline: float) -> Probe:
     # Explicit TCP SYN/connect discovery on fixed ports, not a port/service scan.
     # Nmap may substitute ARP on directly attached LANs when already privileged.
     argv = ("nmap", "-sn", "-n", "-PS80,443", "--host-timeout", str(policy.limits.host_timeout_seconds) + "s",
-            "--max-parallelism", "1", "-oX", "-", str(address))
-    return _probe("ping_" + str(index), argv, "ping_response", parse.nmap,
-                  str(address), policy, deadline, host=True)
+            "--max-parallelism", str(policy.limits.concurrent_probes),
+            "--max-rate", str(PING_RATE_PER_SLOT * policy.limits.concurrent_probes), "-oX", "-", chunk)
+    return _probe("ping_chunk", argv, "ping_response", parse.nmap,
+                  chunk, policy, deadline, host=True)
 
 
 def collect(policy: Policy, params: object) -> dict:
-    """Fixed passive probes or bounded per-host Nmap commands; no DB lock while probing.
+    """Fixed passive probes or serial bounded Nmap chunks; no DB lock while probing.
 
     Every address in the configured range is accounted for, including network and
-    broadcast addresses. Up to concurrent_probes children run; each has an actual
-    per-host wall deadline. Only all-success coverage can report non-observation.
+    broadcast addresses. One child runs with at most concurrent_probes internal
+    outstanding probes; the entire chunk has a host/command wall deadline.
+    Only all-success coverage can report non-observation.
     """
     network, mode = validate_request(params, policy)
     started = timestamp(utc_now())
@@ -107,14 +111,37 @@ def collect(policy: Policy, params: object) -> dict:
 
 
 def _active(scope: str, policy: Policy, deadline: float) -> tuple[Probe, ...]:
-    with ThreadPoolExecutor(max_workers=policy.limits.concurrent_probes) as executor:
-        results = tuple(executor.map(lambda target: _ping(target, policy, deadline), enumerate(ip_network(scope))))
+    network = ip_network(scope)
+    chunks = (network,) if network.prefixlen >= PING_CHUNK_PREFIX else network.subnets(new_prefix=PING_CHUNK_PREFIX)
+    results = []
+    for chunk in chunks:
+        if time.monotonic() >= deadline:
+            at = timestamp(utc_now())
+            probe = Probe("ping_chunk", "not_started", at, at, "none", "", "ping_response", "operation_deadline_exceeded")
+        else:
+            probe = _ping(str(chunk), policy, deadline)
+        results.extend(_chunk_addresses(chunk, probe, len(results)))
     at = timestamp(utc_now())
     success = all(probe.outcome == "success" for probe in results)
     coverage = Probe("ping_coverage", "success" if success else "command_failed", at, at,
                      "exact_network" if success else "none", scope if success else "", "ping_response",
                      "ok" if success else "incomplete_scope")
-    return results + (coverage,)
+    return tuple(results) + (coverage,)
+
+
+def _chunk_addresses(chunk, probe: Probe, offset: int) -> tuple[Probe, ...]:
+    """Derive address checks from complete chunk XML, never synthetic hosts.
+
+    An omitted address is checked-not-observed only after a successful complete
+    parse. All addresses inherit an unsuccessful chunk's unknown outcome.
+    """
+    observations = {}
+    for observation in probe.observations:
+        assert isinstance(observation.value, tuple)
+        observations[dict(observation.value)["address"]] = observation
+    return tuple(replace(probe, probe_name="ping_" + str(offset + index),
+                         observations=(observations[str(address)],) if str(address) in observations else ())
+                 for index, address in enumerate(chunk))
 
 
 def _batch_bound(probes: tuple[Probe, ...], policy: Policy) -> tuple[Probe, ...]:

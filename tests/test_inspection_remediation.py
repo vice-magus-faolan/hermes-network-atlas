@@ -142,7 +142,7 @@ class InspectionReachabilityTests(AtlasFixture):
         with patch.object(discovery, "run", return_value=runner.CommandResult("success", xml("198.51.100.1", MAC))) as transport:
             receipt = discovery.collect(policy, {"network": "one", "mode": "ping"})
         self.assertEqual(transport.call_count, 1)
-        self.assertEqual(transport.call_args.args[0][-1], "198.51.100.1")
+        self.assertEqual(transport.call_args.args[0][-1], "198.51.100.1/32")
         reconcile.reconcile(policy, {"batch_id": receipt["batch_id"]})
         detail = query.query(policy, {"device_id": self.device}, now=NOW)["devices"][0]
         addresses = [item for interface in detail["interfaces"] for item in interface["addresses"]]
