@@ -52,11 +52,14 @@ def assert_stopped(test: unittest.TestCase, descendant: int) -> None:
         time.sleep(0.01)
 
 
-def xml(target="192.0.2.10", mac=MAC, up=True):
-    host = ('<host><status state="up"/><address addr="' + target + '" addrtype="ipv4"/>' +
+def xml(target="192.0.2.10", mac=MAC, up=True, responder=None):
+    network = ip_network(target)
+    address = responder or str(network.network_address)
+    host = ('<host><status state="up"/><address addr="' + address + '" addrtype="ipv4"/>' +
             (('<address addr="' + mac + '" addrtype="mac"/>') if mac else '') + '</host>') if up else ''
     return ('<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun>' + host +
-            '<runstats><finished exit="success"/><hosts up="' + str(int(up)) + '" down="' + str(int(not up)) + '" total="1"/></runstats></nmaprun>').encode()
+            '<runstats><finished exit="success"/><hosts up="' + str(int(up)) + '" down="' + str(network.num_addresses - int(up)) +
+            '" total="' + str(network.num_addresses) + '"/></runstats></nmaprun>').encode()
 
 
 def observation(mac=MAC, address="192.0.2.10", at=NOW, state=None, prefix=32):
@@ -150,10 +153,10 @@ class DiscoveryTests(AtlasFixture):
         def fake(argv, limits, deadline, **kwargs):
             nonlocal active, maximum
             self.assertEqual(argv[:4], ("nmap", "-sn", "-n", "-PS80,443"))
-            self.assertEqual(argv[4:-1], ("--host-timeout", "10s", "--max-parallelism", "1", "-oX", "-"))
+            self.assertEqual(argv[4:-1], ("--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-"))
             self.assertTrue(kwargs["host"])
             target = argv[-1]
-            self.assertIn(target, {str(ip) for ip in ip_network("192.0.2.8/30")})
+            self.assertEqual(target, "192.0.2.8/30")
             with lock:
                 active += 1
                 maximum = max(active, maximum)
@@ -161,10 +164,11 @@ class DiscoveryTests(AtlasFixture):
             time.sleep(0.02)
             with lock:
                 active -= 1
-            return runner.CommandResult("success", xml(target, up=target.endswith(".10")))
+            return runner.CommandResult("success", xml(target, responder="192.0.2.10"))
         with patch.object(discovery, "run", fake):
             receipt = discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
-        self.assertEqual(len(seen), 4)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(len(receipt["probes"]), 5)
         self.assertLessEqual(maximum, self.policy.limits.concurrent_probes)
         self.assertEqual(receipt["completion"], "complete")
         self.assertEqual(self.store.connection.execute("SELECT COUNT(*) FROM probes WHERE absence_eligible=1").fetchone()[0], 1)
@@ -407,4 +411,4 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result.outcome, "unavailable")
         with patch.object(runner.subprocess, "Popen", side_effect=AssertionError("expired operation must not spawn")):
             result = runner.run(("never",), self.limits, time.monotonic() - 1)
-        self.assertEqual(result.outcome, "timeout")
+        self.assertEqual(result.outcome, "not_started")

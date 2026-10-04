@@ -65,7 +65,7 @@ not an LLM-import API. The following is the normative field contract:
 
     ProbeOutcome
       id, probe_name (fixed code-owned identifier)
-      outcome=[success,unavailable,timeout,output_limit,command_failed,parse_failed]
+      outcome=[success,unavailable,timeout,output_limit,command_failed,parse_failed,not_started]
       started_at, ended_at
       coverage_kind=[local_host,exact_network,exact_target,none]
       coverage_value (exact configured CIDR/alias, never derived expansion)
@@ -97,6 +97,20 @@ facts, histories, status transitions, immutable result, and events in one explic
 transaction. Retry returns the stored result byte-for-byte without new events.
 Reject inconsistent times/outcomes, out-of-scope observations, unknown enums, and
 excessive counts before insertion. No subprocess executes under a write lock.
+
+Issue #2 adds not_started for budget exhaustion before child spawn. timeout now
+means started work exceeded its effective deadline, not an unreachable host.
+success/completed_at_boundary retains a valid completed transport after parsing
+crossed the transport deadline; whole-operation persistence still must succeed.
+All are native diagnostics, never authority from source XML. Schema version 1
+and immutable legacy records are retained: no columns/history are rewritten.
+Older binaries unaware of the additive outcome enum fail closed when reading new
+not_started batches; update shared-store readers deliberately before consuming
+these records. Legacy operation_deadline_exceeded timeouts cannot retrospectively
+prove whether a child started; retain their ambiguity rather than rewriting them.
+Status probe_summary adds address_count and address_outcome_counts for native
+ping_<numeric-index> records only, excluding ping_coverage. Aggregate-only legacy
+evidence reports zero such records instead of inventing checks from its CIDR.
 
 ## 3. Freshness and absence
 

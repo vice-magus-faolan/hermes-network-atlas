@@ -65,9 +65,10 @@ def _probe(policy: Policy, alias: str, definition: ProbeDefinition, deadline: fl
         except (ValueError, TypeError, KeyError, RecursionError, UnicodeError):
             result = replace(result, outcome="parse_failed", diagnostic_code="invalid_bounded_output")
             observations = ()
-    if time.monotonic() >= deadline:
-        result = replace(result, outcome="timeout", diagnostic_code="host_operation_deadline_exceeded")
-        observations = ()
+    # The shared runner owns I/O deadlines. Do not relabel completed transport
+    # or never-started work merely because parsing/cleanup crossed the boundary.
+    if result.outcome == "success" and time.monotonic() >= deadline:
+        result = replace(result, diagnostic_code="completed_at_boundary")
     return Probe(name, result.outcome, start, timestamp(utc_now()),
                  "exact_target" if result.outcome == "success" else "none",
                  alias if result.outcome == "success" else "", "ssh_response", result.diagnostic_code, observations)

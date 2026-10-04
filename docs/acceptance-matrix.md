@@ -30,6 +30,29 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 
 ## Acceptance requirements
 
+Issue #2 bounded-coverage regressions are discovered by the same verifier; it
+explicitly refuses to run if the critical chunk/legacy regression IDs are absent:
+
+- A07: `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_sparse_24_startup_budget_reaches_last_address_and_reconciles_exact_batch`
+  proves startup-cost RED/GREEN, complete sparse /24 tail coverage and exact-batch retry.
+- A08: `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_mid_chunk_deadline_keeps_earlier_positive_and_marks_tail_not_started`,
+  `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_completed_at_transport_boundary_retained_no_late_chunk`,
+  `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_last_completed_chunk_at_boundary_keeps_complete_coverage`,
+  `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_deadline_rechecked_immediately_before_owned_spawn`,
+  `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_fixed_argv_serial_process_internal_concurrency_rate_and_lowered_bounds`,
+  `tests/test_discovery_chunks.py::ChunkParserTests::test_multi_host_accounting_down_records_and_boundaries`, and
+  `tests/test_discovery_chunks.py::ChunkParserTests::test_hostile_duplicate_out_of_chunk_stats_and_output_bounds`
+  cover scheduling, parser trust boundaries, lowered intensity, time/output/observation bounds.
+- A10: `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_failed_chunk_output_parser_and_persistence_do_not_damage_history`
+  proves failed chunks disqualify absence and persistence failure leaves old history intact.
+- A14: `tests/test_status_remediation.py::StatusBatchBoundsTests::test_legacy_per_address_24_and_25_totals_remain_readable_after_restart`
+  retains immutable legacy accounting; new address_count/address_outcome_counts
+  exclude synthetic coverage. New not_started is never success/absence eligibility.
+- The common runner seam also has
+  `tests/test_inspection_extra.py::ActualInspectionBoundsTests::test_shared_runner_completion_and_not_started_are_not_relabelled_after_parsing`;
+  no SSH capability or permissions changed. Exact fixed-argv/collector-contract
+  amendment and real-world timing caveats are in local-discovery.md and addendum §6.
+
 - **A01 Native plugin**: supported install/enable, discovery, schemas, actual
   tool invocation, and operator commands under a temporary Hermes home.
 - **A02 Persistence**: reopen/fresh process retains IDs, facts, relations,

@@ -138,56 +138,76 @@ def _bounded(observations: list[Observation], policy: Policy) -> tuple[Observati
 
 
 def nmap(data: bytes, target: str, at: str, policy: Policy) -> tuple[Observation, ...]:
-    """Require successful complete one-target numeric XML; no entity expansion.
+    """Require successful complete numeric chunk XML; no entity expansion.
 
-    Nmap's empty DOCTYPE is accepted, but internal/external entities are refused.
+    Only Nmap's literal empty DOCTYPE is accepted; other declarations are refused.
     Prefix /32 records a host address, not a claimed interface subnet mask.
     """
-    if b"<!ENTITY" in data.upper() or b"<!DOCTYPE" in data.upper() and b"[" in data:
-        raise ValueError("XML entities refused")
-    root = ElementTree.fromstring(data)
+    network = ip_network(target, strict=True)
+    if network.version != 4 or network.num_addresses > 16:
+        raise ValueError("bounded IPv4 chunk required")
+    root = _nmap_xml(data, policy)
     if root.tag != "nmaprun" or len(list(root.iter())) > policy.limits.observations * 16 + 32:
         raise ValueError("invalid/bounded Nmap XML")
-    stats = root.find("runstats")
-    if stats is None:
+    stats = root.findall("runstats")
+    if len(stats) != 1:
         raise ValueError("incomplete scan")
-    up = _scan_stats(stats)
+    up, down = _scan_stats(stats[0], network.num_addresses)
     hosts = root.findall("host")
-    if len(hosts) > 1:
+    if len(hosts) > network.num_addresses:
         raise ValueError("unexpected target count")
-    statuses = [host.find("status") for host in hosts]
-    positive_hosts = sum(status is not None and status.get("state") == "up" for status in statuses)
-    if positive_hosts != up:
-        raise ValueError("host evidence disagrees with coverage summary")
     observations = []
+    seen = set()
     for host in hosts:
-        observations.extend(_nmap_host(host, target, at))
+        address, parsed = _nmap_host(host, network, at)
+        if address in seen:
+            raise ValueError("duplicate host address")
+        seen.add(address)
+        observations.extend(parsed)
+    if len(observations) != up or len(hosts) - up > down:
+        raise ValueError("host evidence disagrees with coverage summary")
     return _bounded(observations, policy)
 
 
-def _scan_stats(stats) -> int:
-    finished, hosts = stats.find("finished"), stats.find("hosts")
-    if finished is None or hosts is None or finished.get("exit") != "success":
+def _nmap_xml(data: bytes, policy: Policy):
+    if len(data) > policy.limits.output_bytes:
+        raise ValueError("XML output bound exceeded")
+    # Decode before checking declarations so UTF-16/NUL tricks cannot bypass
+    # entity refusal. Numeric XML needs only UTF-8, never an external DTD.
+    text = data.decode("utf-8")
+    checked = text.replace("<!DOCTYPE nmaprun>", "", 1).upper()
+    if "<!DOCTYPE" in checked or "<!ENTITY" in checked or "\x00" in text:
+        raise ValueError("XML declarations/entities refused")
+    return ElementTree.fromstring(text)
+
+
+def _scan_stats(stats, expected: int) -> tuple[int, int]:
+    finished, hosts = stats.findall("finished"), stats.findall("hosts")
+    if len(finished) != 1 or len(hosts) != 1 or finished[0].get("exit") != "success":
         raise ValueError("unsuccessful scan")
-    up, down, total = (int(hosts.get(key, "-1")) for key in ("up", "down", "total"))
-    if total != 1 or up not in (0, 1) or down != 1 - up:
+    up, down, total = (int(hosts[0].get(key, "-1")) for key in ("up", "down", "total"))
+    if total != expected or not 0 <= up <= total or down != total - up:
         raise ValueError("inconsistent coverage")
-    return up
+    return up, down
 
 
-def _nmap_host(host, target: str, at: str) -> list[Observation]:
-    if host.get("timedout") == "true":
+def _nmap_host(host, network, at: str) -> tuple[str, list[Observation]]:
+    if host.get("timedout", "false") != "false":
         raise ValueError("timed out host")
-    status = host.find("status")
-    if status is None or status.get("state") not in {"up", "down"}:
+    statuses = host.findall("status")
+    if len(statuses) != 1 or statuses[0].get("state") not in {"up", "down"}:
         raise ValueError("invalid host status")
     addresses = host.findall("address")
+    if any(element.get("addrtype") not in {"ipv4", "mac"} for element in addresses):
+        raise ValueError("unexpected address family")
     ips = [element.get("addr") for element in addresses if element.get("addrtype") == "ipv4"]
     macs = [element.get("addr") for element in addresses if element.get("addrtype") == "mac"]
-    if ips != [target] or len(macs) > 1:
+    if len(ips) != 1 or len(macs) > 1:
         raise ValueError("out-of-target or duplicate address evidence")
-    _ip(ips[0])
-    if status.get("state") == "down":
-        return []
+    target = str(_ip(ips[0]))
+    if _ip(target) not in network:
+        raise ValueError("out-of-chunk address")
+    if statuses[0].get("state") == "down":
+        return target, []
     anchor = _anchor(macs[0] if macs else None, "ping_" + target.replace(".", "_"))
-    return [_address(anchor, target, 32, at)]
+    return target, [_address(anchor, target, 32, at)]

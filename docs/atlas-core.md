@@ -173,6 +173,15 @@ describe probe outcomes, not reachable device counts; the synthetic scope-covera
 probe is included. Absence qualification likewise uses the whole batch, never
 just displayed details.
 
+`address_count` and fixed-enum `address_outcome_counts` separately count native
+ping_<numeric-index> address checks, excluding the synthetic ping_coverage record.
+They apply to new chunked scans and legacy per-address /24 and /25 batches; these
+are checks, not responding-host/device counts. Aggregate-only legacy batches and
+non-ping collectors have no such per-address records (zero), not CIDR-derived
+invented checks. `not_started` is a non-success outcome, so it contributes to
+failure_count and disqualifies absence like timeout. Legacy timeout diagnostics
+remain unchanged and cannot retrospectively distinguish unstarted work.
+
 `probes` is a sample capped at `limits.result_count`, not a complete list when
 `omitted_count>0`. It orders failures first, then absence-eligible coverage, then
 probe name, deterministically. `probe_summary.detail_limit`, `returned_count`,
@@ -181,6 +190,10 @@ undisplayed failures contribute to every outcome/coverage total. No failure is
 silently presented as success. For example, /24 with one timeout has 257 probes,
 255 successes and two failures (timeout plus unsuccessful scope coverage).
 With detail_limit=1 it reports both failures in totals and one omitted failure.
+For new chunked /24 discovery, one failed 16-address chunk has 240 address
+successes, 16 unknown/failed checks, and unsuccessful synthetic scope coverage:
+257 total probes but exactly 256 address checks. A success with diagnostic
+completed_at_boundary remains a success; see local-discovery.md for bounds.
 Status has no per-probe pagination; device history is NOT a route to batch probe
 metadata. The original bounded collection receipt contains all per-probe outcome/
 diagnostic entries at collection time. Inventory/history limits are unchanged,

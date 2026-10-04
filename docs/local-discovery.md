@@ -80,15 +80,30 @@ duplicate JSON keys, excessive records, invalid prefixes/states/MACs or scalar
 values fail that probe, not every other successful positive probe.
 
 Active discovery enumerates every address in the exact configured IPv4 CIDR,
-including network/broadcast addresses, and invokes one bounded host-discovery
-command per address, with at most concurrent_probes owned children (default 4):
+including network/broadcast addresses. It splits the scope in ascending order
+into fixed /28 chunks (16 addresses); scopes smaller than /28 are one chunk.
+Exactly one owned child runs at a time, with internal Nmap outstanding probes
+capped at C=limits.concurrent_probes (1..4):
 
-    nmap -sn -n -PS80,443 --host-timeout <configured-seconds>s --max-parallelism 1 -oX - <code-derived-numeric-address>
+    nmap -sn -n -PS80,443 --host-timeout <configured-seconds>s --max-parallelism <C> --max-rate <8*C> -oX - <code-derived-chunk-CIDR>
 
 Targets are derived only from the validated selected CIDR, never caller strings
-or routes. This per-host shape enforces a real per-host wall deadline instead
-of trusting that a single whole-range Nmap process applies --host-timeout to all
-of its discovery work. There is no shell, elevation, arbitrary port range,
+or routes. Aggregate process concurrency is 1; aggregate internal outstanding
+probe concurrency is 1*C<=4, not four children each running four probes. The
+additional code-owned rate cap is 8*C<=32 packets/second per Nmap invocation;
+serial execution prevents rate multiplication across simultaneous children.
+Nmap documents this as an average sending-rate cap, not an instantaneous wire-
+packet/OS sandbox guarantee (it may catch up after delays); kernel ARP and trusted
+executables remain outside such a guarantee. No --min-rate or timing template
+forces traffic. Lowering C lowers both internal parallelism and this extra cap.
+--max-hostgroup is intentionally absent: Nmap documents it as ineffective for -sn.
+
+The whole chunk is externally bounded by min(command_timeout_seconds,
+host_timeout_seconds, remaining transport budget), default at most 10 seconds.
+Thus host-discovery internals cannot outlive the existing per-host wall ceiling;
+--host-timeout is also retained, not relied on as the sole bound. No timeout,
+privilege, supported subnet size or existing resource ceiling was increased.
+There is no shell, elevation, arbitrary port range,
 script, service/OS scan, UDP probe, target file or automatic installation.
 -PS80,443 explicitly overrides Nmap's default discovery probe set: these fixed
 TCP SYN/connect probes discover hosts, not services. -sn suppresses port scans;
@@ -98,9 +113,15 @@ unprivileged execution generally uses TCP connect. No privilege is acquired by
 the plugin. Installed executables and PATH are trusted local inputs, not a
 sandbox. Reference: https://nmap.org/book/host-discovery-controls.html.
 
-Each numeric target must have a successful complete one-target XML summary,
-consistent up/down/total counts, non-timeout host data and only that IP. XML
-entities, inconsistent/truncated output and out-of-target injection are refused.
+Each chunk must have a successful complete XML summary with total equal to its
+exact address count, up+down=total, and up equal to the number of positive host
+records. Down hosts may be omitted; explicit down records are validated too.
+Every host must have exactly one numeric IPv4 address inside the requested chunk,
+one valid status, no timeout marker and at most one MAC. Duplicate host/IP/status/
+runstats records, other address families, inconsistent/truncated output and
+out-of-chunk injection are refused. UTF-8 byte, element and observation bounds
+remain enforced. Only the literal empty <!DOCTYPE nmaprun> is accepted; external
+DTDs, internal subsets, ENTITY declarations, UTF-16/NUL tricks are refused.
 Reported MACs anchor identity; IP-only responses remain unresolved evidence.
 Unprivileged/off-link Nmap often cannot report a MAC: the atlas does not guess
 that an existing owner of a responding IP is the same device, or import stale
@@ -116,8 +137,35 @@ Collection reserves a bounded slice for SQLite finalization, lowers busy waits
 to the remaining budget, and checks the deadline before commit. Parsing and
 aggregate observation overflow fail probes; overflow disqualifies exact coverage.
 Every active address gets an outcome, and a separate ping_coverage probe succeeds
-only when every host command/parse succeeded. Partial/failed scans cannot assert
+only when every chunk command/parse succeeded. Per-address ping_0..ping_N records
+retain their legacy shape; a successful chunk derives checked-not-observed outcomes
+for omitted addresses, not fake host observations. All addresses of a failed chunk
+remain unknown with that failure's outcome: a chunk timeout does not attest that
+each individual address received a packet before cancellation. Earlier completed chunks retain their
+positive evidence even if a later chunk times out or produces invalid/output-limit
+XML. An interrupted chunk's unfinished XML is not salvaged as complete evidence.
+Partial/failed scans cannot assert
 absence even when they contain useful positive observations.
+
+Deadline accounting distinguishes not_started/operation_deadline_exceeded (no
+child launched for this work), timeout/deadline_exceeded (a launched child killed
+at its effective deadline), and success/completed_at_boundary (complete transport
+and valid parse retained even if cleanup/postprocessing crossed the transport
+boundary). Successful empty XML is a completed check, not proof of a responding
+host. No later chunk starts after the shared transport deadline; the runner also
+rechecks immediately before spawning. Persistence still must fit the whole-operation
+budget and is atomic: receipt/output/SQL/operation failure rolls back without
+claiming a persisted batch or changing prior history. Bounds are cooperative,
+not a guarantee against OS descheduling between the last check and a syscall.
+
+This is the minimal issue #2 fixed-argv/collector-contract amendment: /24 now
+needs 16 children rather than 256, preserving completed chunk evidence without
+cross-batch resumability. /25 needs eight; smaller scopes never expand. Fixed
+chunk size 16 and rate factor 8 are conservative code-owned design choices, not
+live-tuned measurements. The deterministic sparse fixture proves within-budget
+coverage including the last address; it does NOT guarantee real-world /24 completion.
+Slow/failing networks or lowered limits may still be partial. No live benchmark,
+scan, SSH, policy edit or richer scanning was performed for this change.
 
 The runner is POSIX with waitid/WNOWAIT (tested on Linux). It uses shell=False,
 null stdin, closed inherited descriptors and a new owned process group. Output
@@ -208,6 +256,11 @@ controls, out-of-scope collision metadata, deterministic deadline rollback/reope
 retry, actual SQLite VM interruption, shared initialization/lock budgets, targeted
 selection and a 2,000-observation two-selection control. All are discovered by
 the canonical verifier; deterministic budget tests avoid tight timing assumptions.
+Issue #2 regressions in tests/test_discovery_chunks.py cover startup-cost RED/GREEN,
+sparse /24 tail responders, multi-host XML/accounting/hostile declarations, deadline
+mid-chunk, completed-at-boundary work, lowered intensity, failed chunk and persistence
+rollback. tests/test_status_remediation.py additionally preserves legacy per-address
+/24 and /25 totals across native public read surfaces and fresh-process restart.
 These are tests/test_discovery.py, tests/test_discovery_extra.py and the actual
 native fixture in tests/test_runtime.py / scripts/runtime_smoke.py. The native
 loader/registry/handlers are real; transport is a scratch-only executable fixture

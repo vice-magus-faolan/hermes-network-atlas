@@ -247,7 +247,27 @@ def _probe_totals(store: Store, batch: str) -> dict:
         eligible += row["absence_eligible"] * row["count"]
     total = sum(outcomes.values())
     return {"total_count": total, "outcome_counts": outcomes, "coverage_counts": coverage,
-            "failure_count": total - outcomes["success"], "absence_eligible_count": eligible}
+            "failure_count": total - outcomes["success"], "absence_eligible_count": eligible,
+            **_address_totals(store, batch)}
+
+
+def _address_totals(store: Store, batch: str) -> dict:
+    """Count native per-address ping records, excluding synthetic coverage.
+
+    Legacy per-address names remain valid; aggregate-only legacy evidence has
+    zero such records, not an invented address count derived from its CIDR.
+    """
+    outcomes = dict.fromkeys(OUTCOMES, 0)
+    rows = store.connection.execute(
+        "SELECT outcome,COUNT(*) AS count FROM probes WHERE batch_id=? "
+        "AND batch_id IN (SELECT id FROM batches WHERE collector='ping') "
+        "AND probe_name GLOB 'ping_[0-9]*' AND substr(probe_name,6) NOT GLOB '*[^0-9]*' "
+        "GROUP BY outcome LIMIT ?", (batch, len(outcomes) + 1)).fetchall()
+    for row in rows:
+        if row["outcome"] not in outcomes:
+            raise ValueError("invalid address outcome enum")
+        outcomes[row["outcome"]] = row["count"]
+    return {"address_count": sum(outcomes.values()), "address_outcome_counts": outcomes}
 
 
 def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | None:

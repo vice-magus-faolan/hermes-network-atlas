@@ -6,7 +6,7 @@ import argparse
 from collections import Counter
 from contextlib import redirect_stdout
 import io
-from ipaddress import ip_network
+from ipaddress import ip_address, ip_network
 import json
 import os
 from pathlib import Path
@@ -115,7 +115,7 @@ class StatusBatchBoundsTests(unittest.TestCase):
         last = str(list(ip_network(self.policy.networks[0].cidr))[-1])
         def transport(argv, *args, **kwargs):
             self.assertEqual(argv[:4], ("nmap", "-sn", "-n", "-PS80,443"))
-            if completion == "failed" or completion == "partial" and argv[-1] == last:
+            if completion == "failed" or completion == "partial" and ip_address(last) in ip_network(argv[-1]):
                 return runner.CommandResult("timeout", diagnostic_code="command_deadline_exceeded")
             return runner.CommandResult("success", xml(argv[-1], up=False))
         with storage.Store(self.policy, writable=True) as store:
@@ -131,7 +131,9 @@ class StatusBatchBoundsTests(unittest.TestCase):
         self.assertEqual(summary["scope_value"], self.policy.networks[0].cidr)
         self.assertEqual(summary["probe_summary"]["coverage_counts"]["exact_network"], int(completion == "complete"))
         self.assertEqual(summary["probe_summary"]["outcome_counts"]["timeout"],
-                         size if completion == "failed" else int(completion == "partial"))
+                         size if completion == "failed" else 16 * int(completion == "partial"))
+        self.assertEqual(summary["probe_summary"]["address_count"], size)
+        self.assertEqual(sum(summary["probe_summary"]["address_outcome_counts"].values()), size)
         self.assertIsNone(results["direct"]["last_inspection"])
 
     def test_full_size_ping_complete_partial_failed_and_small_control_after_restart(self):
@@ -146,6 +148,26 @@ class StatusBatchBoundsTests(unittest.TestCase):
                 for limit in (1, 2):
                     with self.subTest(prefix=prefix, completion=completion, limit=limit):
                         self.ping_scenario(prefix, completion, limit)
+
+    def test_legacy_per_address_24_and_25_totals_remain_readable_after_restart(self):
+        for prefix in (24, 25):
+            self.temp.cleanup()
+            self.setUp()
+            self.configure(prefix=prefix, limit=1)
+            size = ip_network(self.policy.networks[0].cidr).num_addresses
+            at = storage.timestamp(NOW)
+            probes = tuple(batches.Probe(f"ping_{i}", "success" if i < size - 1 else "timeout", at, at,
+                                         "none", "", "ping_response", "ok" if i < size - 1 else "operation_deadline_exceeded")
+                           for i in range(size))
+            coverage = batches.Probe("ping_coverage", "command_failed", at, at, "none", "", "ping_response", "incomplete_scope")
+            with storage.Store(self.policy, writable=True) as store:
+                core.create_device(store, "Synthetic known host", now=NOW)
+                receipt = batches.store_batch(store, "ping", "lab", at, at, "partial", probes + (coverage,), receipt=True)
+            results = self.assert_public_reopen(receipt, 1)
+            counts = results["direct"]["last_discovery"]["probe_summary"]
+            self.assertEqual(counts["address_count"], size)
+            self.assertEqual(counts["address_outcome_counts"]["timeout"], 1)
+            self.assertEqual(counts["address_outcome_counts"]["not_started"], 0)
 
     def test_lowered_limit_passive_and_ssh_status_keep_distinct_complete_evidence(self):
         self.configure(limit=1)

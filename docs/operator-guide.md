@@ -117,6 +117,17 @@ batch probe detail; collection returns the full bounded outcome/diagnostic recei
 See [Atlas Core](atlas-core.md) for exact field semantics. Public status still obeys
 the serialized output_bytes ceiling; a too-small ceiling refuses read-only.
 
+Ping discovery uses serial fixed 16-address chunks, preserving earlier completed
+evidence when a later chunk fails. New address_count/address_outcome_counts exclude
+the synthetic scope-coverage probe. not_started means the work had no child because
+its budget expired; timeout means started transport exceeded its deadline; neither
+means offline. success/completed_at_boundary retains valid finished work despite
+postprocessing crossing the transport boundary. Chunk failures leave all their
+addresses unknown, never absent. Legacy /24 and /25 records remain readable, but
+old timeout diagnostics remain ambiguous; upgrade shared-store readers for the
+additive outcome enum. See local-discovery.md for fixed argv, total concurrency/
+average-rate bounds and limitations. No real-world completion guarantee is made.
+
 The slash runtime cannot attest human origin, so `/network update` refuses.
 Use the trusted local operator CLI for user-supplied knowledge:
 

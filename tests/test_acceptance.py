@@ -62,7 +62,7 @@ class CumulativeAcceptanceTests(unittest.TestCase):
         calls = (fixture / "calls.jsonl").read_bytes()
         log = [json.loads(line) for line in calls.splitlines()]
         self.assertEqual({row["args"][-2] for row in log if row["binary"] == "ssh"}, {"lab-a", "lab-b", "lab-c"})
-        self.assertEqual(len([row for row in log if row["binary"] == "nmap"]), 16)
+        self.assertEqual(len([row for row in log if row["binary"] == "nmap"]), 2)
         for name in ("ip", "nmap", "ssh"):
             (fixture / name).unlink()
         second = subprocess.run([*command, "reopen"], env=env, cwd=root, capture_output=True, text=True, timeout=60)

@@ -11,9 +11,12 @@ compatibility validate-update command still reports applied=false/persisted=fals
 Explicit bounded passive/Nmap discovery, immutable evidence batches and
 transactional idempotent reconciliation are implemented. Explicit current-policy
 SSH inspection uses fixed read-only probes and immutable attempt evidence.
-Collection alone never rewrites canonical inventory. Supported native scratch
-install/enable and a three-alias fixture workflow/restart are exercised by the
-canonical verifier. Passing synthetic checks does not establish live-network
+Collection alone never rewrites canonical inventory.
+Ping collection uses serial fixed 16-address chunks with bounded internal
+parallelism/rate and distinct not-started/timeout/completed-at-boundary evidence;
+hard ceilings are unchanged and real-world /24 completion is not guaranteed.
+Supported native scratch install/enable and a three-alias fixture workflow/restart
+are exercised by the canonical verifier. Passing synthetic checks does not establish live-network
 readiness, reviewer approval, target integration or publication.
 
 Network Atlas observes and remembers infrastructure. It does not administer it.

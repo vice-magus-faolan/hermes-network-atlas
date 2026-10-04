@@ -12,22 +12,19 @@ MACS = {"lab-a": "00:11:22:33:44:11", "lab-b": "00:11:22:33:44:22", "lab-c": "00
 
 
 def nmap(args: list[str], stage: str) -> str:
-    assert args[:-1] == ["-sn", "-n", "-PS80,443", "--host-timeout", "10s", "--max-parallelism", "1", "-oX", "-"]
-    target = args[-1]
-    assert target in {f"192.0.2.{n}" for n in range(8)}
+    assert args[:-1] == ["-sn", "-n", "-PS80,443", "--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-"]
+    assert args[-1] == "192.0.2.0/29"
     records = {1: MACS["lab-a"], 2: MACS["lab-b"], 3: MACS["lab-c"], 4: None, 5: "00:11:22:33:44:55"}
     if stage == "changed":
         records = {2: "00:11:22:33:44:66", 4: None, 6: MACS["lab-a"]}
-    number = int(target.rsplit(".", 1)[1])
-    up = number in records
-    mac = records.get(number)
-    host = f'<host><status state="up"/><address addr="{target}" addrtype="ipv4"/>' if up else ""
-    if mac:
-        host += f'<address addr="{mac}" addrtype="mac"/>'
-    if up:
-        host += "</host>"
-    return ('<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun>' + host +
-            f'<runstats><finished exit="success"/><hosts up="{int(up)}" down="{int(not up)}" total="1"/></runstats></nmaprun>')
+    hosts = []
+    for number, mac in sorted(records.items()):
+        host = f'<host><status state="up"/><address addr="192.0.2.{number}" addrtype="ipv4"/>'
+        if mac:
+            host += f'<address addr="{mac}" addrtype="mac"/>'
+        hosts.append(host + "</host>")
+    return ('<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun>' + ''.join(hosts) +
+            f'<runstats><finished exit="success"/><hosts up="{len(records)}" down="{8 - len(records)}" total="8"/></runstats></nmaprun>')
 
 
 def ssh(args: list[str], stage: str) -> str:
