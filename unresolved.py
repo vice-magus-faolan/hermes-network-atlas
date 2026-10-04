@@ -38,7 +38,19 @@ def _application(store: Store, batch: str) -> dict | None:
     result = json.loads(row["result_json"])
     if not isinstance(result, dict) or not isinstance(result.get("unresolved", []), list):
         raise ValueError("invalid stored application")
+    for entry in result.get("unresolved", []):
+        _validate_entry(entry)
     return {**dict(row), "result": result}
+
+
+def _validate_entry(entry: object) -> None:
+    """Reject malformed saved identity data before original or later aggregation."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("evidence_id"), str):
+        raise ValueError("invalid stored application")
+    candidates = entry.get("candidate_device_ids", [])
+    if (not isinstance(entry.get("reason"), str) or not isinstance(candidates, list)
+            or any(not isinstance(candidate, str) for candidate in candidates)):
+        raise ValueError("invalid stored application")
 
 
 def _reason(store: Store, application: dict | None, ids: set[str]) -> tuple[str | None, list[str]]:

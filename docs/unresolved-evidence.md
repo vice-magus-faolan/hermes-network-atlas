@@ -60,8 +60,12 @@ Each evidence item exposes:
   scope_kind/name/value, start/end time, original completion, whole-batch
   probe_summary and scope_absence_eligible. Summaries count all legacy V1 outcomes
   and none/local_host/exact_network/exact_target coverage independently of page
-  size. Complete/partial/failed is shown unchanged; a positive row in a partial
-  batch does not attest full subnet coverage. No dependency on issue #2 changes.
+  size, including additive `not_started` from serial /28 collection. Address-level
+  address_count/address_outcome_counts exclude the synthetic scope probe;
+  aggregate-only historical records do not invent address counts from the CIDR.
+  Complete/partial/failed is shown unchanged; a positive row in a partial batch
+  does not attest full subnet coverage. Legacy per-address /24 and /25 records
+  remain readable; old timeout ambiguity is not retroactively reclassified.
 - `probe`: stored ID/name, outcome/diagnostic, coverage_kind/value, start/end time
   and absence eligibility. Local-host and exact-network/target coverage differ.
   A scope-coverage probe is counted in the batch total, not an additional host.
@@ -121,6 +125,10 @@ payloads and saved receipts are bounded before JSON parsing; oversized payloads
 refuse without returning a truncated value. Saved receipts are bounded
 before JSON parsing by the reader's output_bytes; a lowered byte cap may refuse
 older larger receipts even for limit=1. Final JSON uses that same output cap.
+Saved unresolved entries require string evidence_id/reason and an optional list
+of string candidate_device_ids; malformed entries fail with a controlled query
+error, for original applications and subsequent lineage alike. No receipt is
+rewritten or repaired by reading it.
 One operation_timeout_seconds budget covers the read, with SQLite progress
 interruption during long statements, bounded busy waits, Python phase checks and
 snapshot cleanup on failure. No unbounded receipt or lineage walk is exposed.

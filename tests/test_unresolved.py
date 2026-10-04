@@ -377,7 +377,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
             row = self.rows(batch_id=batch)[0]
             self.assertEqual(row["batch"]["completion"], completion)
             self.assertEqual(row["batch"]["probe_summary"]["outcome_counts"], dict.fromkeys(batches.OUTCOMES, 1))
-            self.assertEqual(row["batch"]["probe_summary"]["failure_count"], 5)
+            self.assertEqual(row["batch"]["probe_summary"]["failure_count"], len(batches.OUTCOMES) - 1)
             self.assertIsNone(row["probe"])
 
     def test_same_timestamp_latest_application_and_reused_unresolved_label(self):
@@ -407,4 +407,109 @@ class UnresolvedEvidenceTests(unittest.TestCase):
             self.rows(policy=small, batch_id=first)
         with self.assertRaisesRegex(ValueError, "invalid stored address"):
             self.rows(batch_id=first)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_malformed_stored_receipt_entries_fail_in_public_error_envelope(self):
+        for entry in (None, "not an entry", {}, {"evidence_id": []},
+                      {"reason": None}, {"reason": []}, {"candidate_device_ids": None},
+                      {"candidate_device_ids": "not a list"}, {"candidate_device_ids": [[]]}):
+            with self.subTest(entry=entry):
+                batch = self.batch([self.observation()])
+                evidence_id = self.rows(batch_id=batch)[0]["id"]
+                if isinstance(entry, dict) and "evidence_id" not in entry and entry:
+                    entry = {"evidence_id": evidence_id, "reason": "synthetic", **entry}
+                with self.store.transaction():
+                    self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
+                        ("receipt-" + batch, batch, 1, storage.timestamp(NOW), storage.encode({"unresolved": [entry]})))
+                before = self.snapshot()
+                with self.assertRaisesRegex(ValueError, "invalid stored application"):
+                    self.rows(batch_id=batch)
+                answer = json.loads(tools.Handlers(self.home).query({"view": "unresolved", "batch_id": batch}))
+                self.assertEqual(answer, {"error": "invalid query or local policy", "applied": False})
+                self.assertEqual(self.snapshot(), before)
+
+    def test_malformed_later_receipt_refuses_original_lineage_read_only(self):
+        anchor = batches.Anchor("mac", MAC)
+        first = self.batch([self.observation(anchor=anchor)])
+        later = self.batch([self.observation(anchor=anchor)])
+        with self.store.transaction():
+            self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
+                ("invalid-later", later, 1, storage.timestamp(NOW), storage.encode({"unresolved": [None]})))
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, "invalid stored application"):
+            self.rows(batch_id=first)
+        self.assertEqual(self.snapshot(), before)
+
+    def collect_chunks(self, *, partial, mac=""):
+        from test_discovery import discovery, runner, xml
+        clock, calls = [0.0], []
+        def transport(argv, limits, deadline, **kwargs):
+            calls.append(argv[-1])
+            if partial and len(calls) == 2:
+                clock[0] = deadline
+                return runner.CommandResult("timeout", diagnostic_code="deadline_exceeded")
+            clock[0] += 1
+            return runner.CommandResult("success", xml(argv[-1], mac=mac))
+        with patch.object(discovery.time, "monotonic", side_effect=lambda: clock[0]), patch.object(discovery, "utc_now", return_value=NOW), patch.object(discovery, "run", transport):
+            receipt = discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
+        self.assertEqual(len(calls), 2 if partial else 16)
+        return receipt
+
+    def test_chunk_evidence_partial_not_started_and_complete_bounded_pages(self):
+        for partial in (True, False):
+            with self.subTest(partial=partial):
+                receipt = self.collect_chunks(partial=partial)
+                batch = receipt["batch_id"]
+                page = self.read(batch_id=batch, limit=1)
+                row = page["evidence"][0]
+                self.assertEqual(row["identity_state"], "never_reconciled")
+                self.assertEqual(page["has_more"], not partial)
+                totals = row["batch"]["probe_summary"]
+                self.assertEqual(totals["total_count"], 257)
+                self.assertEqual(totals["address_count"], 256)
+                self.assertEqual(totals["address_outcome_counts"]["success"], 16 if partial else 256)
+                self.assertEqual(totals["address_outcome_counts"]["timeout"], 16 if partial else 0)
+                self.assertEqual(totals["address_outcome_counts"]["not_started"], 224 if partial else 0)
+                self.assertEqual(totals["failure_count"], 241 if partial else 0)
+                self.assertEqual(row["batch"]["scope_absence_eligible"], not partial)
+                self.assertTrue(row["historical_responder_evidence"])
+                self.assertEqual(row["probe"]["outcome"], "success")
+                self.assertEqual(row["probe"]["coverage_kind"], "none")
+                self.assertFalse(row["probe"]["absence_eligible"])
+                result = self.apply(batch)
+                self.assertEqual(result["new"], [])
+                self.assertFalse(result["missing"])
+                before = self.snapshot()
+                reader = replace(self.policy, limits=replace(self.policy.limits, result_count=1))
+                row = self.rows(policy=reader, batch_id=batch)[0]
+                self.assertEqual(row["batch"]["probe_summary"], totals)
+                self.assertEqual(row["identity_state"], "reconciled_unresolved")
+                self.assertEqual(row["identity_reason"], "no_unique_stable_interface")
+                self.assertEqual(self.snapshot(), before)
+
+    def test_partial_chunk_original_later_lineage_and_foreign_visibility(self):
+        receipt = self.collect_chunks(partial=True, mac=MAC)
+        batch = receipt["batch_id"]
+        device = self.apply(batch)["new"][0]
+        later = self.batch([self.observation(anchor=batches.Anchor("mac", MAC))])
+        self.apply(later)
+        row = self.rows(batch_id=batch)[0]
+        self.assertEqual(row["identity_state"], "subsequently_resolved")
+        self.assertEqual(row["resolved_device_ids"], [device])
+        self.assertEqual(row["application"]["batch_id"], batch)
+        self.assertEqual(row["lineage"]["batch_id"], later)
+        self.assertEqual(row["lineage"]["resolved_device_ids"], [device])
+        reader = config.validate_policy({"store": {"shared_sqlite_path": str(self.policy.database)},
+                                         "limits": {"result_count": 1}}, self.home / "foreign")
+        before = self.snapshot()
+        foreign = self.rows(policy=reader, batch_id=batch)[0]
+        self.assertEqual(foreign["lineage"], row["lineage"])
+        self.assertEqual(foreign["batch"]["probe_summary"], row["batch"]["probe_summary"])
+        self.assertFalse(foreign["batch"]["local_policy_context"])
+        self.assertEqual(foreign["batch"]["completion"], "partial")
+        self.assertFalse(foreign["batch"]["scope_absence_eligible"])
+        with self.assertRaises(ValueError):
+            self.apply(batch, policy=reader)
+        with patch.object(inspection, "run", side_effect=AssertionError("foreign inspection")), self.assertRaises(ValueError):
+            inspection.collect(reader, {"target": "lab-router"})
         self.assertEqual(self.snapshot(), before)

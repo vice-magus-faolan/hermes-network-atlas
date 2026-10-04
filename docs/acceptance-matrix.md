@@ -30,6 +30,15 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 
 ## Acceptance requirements
 
+Combined discovery/evidence regressions are mandatory in the canonical verifier:
+`tests/test_unresolved.py::UnresolvedEvidenceTests::test_chunk_evidence_partial_not_started_and_complete_bounded_pages`
+checks complete/partial /24 address accounting including not_started under a
+one-row evidence bound;
+`tests/test_unresolved.py::UnresolvedEvidenceTests::test_partial_chunk_original_later_lineage_and_foreign_visibility`
+preserves original/later identity and foreign read visibility without authority;
+`tests/test_unresolved.py::UnresolvedEvidenceTests::test_malformed_stored_receipt_entries_fail_in_public_error_envelope`
+proves malformed identity receipts refuse read-only in the public error envelope.
+
 Issue #2 bounded-coverage regressions are discovered by the same verifier; it
 explicitly refuses to run if the critical chunk/legacy regression IDs are absent:
 
