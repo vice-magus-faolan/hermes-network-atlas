@@ -23,6 +23,12 @@ diagnostics and bounded opt-in echo-datagram/TCP-connect collection. All methods
 share one budget and retain contributing method/port/time evidence; address
 counts are deduplicated. Legacy TCP 80/443 traffic is unchanged. Exact native
 admission, independent review and delivery remain gates for each new artifact.
+ICMP is disabled by default; extra ports such as 2222/optional 22000 require local
+operator policy. TCP 4403 is refused. No raw sockets, helper fallback, privilege
+grants, application payloads or service/identity conclusions are introduced.
+Requested methods are not proof of transmitted packets; filtered/no-response
+results remain uncertain. See the host-discovery contract for residual connection
+effects, check/response counts and a future separately authorized live recipe.
 Supported native scratch
 install/enable and a three-alias fixture workflow/restart are exercised by the
 canonical verifier. Passing synthetic checks does not establish live-network

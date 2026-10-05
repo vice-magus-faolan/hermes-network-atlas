@@ -33,6 +33,18 @@ REQUIRED_CHUNK_TESTS = {
 }
 
 REQUIRED_HOST_DISCOVERY_TESTS = {
+    "test_documentation.DocumentationTests.test_host_operator_contract_and_required_canonical_coverage",
+    "test_host_acceptance.CumulativeHostTests.test_every_method_uses_combined_budget_at_each_concurrency",
+    "test_host_acceptance.CumulativeHostTests.test_sparse_late_range_each_method_and_all_filtered_control",
+    "test_host_acceptance.CumulativeHostTests.test_sensitive_destinations_excluded_without_socket_or_helper",
+    "test_host_acceptance.CumulativeHostTests.test_hostile_echo_fields_and_bytes_never_qualify_response",
+    "test_host_acceptance.CumulativeHostTests.test_shared_receive_exhaustion_retains_other_method_evidence",
+    "test_host_acceptance.CumulativeHostTests.test_deadline_after_open_before_send_and_unregister_failure_cleanup",
+    "test_host_acceptance.CumulativeHostTests.test_legacy_and_new_exact_lineage_shared_read_without_apply_authority",
+    "test_host_transport.HostTransportTests.test_icmp_golden_header_and_hostile_reply_validation",
+    "test_host_transport.HostTransportTests.test_combined_probe_bound_before_capability_or_transport",
+    "test_host_transport.HostTransportTests.test_native_fixture_assertions_through_ordinary_local_public_handlers",
+    "test_acceptance.CumulativeAcceptanceTests.test_supported_admission_three_aliases_and_fresh_process_without_collection",
     "test_commands.OperatorStatusTests.test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt",
     "test_host_discovery_policy.HostDiscoveryPolicyTests.test_legacy_defaults_and_explicit_defaults_preserve_exact_transport",
     "test_host_discovery_policy.HostDiscoveryPolicyTests.test_strict_enablement_port_types_bounds_duplicates_cap_and_exclusion",
@@ -122,6 +134,8 @@ def main() -> int:
         print(f"ERROR: required discovery regression coverage absent: {sorted(missing)}")
         return 1
     print(f"Canonical verification: {count} tests discovered; cumulative synthetic V1, NOT live validation", flush=True)
+    print(f"Required discovery regressions: {len(REQUIRED_CHUNK_TESTS)} chunk/legacy and "
+          f"{len(REQUIRED_HOST_DISCOVERY_TESTS)} host/native IDs present", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

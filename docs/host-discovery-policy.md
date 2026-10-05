@@ -178,15 +178,82 @@ access or manufacture topology. Original/later unresolved lineage stays intact.
 
 ## Evidence and sources
 
+### Counts, transmission evidence and residual blindness
+
+`address_count` counts aggregate ping_<index> records, including excluded and
+not-started addresses. `address_outcome_counts.success` counts completed aggregate
+checks, not responders. `responding_address_count` deduplicates qualifying positive
+address observations across all contributing methods. `total_count` includes every
+method record, aggregate and synthetic coverage; observation counts retain each
+positive method separately. For two /31 hosts and ICMP plus four TCP ports there
+are 13 probe records and, if every method responds, 10 observations but only two
+responding addresses. A TCP refusal qualifies a response, not a listening service.
+
+A probe name records a requested method, not a wire-packet receipt. Disabled
+methods do no work and are disclosed by policy. not_started means no send/connect
+was initiated. unavailable can happen at open, bind or transport: it does not
+prove a packet was transmitted. timeout follows an initiated owned attempt but
+cannot prove what traversed the firewall or reached the target. A matching ICMP
+reply or connect/refusal result is actual response evidence for that method at
+its original UTC time, not current reachability. Legacy Nmap success attests a
+completed chunk/check, not individual transmitted packets or a responding method.
+No historical evidence is upgraded from requested flags to ICMP proof.
+
+ICMP, web TCP and extra ports can all be filtered or rate-limited. No reply cannot
+identify UFW, distinguish loss/routing from filtering, or prove a host offline.
+TCP connection attempts can contend with client limits or cause endpoint logs
+and kernel retransmissions without application payloads. Excluding 4403 avoids
+the known single-client radio transport risk; it is not an assurance that every
+other TCP port is harmless. No Syncthing, SSH, Meshtastic, service or identity is
+inferred from port numbers or replies. No UDP discovery is included.
+
+### Future live validation recipe — separate authorization required
+
+This is an unperformed plan, not a command to run during tests or permission to
+touch a real policy/store. A future operator must approve the exact reviewed SHA,
+profile, named network/CIDR, methods/ports, single-attempt bounds and private
+evidence destination first. Begin with an isolated empty atlas and a small
+operator-approved scope; exclude connection-sensitive endpoints as well as 4403.
+Do not use production state as an acceptance fixture or widen to routes/VPNs.
+
+1. Record the approved policy and ordinary-user runtime; do not install a helper,
+   grant capabilities, change permissions, kernel settings or firewall rules.
+   A packet-free echo-socket diagnostic may show only unverified or unavailable.
+   A preinstalled ping helper's privilege cannot be substituted for echo permission.
+2. Only after approval, invoke one `hermes network-atlas discover --network
+   <approved-name> --mode ping`. A permitted send/reply check is a live effect,
+   unlike the packet-free diagnostic. Stop on denial or unexpected target effects;
+   never retry via raw/helper/elevation or a different unauthorized port.
+3. Read the returned exact batch and status/unresolved views without rediscovery.
+   Compare requested methods with outcomes, diagnostics, original UTC times,
+   response versus check counts, exclusions and not-started work. Do not claim
+   a packet was sent from a method name alone. Do not infer absence from partial
+   coverage or identity/access/service from an address response.
+4. Reopen only that isolated atlas in a fresh process and compare exact batch and
+   evidence. Reconciliation is a separate explicit local write; it must preserve
+   unresolved IP-only identities, older evidence and idempotent results.
+5. Keep real addresses, policy, paths and batch IDs private. Publish only a
+   redacted outcome/limitation summary after operator consent. Broader rollout,
+   helper changes, firewall changes and production migration need new authority.
+
 Stage-1 regressions are in `tests/test_host_discovery_policy.py`, required by the
 canonical verifier alongside all original chunk regressions. Capability tests
 are deterministic socket mocks with no raw sockets, helper execution or packets.
 The supported native candidate-bound fixture remains mandatory; schema/unit
 checks do not substitute for admission/dispatch/fresh-process restart acceptance.
 The native harness exercises invalid policy refusal through real tool/slash/CLI,
-and valid synthetic socket collection retains method evidence on all three
-routes. The restarted process reads the same batch/port/time/identity evidence
+and nine synthetic method scenarios retain evidence on all three routes: ICMP
+responses with filtered web ports, true ICMP-only, TCP 2222-only and 22000-only,
+mixed three/five methods, denied/unsupported ICMP with TCP positives and all-
+filtered collection. The restarted process reads the same batch/port/time/identity evidence
 without transport. Candidate-bound admission is never replaced by socket mocks.
+`tests/test_host_acceptance.py` adds the every-method/every-concurrency combined
+budget matrix, sparse tail response by each of five methods and default all-
+filtered exhaustion control, sensitive destinations, hostile echo fields/bytes,
+shared receive exhaustion, deadline-before-send/unregister cleanup and exact
+legacy/new lineage with shared read visibility but no application authority.
+Critical test IDs are mandatory in scripts/verify.py alongside all prior chunk,
+unresolved and malformed-receipt controls; CI runs that same canonical command.
 
 References assessed for this decision:
 - https://man7.org/linux/man-pages/man7/icmp.7.html (Linux echo socket permissions)

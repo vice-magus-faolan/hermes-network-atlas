@@ -56,6 +56,8 @@ networks:
     discovery:
       passive: true
       ping: false
+      icmp_echo: false
+      tcp_ports: [80, 443]
 ssh:
   enabled: false
   hosts:
@@ -137,7 +139,7 @@ batch probe detail; collection returns the full bounded outcome/diagnostic recei
 See [Atlas Core](atlas-core.md) for exact field semantics. Public status still obeys
 the serialized output_bytes ceiling; a too-small ceiling refuses read-only.
 
-Ping discovery uses serial fixed 16-address chunks, preserving earlier completed
+Legacy ping discovery uses serial fixed 16-address chunks, preserving earlier completed
 evidence when a later chunk fails. New address_count/address_outcome_counts exclude
 the synthetic scope-coverage probe. not_started means the work had no child because
 its budget expired; timeout means started transport exceeded its deadline; neither
@@ -146,7 +148,14 @@ postprocessing crossing the transport boundary. Chunk failures leave all their
 addresses unknown, never absent. Legacy /24 and /25 records remain readable, but
 old timeout diagnostics remain ambiguous; upgrade shared-store readers for the
 additive outcome enum. See local-discovery.md for fixed argv, total concurrency/
-average-rate bounds and limitations. No real-world completion guarantee is made.
+average-rate bounds and limitations. Opt-in ICMP/nondefault-port policy instead
+uses one shared socket scheduler; not_started then means no send/connect began,
+not a missing child. A method name identifies requested policy, not proof of a
+transmitted packet. Check its outcome and diagnostic; unavailable can occur before
+or during transport. A timeout is an initiated attempt with no qualifying reply
+before its bound, not proof of a filtered or offline host. No real-world completion
+guarantee is made. See host-discovery-policy.md for response/check counts, helper
+permissions, residual firewall blindness and the separately authorized live recipe.
 
 The slash runtime cannot attest human origin, so `/network update` refuses.
 Use the trusted local operator CLI for user-supplied knowledge:
@@ -192,7 +201,10 @@ identity, ownership or inspection access. Foreign shared evidence remains visibl
 knowledge, not permission to apply it. See [the strict bounded evidence contract](unresolved-evidence.md)
 for pagination, all output fields, lineage limits and partial/legacy batch handling.
 
-Passive collection needs installed iproute2; ping needs optional installed Nmap;
+Passive collection needs installed iproute2; legacy ping needs optional installed Nmap;
+opt-in socket collection needs no Nmap or ping helper. ICMP requires already-
+permitted Linux echo datagrams; a preinstalled privileged helper does not grant
+Atlas permission and is not executed. No automated privilege changes are allowed.
 SSH needs a supported OpenSSH client and existing operator-managed config/keys/
 known_hosts plus remote Linux utilities. Missing executables/remote commands
 produce bounded per-probe failures, never automatic installation or weaker SSH.
@@ -257,7 +269,9 @@ history, access evidence, status, maps/exports and SQLite row counts, without
 rediscovery or audit growth. No LLM/provider response is fabricated or claimed.
 Both processes also verify invalid ICMP/port/option policy refusal through native
 tool/slash/CLI with explicit no-effects receipts and unchanged files/store counts.
-The collection process exercises valid ICMP/extra-port/ICMP-only policy through
+The collection process exercises ICMP responses with filtered web ports, true
+ICMP-only policy, 2222-only, 22000-only, mixed ICMP/four-port positives, denied
+permission/unsupported ICMP with TCP positives and all-filtered outcomes through
 non-forwarding sockets on all three routes; restart reads the same method evidence
 without transport. The original fixture policy is restored.
 Repeated verification starts a new synthetic atlas only in this marked fixture;

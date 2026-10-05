@@ -13,7 +13,7 @@ An SSH allowlist restricts this plugin, not every ability of the agent account.
 Sharing atlas state does not share profile-local inspection authority.
 
 Phase 2 collection is explicit and uses only named configured networks/modes.
-Fixed passive ip JSON commands or code-derived bounded Nmap -sn/-n/-PS80,443
+Fixed passive ip JSON commands or legacy code-derived bounded Nmap -sn/-n/-PS80,443
 host-discovery commands run outside DB write locks. Passive neighbors never
 establish reachability or absence; only successful complete exact ping coverage
 can report not observed in that run. No response deletes a device or un-retires it.
@@ -30,6 +30,17 @@ grants. Packet-free open/close diagnostics do not prove transport/reachability.
 Existing policy/ceilings and TCP 80/443 behavior remain unchanged. See
 docs/host-discovery-policy.md for shared budgets, socket cancellation and
 method/identity boundaries. Failed/partial method coverage never asserts absence.
+No preinstalled ping executable or its capabilities are relied on; denied echo
+datagrams never trigger a privileged/raw helper. Extra TCP 2222/optional 22000
+are explicit operator choices, not service guesses. A TCP connect can consume an
+endpoint connection slot or generate logs/kernel retransmissions even without
+application traffic. 4403 is refused because connection contention can affect
+radio clients; other connection-sensitive endpoints remain an operator risk.
+Method names/flags are not proof of transmission. Capability open/close proves
+neither send permission nor replies; unavailable and timeout evidence cannot
+diagnose a firewall, prove offline state, or transfer foreign profile authority.
+Any future live validation needs a separately approved exact scope and read-only
+recipe; it is never a CI test or a reason to weaken firewall/kernel settings.
 
 Phase 3 resolves only a current profile-authorized alias or uniquely mapped
 device ID. All seven remote commands are code-owned read-only Linux probes.
