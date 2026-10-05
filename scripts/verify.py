@@ -83,6 +83,8 @@ REQUIRED_CONFIRMATION_TESTS = {
 
 REQUIRED_CI_ADMISSION_TESTS = {
     "test_ci_admission.HostedCIAdmissionTests.test_explicit_mode_and_matching_diagnostics_required",
+    "test_ci_admission.HostedCIAdmissionTests.test_main_feature_push_and_pr_merge_refs_match_workflow",
+    "test_ci_admission.HostedCIAdmissionTests.test_other_events_branches_tags_and_nonmerge_pr_refs_refuse",
     "test_ci_admission.HostedCIAdmissionTests.test_fresh_marked_contained_fixture_no_replacement",
     "test_ci_admission.HostedCIAdmissionTests.test_native_full_scan_caution_selects_supported_force_without_install",
     "test_ci_admission.HostedCIAdmissionTests.test_native_dangerous_refuses_even_force_and_never_calls_installer",

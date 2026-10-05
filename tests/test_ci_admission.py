@@ -94,6 +94,32 @@ class HostedCIAdmissionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ci_admission.select_mode(ci_admission.MODE, dict(self.diagnostics, GITHUB_EVENT_NAME=event))
 
+    def test_main_feature_push_and_pr_merge_refs_match_workflow(self):
+        from ruamel.yaml import YAML
+        workflow = YAML(typ="safe").load((ROOT / ".github" / "workflows" / "verify.yml").read_text())
+        for event, ref in (("push", "refs/heads/main"), ("push", "refs/heads/feat/6-host-discovery"),
+                           ("pull_request", "refs/pull/6/merge"), ("pull_request", "refs/pull/123/merge")):
+            with self.subTest(event=event, ref=ref):
+                self.assertTrue(ci_admission.select_mode(ci_admission.MODE,
+                                                        dict(self.diagnostics, GITHUB_EVENT_NAME=event, GITHUB_REF=ref)))
+        self.assertEqual(workflow["on"]["push"], {"branches": ["main", "feat/6-host-discovery"]})
+        self.assertEqual(workflow["on"]["pull_request"], {"branches": ["main"]})
+
+    def test_other_events_branches_tags_and_nonmerge_pr_refs_refuse(self):
+        cases = (("push", "refs/heads/main-next"), ("push", "refs/heads/feat/6-host-discovery-next"),
+                 ("push", "refs/heads/unrelated"), ("push", "refs/tags/main"),
+                 ("push", "refs/pull/6/merge"), ("push", "refs/heads/main\n"),
+                 ("pull_request", "refs/heads/main"), ("pull_request", "refs/pull/6/head"),
+                 ("pull_request", "refs/pull/0/merge"), ("pull_request", "refs/pull/06/merge"),
+                 ("pull_request", "refs/pull/6/merge/extra"), ("pull_request_target", "refs/pull/6/merge"),
+                 ("workflow_dispatch", "refs/heads/main"), ("schedule", "refs/heads/main"))
+        for event, ref in cases:
+            with self.subTest(event=event, ref=ref), self.assertRaises(ValueError):
+                ci_admission.select_mode(ci_admission.MODE,
+                                         dict(self.diagnostics, GITHUB_EVENT_NAME=event, GITHUB_REF=ref))
+        self.installer.assert_not_called()
+        self.assertFalse((self.case / "admission.json").exists())
+
     def test_fresh_marked_contained_fixture_no_replacement(self):
         ci_admission.fresh_fixture(self.case, self.source, self.candidate, git_head(self.candidate), self.env)
         home = Path(self.env["HERMES_HOME"])

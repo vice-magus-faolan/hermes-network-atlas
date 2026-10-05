@@ -1,7 +1,9 @@
 name: Verify
 on:
   push:
+    branches: [main, feat/6-host-discovery]
   pull_request:
+    branches: [main]
 permissions:
   contents: read
 jobs:

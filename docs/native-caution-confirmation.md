@@ -25,7 +25,8 @@ subset archive, scanned-source rewrite or policy override is supplied.
 
 ## Hosted workflow and evidence
 
-`.github/workflows/verify.yml` uses push/pull_request, pinned actions, a fresh
+`.github/workflows/verify.yml` tests pushes to `main` and `feat/6-host-discovery`
+and pull requests targeting `main`, with pinned actions and a fresh
 `ubuntu-latest` hosted runner, top-level `contents: read` and checkout with
 `persist-credentials: false`. It supplies no repository/environment secrets,
 deployment credentials, PATs, tunnel or privileged candidate execution. Actual
@@ -40,8 +41,12 @@ The workflow records checked-out full commit/tree and explicitly selects:
     python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT" --admission-mode hosted-ci-caution
 
 The parent and child require matching repository, job, event/ref, source SHA,
-workspace and hosted-run diagnostics. Only the issue-6 feature push or PR merge
-checkout is supported. No environment variable automatically selects this mode.
+workspace and hosted-run diagnostics. Only the main/issue-6 feature push or PR
+merge checkout is supported; unrelated branch/tag pushes, non-merge PR refs and
+other events refuse. The workflow filters PR base branches; its checked-out merge
+SHA/tree, not the contributor's branch tip, binds PR acceptance. This test context
+does not authorize a main push/merge or runtime installation. No environment
+variable automatically selects this mode.
 The child authenticates the complete pinned public Hermes snapshot before importing
 native code, requires the candidate's full tree to match the checked-out artifact,
 scans the complete clean candidate and records every finding with
@@ -80,12 +85,14 @@ No external signing service or controller is deployed by the hosted exception.
 
 ## Executed regression contract and limitations
 
-`REQUIRED_CI_ADMISSION_TESTS` mandates all eight tests in
+`REQUIRED_CI_ADMISSION_TESTS` mandates all ten tests in
 `tests/test_ci_admission.py`: explicit mode/context; fresh contained nonreplacement
 fixture; real full native CAUTION scan and supported force-policy selection; real
 DANGEROUS scan refusal even with force; SAFE/no-force and candidate/core drift;
 parsed hosted read-only/pinned/no-secret workflow; real entrypoint refusal for
-local mode misuse, mixed consent and enable; origin/ref/config revalidation.
+local mode misuse, mixed consent and enable; origin/ref/config revalidation;
+main/feature push and PR merge contract matching the parsed workflow; rejection
+of unrelated branches/tags, malformed/non-merge refs and disallowed events.
 Every install boundary in these tests is a mock; synthetic SAFE/CAUTION/DANGEROUS
 controls also mock the expected checkout-tree mapping, while a real mismatch
 refusal is tested separately. Real scanner policy is exercised,

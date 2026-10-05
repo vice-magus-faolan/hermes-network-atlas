@@ -164,12 +164,16 @@ ordinary prompt with packet-denied PM failure, synthetic successful prompt trans
 and marker/output/deadline refusal. These are also run before default CI setup.
 No synthetic approval is candidate admission or real CI authority. The legacy
 signed route remains inactive optional coverage, not a CI provisioning gate.
-`REQUIRED_CI_ADMISSION_TESTS` mandates all eight hosted-policy tests in
+`REQUIRED_CI_ADMISSION_TESTS` mandates all ten hosted-policy tests in
 `tests/test_ci_admission.py::HostedCIAdmissionTests`: explicit matching diagnostics,
 fresh contained nonreplacement fixture, real native CAUTION/force-policy selection
 without installation, native DANGEROUS refusal even with force, SAFE/no-force and
 candidate/core drift, parsed hosted/read-only/pinned/no-secret workflow, real local
-entrypoint/mixed-consent/enable refusals and origin/ref/config revalidation.
+entrypoint/mixed-consent/enable refusals and origin/ref/config revalidation,
+main/feature push and PR merge refs matching parsed workflow branch filters,
+and disallowed event/branch/tag/malformed/non-merge ref refusal. Pushes are limited
+to main/the issue-6 feature and PRs target main; a main test context is not authority
+to push/merge main. PR evidence binds the checked-out merge artifact, not head tip.
 The approved hosted workflow uses supported force only for CAUTION on fresh
 GitHub-hosted Ubuntu VMs with full scanning, DANGEROUS refusal, no supplied secrets
 or deployment access and unchanged native admission/enable/readback. Environment

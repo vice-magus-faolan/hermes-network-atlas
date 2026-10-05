@@ -35,7 +35,10 @@ def select_mode(mode: str, env: Mapping[str, str]) -> bool:
     if any(env.get(key) != value for key, value in expected.items()):
         raise ValueError("hosted CI diagnostics mismatch; local force is prohibited")
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
-    refs = {"push": r"refs/heads/feat/6-host-discovery", "pull_request": r"refs/pull/[1-9][0-9]*/merge"}
+    # Match the reviewed workflow's push branch filter; a main test context is
+    # not permission to merge, push main or install into a persistent home.
+    refs = {"push": r"refs/heads/(?:main|feat/6-host-discovery)",
+            "pull_request": r"refs/pull/[1-9][0-9]*/merge"}
     if event not in refs or not re.fullmatch(refs[event], ref):
         raise ValueError("only approved issue-6 push/pull_request workflow context permitted")
     if any(not re.fullmatch(r"[1-9][0-9]*", env.get(key, "")) for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")):
