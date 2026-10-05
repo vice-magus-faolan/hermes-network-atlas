@@ -9,7 +9,8 @@ import time
 
 from . import discovery_parse as parse
 from .batches import Observation, Probe, store_batch
-from .config import Network, Policy
+from .config import LEGACY_TCP_PORTS, Network, Policy, validate_network
+from .host_discovery import TransportStaged
 from .probes import run
 from .storage import Store, timestamp, utc_now
 
@@ -34,9 +35,13 @@ def validate_request(params: object, policy: Policy) -> tuple[Network, str]:
     if not isinstance(name, str) or not isinstance(mode, str) or mode not in {"passive", "ping"}:
         raise ValueError("invalid network or mode")
     network = next((item for item in policy.networks if item.name == name), None)
+    if network is not None:
+        validate_network(network)
     if network is None or not getattr(network, mode):
         raise ValueError("network/mode not authorized by local policy")
     _validate_scope(network.cidr, mode, policy)
+    if mode == "ping" and (network.icmp_echo or network.tcp_ports != LEGACY_TCP_PORTS):
+        raise TransportStaged("host_discovery_transport_staged")
     return network, mode
 
 

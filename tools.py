@@ -14,6 +14,7 @@ from .query import query
 from .render import export_map, render_map
 from .storage import Store, response_json
 from .discovery import collect
+from .host_discovery import TransportStaged
 from .reconcile import reconcile
 from .inspection import collect as inspect_host
 
@@ -96,6 +97,9 @@ class Handlers:
         try:
             policy = load_policy(self.home)
             return response_json(collect(policy, params), policy.limits.output_bytes)
+        except TransportStaged:
+            return json.dumps({"error": "selected host discovery transport is staged, not yet functional",
+                               "diagnostic_code": "host_discovery_transport_staged", "applied": False, "persisted": False})
         except (OSError, ConfigError, ValueError, sqlite3.Error):
             return json.dumps({"error": "invalid discovery request, bounds, store, or local policy", "applied": False, "persisted": False})
 

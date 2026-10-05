@@ -15,6 +15,15 @@ inventory/enumeration, and automatic context injection are deferred.
 Public source contains synthetic data only. Original example networks/devices
 are illustrative, not authorization to scan or inspect actual hosts.
 
+Issue #6 narrowly amends Phase 2 host discovery: explicitly opt-in network-local
+ICMP echo datagrams and a strictly validated TCP discovery list capped at four
+ports, excluding 4403. No service inventory, application payloads, raw sockets,
+capability-bearing helper fallback or privilege grants. Existing ceilings and
+non-administrative charter remain intact. The staged schema/capability contract
+is in [host-discovery-policy.md](host-discovery-policy.md); stage 1 refuses new
+transport requests before effects. Independent exact-artifact approval gates
+descendant transport implementation. Legacy policy retains TCP 80/443 behavior.
+
 ## 2. Collection and reconciliation lifecycle
 
 Collectors append bounded observation batches; they do not silently rewrite
@@ -134,6 +143,13 @@ no arbitrary port ranges, no UDP scanning/probes, no target files. The reviewed
 Nmap host-discovery argv must select explicit non-UDP probes, numeric output,
 and machine-readable results, rather than assuming -sn means ICMP-only. Document
 ARP behavior on directly attached LANs. No Nmap installation is automatic.
+
+For the issue-6 amendment, SOCK_DGRAM/IPPROTO_ICMP is an echo socket, not UDP
+discovery. Packet-free open/close can diagnose existing socket permission only;
+it cannot prove sending, receiving or reachability. No helper/executable check
+substitutes for this boundary, and denied permission never triggers fallback.
+The combined deadline/concurrency/rate/result accounting and additive method
+provenance contract in host-discovery-policy.md controls stage-2 transport.
 
 Issue #2 collector-contract amendment (no ceiling increase): active discovery uses
 serial code-owned /28 chunks, one child with internal --max-parallelism equal to

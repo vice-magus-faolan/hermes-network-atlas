@@ -69,6 +69,8 @@ class CumulativeAcceptanceTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertEqual(calls, (fixture / "calls.jsonl").read_bytes(), "restart must not collect")
         self.assertTrue(json.loads(second.stdout.splitlines()[-1])["fresh_process_persistence"])
+        self.assertTrue(json.loads(first.stdout.splitlines()[-1])["issue6_staged_policy_refusal"])
+        self.assertTrue(json.loads(second.stdout.splitlines()[-1])["issue6_staged_policy_refusal"])
         # Read back exact native installed bytes/selector/generation after tests.
         support.validate_receipt(root)
         print("Cumulative native acceptance: " + first.stdout.splitlines()[-1], flush=True)

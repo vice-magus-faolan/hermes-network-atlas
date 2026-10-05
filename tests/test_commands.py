@@ -35,7 +35,8 @@ class OperatorStatusTests(unittest.TestCase):
         self.assertEqual(result["stale_devices"], 0)
         self.assertEqual(result["authorized_devices_for_atlas_ssh_inspection"], 0)
         self.assertIsNone(result["last_discovery"])
-        self.assertEqual(result["configured_scopes"], [{"name": "lab", "cidr": "192.0.2.0/24", "passive": True, "ping": True}])
+        self.assertEqual(result["configured_scopes"], [{"name": "lab", "cidr": "192.0.2.0/24", "passive": True,
+                                                       "ping": True, "icmp_echo": False, "tcp_ports": [80, 443]}])
         self.assertEqual(set(self.home.rglob("*")), before)
 
     def test_discovery_and_inspection_are_distinct_local_qualified_summaries(self):

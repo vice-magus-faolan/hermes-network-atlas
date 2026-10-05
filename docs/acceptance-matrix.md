@@ -30,6 +30,17 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 
 ## Acceptance requirements
 
+Issue #6 stage-1 regressions are mandatory alongside the original chunk tests:
+`tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests` covers strict
+booleans/types/bounds/duplicates/four-port cap/4403 exclusion, dependency/scope
+rejection, immutable network-local grants, YAML unknown/duplicate keys, unchanged
+legacy fixed argv/missing-Nmap behavior and staged effect-free public tool/slash/
+CLI refusal. `tests/test_host_discovery_policy.py::ICMPCapabilityTests` mocks every
+socket: disabled/deadline/platform no-open, permission/protocol/resource errors,
+unverified open/close, interruption and uncached recheck. No packets or helpers.
+Contract and stage-2 combined budgets/provenance are in host-discovery-policy.md;
+stage-1 checks are not a claim that new transports are implemented.
+
 Combined discovery/evidence regressions are mandatory in the canonical verifier:
 `tests/test_unresolved.py::UnresolvedEvidenceTests::test_chunk_evidence_partial_not_started_and_complete_bounded_pages`
 checks complete/partial /24 address accounting including not_started under a

@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
                 "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
-                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py")
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py", "host_discovery.py")
 
 REQUIRED_CHUNK_TESTS = {
     "test_discovery_chunks.ChunkDiscoveryTests.test_sparse_24_startup_budget_reaches_last_address_and_reconciles_exact_batch",
@@ -29,6 +29,16 @@ REQUIRED_CHUNK_TESTS = {
     "test_unresolved.UnresolvedEvidenceTests.test_chunk_evidence_partial_not_started_and_complete_bounded_pages",
     "test_unresolved.UnresolvedEvidenceTests.test_partial_chunk_original_later_lineage_and_foreign_visibility",
     "test_unresolved.UnresolvedEvidenceTests.test_malformed_stored_receipt_entries_fail_in_public_error_envelope",
+}
+
+REQUIRED_HOST_DISCOVERY_TESTS = {
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_legacy_defaults_and_explicit_defaults_preserve_exact_transport",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_strict_enablement_port_types_bounds_duplicates_cap_and_exclusion",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_method_dependencies_ipv6_scope_and_unknown_authority_fail_closed",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_staged_requests_refuse_before_any_effect_and_report_on_public_routes",
+    "test_host_discovery_policy.ICMPCapabilityTests.test_disabled_expired_unsupported_are_packet_free_no_open",
+    "test_host_discovery_policy.ICMPCapabilityTests.test_open_success_only_unverified_and_socket_closed_no_packet_operations",
+    "test_host_discovery_policy.ICMPCapabilityTests.test_permission_protocol_resource_failures_are_bounded_no_retry_or_helper",
 }
 
 
@@ -90,9 +100,9 @@ def main() -> int:
     if count == 0:
         print("ERROR: no tests discovered")
         return 1
-    missing = REQUIRED_CHUNK_TESTS - test_ids(suite)
+    missing = (REQUIRED_CHUNK_TESTS | REQUIRED_HOST_DISCOVERY_TESTS) - test_ids(suite)
     if missing:
-        print(f"ERROR: bounded chunk regression coverage absent: {sorted(missing)}")
+        print(f"ERROR: required discovery regression coverage absent: {sorted(missing)}")
         return 1
     print(f"Canonical verification: {count} tests discovered; cumulative synthetic V1, NOT live validation", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)

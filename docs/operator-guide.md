@@ -74,6 +74,17 @@ activation. IPv4 ping ranges have at most 256 addresses. Stored/passive IPv6 is
 not permission for active IPv6 scanning. Numeric ceilings and selection precedence
 are detailed in [contract-decisions.md](contract-decisions.md).
 
+Issue #6 stage 1 accepts network-local discovery.icmp_echo (default false) and
+discovery.tcp_ports (default [80,443], at most four distinct integer ports;
+4403 is forbidden). These new methods are staged/not yet functional: nonlegacy
+ping returns diagnostic_code=host_discovery_transport_staged and persisted=false
+before any capability check, socket, child or store. Passive and legacy traffic
+are unchanged. ICMP-only policy uses tcp_ports: []; ICMP requires ping: true.
+The synthetic example [80,443,2222,22000] is not a default or service claim.
+No helper, grants or fallback are enabled. Read
+[host-discovery-policy.md](host-discovery-policy.md) before selecting methods;
+old binaries reject the new keys. Query/status never opens a capability socket.
+
 Policy stays local even with an explicitly configured absolute
 `store.shared_sqlite_path`. Another profile can read knowledge but cannot inherit
 inspection authority, apply foreign batches, or reuse foreign alias anchors.
@@ -235,6 +246,9 @@ A second fresh native process uses the admitted PM-selected interpreter and
 re-queries/replays with transport binaries removed. It compares complete devices,
 history, access evidence, status, maps/exports and SQLite row counts, without
 rediscovery or audit growth. No LLM/provider response is fabricated or claimed.
+Both processes also select staged ICMP/extra-port/ICMP-only synthetic policy and
+verify real native tool/slash/CLI refusal, selected policy disclosure and unchanged
+transport calls/store counts/files. The original fixture policy is restored.
 Repeated verification starts a new synthetic atlas only in this marked fixture;
 never in a live profile. Missing/stale fixture evidence fails canonical checks.
 Rebuild setup after a new candidate commit or changed plugin/selector/recipe/lock.

@@ -148,6 +148,18 @@ Use networks.<name>.{cidr,discovery.{passive,ping}}, ssh.{enabled,hosts.<name>.
 the original example's timeout placement: all numerical ceilings live in limits,
 not discovery. Policy objects and nested sequences are immutable snapshots.
 
+Issue #6 adds only network-local discovery.icmp_echo (strict bool, default false)
+and discovery.tcp_ports (list of 0..4 distinct integers in 1..65535, sorted into
+an immutable tuple; default [80,443]). TCP 4403 is rejected with no override.
+ICMP requires ping authorization; active policy must select at least one method.
+No global/caller/atlas-derived method grants. Stage 1 validates these fields but
+refuses nonlegacy ping with host_discovery_transport_staged before effects.
+Passive and legacy traffic are unchanged. Old binaries reject additive keys;
+coordinate shared readers deliberately. See host-discovery-policy.md for the
+datagram-only feasibility decision, helper rejection, combined budgets and
+schema-version-1 additive method/aggregate provenance contract. This amendment
+does not rewrite any historical batch or infer services/identity from ports.
+
 | Bound | Default/hard V1 maximum |
 | --- | --- |
 | command_timeout_seconds | 15 |

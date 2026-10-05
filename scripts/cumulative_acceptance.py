@@ -50,12 +50,12 @@ class NativeAtlas:
         assert self.command is not None
         return json.loads(self.command(text))
 
-    def cli(self, argv: list[str]) -> dict:
+    def cli(self, argv: list[str], *, expected_code: int = 0) -> dict:
         output = io.StringIO()
         with redirect_stdout(output):
             code = self.entry["handler_fn"](self.parser.parse_args(argv))
         result = json.loads(output.getvalue())
-        assert code == 0, result
+        assert code == expected_code, result
         return result
 
     def update(self, device: str, field: str, value: object) -> dict:
@@ -69,6 +69,34 @@ def counts(home: Path) -> dict:
     with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
         return {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in
                 ("devices", "interfaces", "observations", "batches", "applications", "audit_events", "access_evidence")}
+
+
+def staged_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
+    """Exercise installed staged policy via real tool/slash/CLI; restore fixture grants."""
+    path = home / "network-atlas" / "config.yaml"
+    original = path.read_bytes()
+    before = counts(home) if (path.parent / "atlas.sqlite3").exists() else None
+    files = set(path.parent.rglob("*"))
+    calls_path = root / "fixture-bin" / "calls.jsonl"
+    calls = calls_path.read_bytes()
+    try:
+        for methods in ({"icmp_echo": True}, {"tcp_ports": [2222]}, {"icmp_echo": True, "tcp_ports": []}):
+            raw = json.loads(original)
+            raw["networks"]["lab"]["discovery"].update(methods)
+            path.write_text(json.dumps(raw))
+            selected = atlas.slash("status")["configured_scopes"][0]
+            assert selected["icmp_echo"] == methods.get("icmp_echo", False)
+            assert selected["tcp_ports"] == methods.get("tcp_ports", [80, 443])
+            results = (atlas.tool("network_discover", {"network": "lab", "mode": "ping"}),
+                       atlas.slash("discover lab ping"),
+                       atlas.cli(["discover", "--network", "lab", "--mode", "ping"], expected_code=2))
+            for result in results:
+                assert result["diagnostic_code"] == "host_discovery_transport_staged", result
+                assert not result["applied"] and not result["persisted"], result
+            assert files == set(path.parent.rglob("*")) and calls_path.read_bytes() == calls
+            assert before == (counts(home) if (path.parent / "atlas.sqlite3").exists() else None)
+    finally:
+        path.write_bytes(original)
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:
@@ -188,6 +216,7 @@ def main() -> int:
     mode = sys.argv[2]
     saved = root / "cumulative.json"
     if mode == "collect":
+        staged_policy_refusal(atlas, home, root)
         data = collect(atlas, root)
         sources_and_failure(atlas, root, data)
         negatives(atlas, home, root)
@@ -203,11 +232,13 @@ def main() -> int:
         assert counts(home) == before
         for kind, name in (("markdown", "network_map.md"), ("mermaid", "network_map.mmd")):
             assert (home / "network-atlas" / "exports" / name).read_text() == data["snapshot"]["maps"][kind]["content"]
+        staged_policy_refusal(atlas, home, root)
     else:
         raise ValueError("unknown acceptance mode")
     atlas.manager.unload()
     print(json.dumps({"mode": mode, "supported_native_admission": True, "three_aliases": sorted(data["ids"]),
                       "network_denied": True, "fresh_process_persistence": mode == "reopen",
+                      "issue6_staged_policy_refusal": True,
                       "synthetic_transport_only": True, "counts": counts(home)}))
     return 0
 

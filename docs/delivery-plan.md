@@ -38,6 +38,13 @@ Exact commit SHAs, tests, risks, and verdicts belong in immutable run handoffs.
 Phase 4 integrations and optional automatic context injection stay out of this
 queue. Runtime deployment/live-network validation is a separate future decision.
 
+Issue #6 uses a separate serial host-only lane: staged policy/capability contract,
+then bounded ICMP/TCP transport, then cumulative safety/native acceptance and
+operator docs. Each stage requires same-card independent exact-SHA approval
+before the next starts; component approval is not main integration/publication.
+The reviewed-branch PR-only publication owner is separate. No main advancement,
+runtime promotion or live probes are implied. See host-discovery-policy.md.
+
 ## Gates
 
 Seed every card behind an inert construction gate before any can run. Verify
