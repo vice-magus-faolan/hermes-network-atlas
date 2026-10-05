@@ -43,7 +43,9 @@ package-intelligence warning is not a clean vulnerability verdict.
 Atlas reads `<get_hermes_home()>/network-atlas/config.yaml`, separate from Hermes's
 plugin selector. No policy means empty allowlists. An existing empty/malformed file,
 unknown keys, invalid numbers, noncanonical or overbroad scopes fail closed at
-registration and every invocation. Maintain this file as an operator in a 0700
+registration and every invocation. Invalid-policy CLI refusal returns exit 2 and
+explicit applied=false/persisted=false before command dispatch or store changes.
+Maintain this file as an operator in a 0700
 directory with mode 0600; never let model tools edit it. A synthetic example:
 
 ```yaml
@@ -253,9 +255,11 @@ A second fresh native process uses the admitted PM-selected interpreter and
 re-queries/replays with transport binaries removed. It compares complete devices,
 history, access evidence, status, maps/exports and SQLite row counts, without
 rediscovery or audit growth. No LLM/provider response is fabricated or claimed.
-Both processes also select staged ICMP/extra-port/ICMP-only synthetic policy and
-verify real native tool/slash/CLI refusal, selected policy disclosure and unchanged
-transport calls/store counts/files. The original fixture policy is restored.
+Both processes also verify invalid ICMP/port/option policy refusal through native
+tool/slash/CLI with explicit no-effects receipts and unchanged files/store counts.
+The collection process exercises valid ICMP/extra-port/ICMP-only policy through
+non-forwarding sockets on all three routes; restart reads the same method evidence
+without transport. The original fixture policy is restored.
 Repeated verification starts a new synthetic atlas only in this marked fixture;
 never in a live profile. Missing/stale fixture evidence fails canonical checks.
 Rebuild setup after a new candidate commit or changed plugin/selector/recipe/lock.

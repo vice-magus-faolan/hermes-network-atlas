@@ -47,6 +47,9 @@ shared receive/host/operation budgets, interruption/socket cleanup and rollback.
 The native cumulative harness exercises these methods through installed tool,
 slash and CLI dispatch with non-forwarding sockets, then reads exact evidence
 after process restart. No real helper, packet or production migration is tested.
+`tests/test_commands.py::OperatorStatusTests::test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt`
+requires explicit applied=false/persisted=false on invalid-policy CLI refusal,
+before read/write dispatch, with absent and existing stores preserved byte-for-byte.
 
 Combined discovery/evidence regressions are mandatory in the canonical verifier:
 `tests/test_unresolved.py::UnresolvedEvidenceTests::test_chunk_evidence_partial_not_started_and_complete_bounded_pages`
