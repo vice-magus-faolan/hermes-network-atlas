@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Prepare disposable native admission OUTSIDE offline tests; never activate a live home.
 
-Setup may acquire dependencies online. Only the ordinary native declared-dependency
-consent is answered; security refusals and other prompts fail closed. No source,
+Setup may acquire dependencies online. Security consent is inactive unless an
+external exact-artifact signed authorization is explicitly supplied. No source,
 resolver, enabled selection or admission mocks. Run again for a changed candidate.
 """
 from __future__ import annotations
@@ -24,6 +24,8 @@ import tempfile
 import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, fixture_environment, git_head, git_tree, plugin_hashes
+from caution_confirmation import install_confirmed, verify_approval
+from native_install import approval_values, confirmation_arguments
 
 
 def run(command: list[str], root: Path, env: dict, timeout: int = 600) -> str:
@@ -96,7 +98,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--hermes-source", type=Path, required=True, help="Git checkout of exact public Hermes commit")
     parser.add_argument("--software-seed", type=Path, help="Optional authorized disposable tools/uv-cache, never live state")
+    confirmation_arguments(parser)
     args = parser.parse_args()
+    consent = approval_values(args)
     scratch = Path(os.environ["TMPDIR"]).resolve()
     if not scratch.is_dir():
         raise ValueError("existing TMPDIR required")
@@ -137,7 +141,20 @@ def main() -> int:
     fixture_commit = git_head(candidate)
     command = [sys.executable, str(ROOT / "scripts" / "native_install.py"), str(source)]
     print(f"Native setup scratch: {root}", flush=True)
-    (root / "install.log").write_text(run([*command, "install", str(candidate), fixture_commit], root, env))
+    install_command = [*command, "install", str(candidate), fixture_commit]
+    if consent:
+        request = json.loads(run([*command, "scan", str(candidate), fixture_commit,
+                                  "--origin-commit", git_head(), "--confirmation-scope", args.confirmation_scope], root, env))
+        # The detached authority is validated here AND by the child before its
+        # marker. A PTY by itself is never interpreted as consent.
+        verify_approval(request, consent[0], consent[1], consent[2], consent[3], (ROOT, root, source))
+        for flag, value in zip(("--approval", "--approval-signature", "--allowed-signers", "--signer", "--confirmation-scope"), consent):
+            install_command.extend((flag, str(value)))
+        install_command.extend(("--origin-commit", git_head()))
+        output = install_confirmed(install_command, root, env, request)
+    else:
+        output = run(install_command, root, env)
+    (root / "install.log").write_text(output)
     enable([*command, "enable"], root, env)
     receipt = json.loads((root / "native-enabled.json").read_text())
     if (receipt["plugin_hashes"] != plugin_hashes() or receipt["installed_commit"] != fixture_commit

@@ -44,6 +44,11 @@ operator docs. Each stage requires same-card independent exact-SHA approval
 before the next starts; component approval is not main integration/publication.
 The reviewed-branch PR-only publication owner is separate. No main advancement,
 runtime promotion or live probes are implied. See host-discovery-policy.md.
+Prospective exact-artifact ordinary CAUTION confirmation is inactive: see
+native-caution-confirmation.md. Final changed bytes require new explicit local and
+CI consent after full scan; outside-candidate trust/controller provisioning and
+activation are separate owner decisions. Design tests cannot close native
+acceptance or final independent approval and cannot release publication.
 
 ## Gates
 

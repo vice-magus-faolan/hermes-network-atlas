@@ -155,6 +155,18 @@ explicitly refuses to run if the critical chunk/legacy regression IDs are absent
 
 ## Residual and unperformed checks
 
+The prospective ordinary CAUTION confirmation route is inactive. Canonical
+`REQUIRED_CONFIRMATION_TESTS` includes eight exact IDs from
+`tests/test_caution_confirmation.py::CautionConfirmationTests`: non-TTY real native
+refusal, missing/candidate-controlled authority, exact-byte/scope/identity/finding
+and signature mismatch, signed dangerous refusal, candidate/core drift, real
+ordinary prompt with packet-denied PM failure, synthetic successful prompt transport
+and marker/output/deadline refusal. These are also run before default CI setup.
+No synthetic approval is candidate admission or real CI authority. See
+`docs/native-caution-confirmation.md` for the external signature/controller boundary;
+default CI still refuses CAUTION until separately authorized activation, and final
+successor local/CI admission, canonical acceptance and independent review remain gates.
+
 A01 setup is a real native CLI-entrypoint install/enable and PM publication in
 marked disposable homes. A13 uses real discovery/registry/command/core APIs and
 the admitted selected Python, but transport is deliberately synthetic. Neither

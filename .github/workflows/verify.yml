@@ -29,6 +29,12 @@ jobs:
         run: |
           mkdir -p "$TMPDIR"
           python3 -m pip install --disable-pip-version-check -r requirements-test.txt
+      - name: Packet-denied inactive confirmation regressions (synthetic authority only)
+        run: python3 -B tests/test_caution_confirmation.py -v
+      # The external signed-consent route is INACTIVE. Do not add keys, approval
+      # files or automatic confirmation here. CAUTION still refuses this default
+      # non-TTY setup until separately authorized outside-candidate activation.
+      # See docs/native-caution-confirmation.md for the prospective trust boundary.
       - name: Online prerequisite setup — isolated supported install and enable
         run: |
           python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT" | tee "$TMPDIR/native-setup.log"

@@ -60,6 +60,14 @@ scratch-only setup. Canonical Atlas acceptance is a separate socket-denied proce
 with non-forwarding synthetic transports. Admission evidence is candidate-bound;
 security scan/refusal/consent controls are not mocked or disabled. This test guard
 is not a production sandbox. See docs/operator-guide.md for the exact boundary.
+The prospective externally signed CAUTION route is inactive by default and binds
+complete commit/tree, pinned core/scanner bytes, full findings and an external
+effect scope. DANGEROUS always refuses. No signer/anchor/approval is shipped.
+Candidate-authored workflows and writable outside paths are not human authority:
+activation requires an independently pinned operator-owned controller and protected
+external trust anchor, separately authorized/provisioned. A PTY carries the ordinary
+prompt only; it is never consent. See docs/native-caution-confirmation.md for tests,
+same-UID limitations and outstanding real local/CI admission gates.
 No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,
 private exports, SSH keys, passwords, tokens, or live config to a public issue.

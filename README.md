@@ -48,6 +48,7 @@ external database, web app, MCP server, or background service is required.
 - [Acceptance matrix](docs/acceptance-matrix.md)
 - [Concrete contract decisions](docs/contract-decisions.md)
 - [Operator installation, configuration and cumulative verification](docs/operator-guide.md)
+- [Inactive exact-artifact native CAUTION confirmation design](docs/native-caution-confirmation.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
@@ -74,7 +75,11 @@ A compatible verifier runtime, exact Hermes source, declared scratch directory a
 candidate-bound native admission fixture are prerequisites; run the separate
 online setup in docs/operator-guide.md first. Canonical tests and their children
 are socket-denied. Missing Hermes is a failure, not a silent test skip; missing or
-stale admission evidence also fails. CI uses the same setup/verifier path, but
+stale admission evidence also fails. The prospective externally signed ordinary
+CAUTION confirmation route is inactive; default non-TTY CI setup still refuses
+CAUTION until separately authorized outside-candidate trust provisioning and
+exact-artifact local/CI consent. See docs/native-caution-confirmation.md. CI uses
+the same setup/verifier path, but
 GitHub CI execution has not been performed on this unpushed implementation.
 Tests must use synthetic fixtures and isolated Hermes homes. They must not scan
 a real LAN, inspect a real SSH host, or read the operator's live atlas.

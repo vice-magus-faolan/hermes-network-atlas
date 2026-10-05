@@ -215,7 +215,8 @@ guides. Inspect/query failures are not an excuse to discard the atlas.
 ## Reproduce the isolated acceptance
 
 Tests need an existing scratch directory, a compatible verifier interpreter and
-an exact public Hermes Git checkout. No live config, atlas, credentials, homes or
+an exact public Hermes Git checkout and `/usr/bin/ssh-keygen` with detached-signature
+support for the synthetic confirmation regressions. No live config, atlas, credentials, homes or
 profile selections are copied. A lean disposable verifier can be prepared with
 requirements-test.txt (setup only). Do not install into production. GitHub CI
 checks out the exact Hermes pin and uses this same path; GitHub execution itself
@@ -243,7 +244,13 @@ and cmd_enable('network-atlas'), the entrypoints used by the supported CLI; read
 back installed bytes/full Git tree, enabled selector, PM facts/generation, recipes/locks and
 candidate identity. No admission, scanner, registry, selection or resolver mocks.
 Only ordinary dependency consent can be answered; other warnings/refusals are
-not forced through. Explicit native enable on this runtime may not ask a separate
+not forced through by default. The optional externally signed exact-artifact
+ordinary CAUTION route is INACTIVE without all explicit approval inputs. It still
+needs new final-byte local/CI consent and separately authorized outside-candidate
+trust provisioning; the existing CI workflow supplies no such authority. See
+[native-caution-confirmation.md](native-caution-confirmation.md) for the prospective
+transport, required scope/identity/findings and honest packet-denied regressions.
+Explicit native enable on this runtime may not ask a separate
 Python dependency question. This is setup evidence, NOT the acceptance result.
 
 Then, SEPARATE NETWORK-DENIED ACCEPTANCE:
