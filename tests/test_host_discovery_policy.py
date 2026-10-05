@@ -120,13 +120,13 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
         path.write_text(prefix + '      icmp_echo: true\n      tcp_ports: []\n')
         self.assertEqual(config.load_policy(self.home).networks[0].tcp_ports, ())
 
-    def test_staged_requests_refuse_before_any_effect_and_report_on_public_routes(self):
+    def test_combined_bounds_refuse_before_any_effect_and_report_on_public_routes(self):
         for methods in ({"icmp_echo": True}, {"tcp_ports": [2222]}, {"icmp_echo": True, "tcp_ports": []}):
-            policy = self.policy(**methods)
+            policy = replace(self.policy(**methods), limits=replace(self.policy().limits, observations=8))
             with ExitStack() as stack:
                 for target in ("subprocess.Popen", "socket.socket", "atlas_test_plugin.discovery.Store"):
-                    stack.enter_context(patch(target, side_effect=AssertionError("staged effects forbidden")))
-                with self.assertRaisesRegex(ValueError, "host_discovery_transport_staged"):
+                    stack.enter_context(patch(target, side_effect=AssertionError("preflight effects forbidden")))
+                with self.assertRaisesRegex(ValueError, "probe count"):
                     discovery.collect(policy, {"network": "lab", "mode": "ping"})
                 self.assertEqual(discovery.validate_request({"network": "lab", "mode": "passive"}, policy)[1], "passive")
                 with patch.object(tools, "load_policy", return_value=policy):
@@ -134,7 +134,7 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                     for text in (handler.discover({"network": "lab", "mode": "ping"}, icmp_echo=False),
                                  handler.command("discover lab ping")):
                         result = json.loads(text)
-                        self.assertEqual(result["diagnostic_code"], "host_discovery_transport_staged")
+                        self.assertIn("error", result)
                         self.assertFalse(result["persisted"])
                     parser = argparse.ArgumentParser()
                     commands.setup_parser(parser)
@@ -142,7 +142,7 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                     output = io.StringIO()
                     with patch.object(commands, "load_policy", return_value=policy), redirect_stdout(output):
                         self.assertEqual(commands.run_command(args, self.home), 2)
-                    self.assertEqual(json.loads(output.getvalue())["diagnostic_code"], "host_discovery_transport_staged")
+                    self.assertIn("error", json.loads(output.getvalue()))
             self.assertEqual(list(self.home.iterdir()), [])
 
     def test_unknown_tool_inputs_and_native_invalid_snapshots_refuse_before_effects(self):
@@ -238,9 +238,8 @@ class ICMPCapabilityTests(unittest.TestCase):
         factory = MagicMock(side_effect=[sock, PermissionError(errno.EACCES, "denied")])
         self.assertEqual(self.capability(platform="linux", socket_factory=factory).state, "unverified")
         self.assertEqual(self.capability(platform="linux", socket_factory=factory).state, "unavailable")
-        with patch.object(self.module, "icmp_capability", side_effect=AssertionError("stage 1 never checks")), \
-                self.assertRaisesRegex(ValueError, "host_discovery_transport_staged"):
-            discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
+        with patch.object(self.module, "icmp_capability", side_effect=AssertionError("query never checks")):
+            self.assertEqual(json.loads(tools.Handlers(self.policy.home).query({}))["devices"], [])
 
 
 if __name__ == "__main__":

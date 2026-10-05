@@ -270,7 +270,13 @@ def _address_totals(store: Store, batch: str) -> dict:
         if row["outcome"] not in outcomes:
             raise ValueError("invalid address outcome enum")
         outcomes[row["outcome"]] = row["count"]
-    return {"address_count": sum(outcomes.values()), "address_outcome_counts": outcomes}
+    responses = store.connection.execute(
+        "SELECT COUNT(DISTINCT json_extract(o.value_json,'$.address')) FROM observations o "
+        "JOIN probes p ON p.id=o.probe_id WHERE o.batch_id=? AND o.entity_id IS NULL "
+        "AND o.subject_kind='address' AND o.evidence_kind='ping_response' AND o.qualified=1 "
+        "AND p.outcome='success'", (batch,)).fetchone()[0]
+    return {"address_count": sum(outcomes.values()), "address_outcome_counts": outcomes,
+            "responding_address_count": responses}
 
 
 def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | None:

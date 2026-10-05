@@ -20,9 +20,11 @@ ICMP echo datagrams and a strictly validated TCP discovery list capped at four
 ports, excluding 4403. No service inventory, application payloads, raw sockets,
 capability-bearing helper fallback or privilege grants. Existing ceilings and
 non-administrative charter remain intact. The staged schema/capability contract
-is in [host-discovery-policy.md](host-discovery-policy.md); stage 1 refuses new
-transport requests before effects. Independent exact-artifact approval gates
-descendant transport implementation. Legacy policy retains TCP 80/443 behavior.
+is in [host-discovery-policy.md](host-discovery-policy.md); stage 1 refused new
+transport requests before effects. Stage 2 implements bounded opt-in sockets
+and additive method evidence under that independently approved contract.
+Independent exact-artifact approval still gates descendants and delivery.
+Legacy policy retains TCP 80/443 behavior.
 
 ## 2. Collection and reconciliation lifecycle
 

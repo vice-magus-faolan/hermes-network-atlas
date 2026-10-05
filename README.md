@@ -15,12 +15,14 @@ The bounded `network_query` unresolved view exposes original discovery evidence,
 qualification/freshness and application/identity lineage separately from devices;
 zero canonical devices can coexist with positive historical response evidence.
 Collection alone never rewrites canonical inventory.
-Ping collection uses serial fixed 16-address chunks with bounded internal
+Legacy ping collection uses serial fixed 16-address chunks with bounded internal
 parallelism/rate and distinct not-started/timeout/completed-at-boundary evidence;
 hard ceilings are unchanged and real-world /24 completion is not guaranteed.
-Issue #6 stage 1 adds strict network-local ICMP/TCP policy and packet-free
-capability diagnostics. New methods are staged/not yet functional; nonlegacy
-ping requests refuse before effects. Legacy TCP 80/443 traffic is unchanged.
+Issue #6 adds strict network-local ICMP/TCP policy, packet-free capability
+diagnostics and bounded opt-in echo-datagram/TCP-connect collection. All methods
+share one budget and retain contributing method/port/time evidence; address
+counts are deduplicated. Legacy TCP 80/443 traffic is unchanged. Exact native
+admission, independent review and delivery remain gates for each new artifact.
 Supported native scratch
 install/enable and a three-alias fixture workflow/restart are exercised by the
 canonical verifier. Passing synthetic checks does not establish live-network
@@ -43,7 +45,7 @@ external database, web app, MCP server, or background service is required.
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
-- [Staged host-discovery policy and datagram-only capability contract](docs/host-discovery-policy.md)
+- [Host-discovery policy, datagram-only transport and combined budgets](docs/host-discovery-policy.md)
 - [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
 - [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)

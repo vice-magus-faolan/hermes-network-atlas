@@ -10,7 +10,7 @@ import time
 from . import discovery_parse as parse
 from .batches import Observation, Probe, store_batch
 from .config import LEGACY_TCP_PORTS, Network, Policy, validate_network
-from .host_discovery import TransportStaged
+from .host_schedule import collect_methods, validate_count
 from .probes import run
 from .storage import Store, timestamp, utc_now
 
@@ -41,7 +41,7 @@ def validate_request(params: object, policy: Policy) -> tuple[Network, str]:
         raise ValueError("network/mode not authorized by local policy")
     _validate_scope(network.cidr, mode, policy)
     if mode == "ping" and (network.icmp_echo or network.tcp_ports != LEGACY_TCP_PORTS):
-        raise TransportStaged("host_discovery_transport_staged")
+        validate_count(network, policy)
     return network, mode
 
 
@@ -85,10 +85,10 @@ def _ping(chunk: str, policy: Policy, deadline: float) -> Probe:
 
 
 def collect(policy: Policy, params: object) -> dict:
-    """Fixed passive probes or serial bounded Nmap chunks; no DB lock while probing.
+    """Fixed passive/Nmap or opt-in host sockets; no DB lock while probing.
 
     Every address in the configured range is accounted for, including network and
-    broadcast addresses. One child runs with at most concurrent_probes internal
+    broadcast addresses. Legacy child runs with at most concurrent_probes internal
     outstanding probes; the entire chunk has a host/command wall deadline.
     Only all-success coverage can report non-observation.
     """
@@ -101,7 +101,9 @@ def collect(policy: Policy, params: object) -> dict:
         probes = tuple(_probe(name, argv, evidence, parser, network.cidr, policy, transport_deadline)
                        for name, argv, evidence, parser in PASSIVE)
     else:
-        probes = _active(network.cidr, policy, transport_deadline)
+        probes = (collect_methods(network, policy, transport_deadline)
+                  if network.icmp_echo or network.tcp_ports != LEGACY_TCP_PORTS
+                  else _active(network.cidr, policy, transport_deadline))
     probes = _batch_bound(probes, policy)
     successes = sum(probe.outcome == "success" for probe in probes)
     completion = "complete" if successes == len(probes) else "partial" if successes else "failed"

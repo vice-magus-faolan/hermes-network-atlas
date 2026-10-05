@@ -35,11 +35,18 @@ Issue #6 stage-1 regressions are mandatory alongside the original chunk tests:
 booleans/types/bounds/duplicates/four-port cap/4403 exclusion, dependency/scope
 rejection, immutable network-local grants, YAML unknown/duplicate keys, unchanged
 legacy fixed argv/missing-Nmap behavior and staged effect-free public tool/slash/
-CLI refusal. `tests/test_host_discovery_policy.py::ICMPCapabilityTests` mocks every
+CLI refusal at stage 1, now combined-count pre-effect refusal at stage 2.
+`tests/test_host_discovery_policy.py::ICMPCapabilityTests` mocks every
 socket: disabled/deadline/platform no-open, permission/protocol/resource errors,
 unverified open/close, interruption and uncached recheck. No packets or helpers.
-Contract and stage-2 combined budgets/provenance are in host-discovery-policy.md;
-stage-1 checks are not a claim that new transports are implemented.
+Contract and stage-2 combined budgets/provenance are in host-discovery-policy.md.
+`tests/test_host_transport.py::HostTransportTests` covers ICMP-only positives with
+filtered web TCP, configured 2222/22000, mixed duplicates, denied/missing ICMP,
+all-filtered outcomes, forged grants/4403 exclusions, full-range rate/concurrency,
+shared receive/host/operation budgets, interruption/socket cleanup and rollback.
+The native cumulative harness exercises these methods through installed tool,
+slash and CLI dispatch with non-forwarding sockets, then reads exact evidence
+after process restart. No real helper, packet or production migration is tested.
 
 Combined discovery/evidence regressions are mandatory in the canonical verifier:
 `tests/test_unresolved.py::UnresolvedEvidenceTests::test_chunk_evidence_partial_not_started_and_complete_bounded_pages`

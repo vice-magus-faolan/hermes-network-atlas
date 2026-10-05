@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
                 "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
-                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py", "host_discovery.py")
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py", "host_discovery.py",
+                "host_transport.py", "host_schedule.py")
 
 REQUIRED_CHUNK_TESTS = {
     "test_discovery_chunks.ChunkDiscoveryTests.test_sparse_24_startup_budget_reaches_last_address_and_reconciles_exact_batch",
@@ -35,10 +36,25 @@ REQUIRED_HOST_DISCOVERY_TESTS = {
     "test_host_discovery_policy.HostDiscoveryPolicyTests.test_legacy_defaults_and_explicit_defaults_preserve_exact_transport",
     "test_host_discovery_policy.HostDiscoveryPolicyTests.test_strict_enablement_port_types_bounds_duplicates_cap_and_exclusion",
     "test_host_discovery_policy.HostDiscoveryPolicyTests.test_method_dependencies_ipv6_scope_and_unknown_authority_fail_closed",
-    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_staged_requests_refuse_before_any_effect_and_report_on_public_routes",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_combined_bounds_refuse_before_any_effect_and_report_on_public_routes",
     "test_host_discovery_policy.ICMPCapabilityTests.test_disabled_expired_unsupported_are_packet_free_no_open",
     "test_host_discovery_policy.ICMPCapabilityTests.test_open_success_only_unverified_and_socket_closed_no_packet_operations",
     "test_host_discovery_policy.ICMPCapabilityTests.test_permission_protocol_resource_failures_are_bounded_no_retry_or_helper",
+    "test_host_transport.HostTransportTests.test_icmp_only_positive_survives_filtered_web_and_retains_times",
+    "test_host_transport.HostTransportTests.test_tcp_2222_and_optional_22000_only_positives",
+    "test_host_transport.HostTransportTests.test_mixed_duplicates_retained_address_counts_deduplicated_after_restart",
+    "test_host_transport.HostTransportTests.test_denied_missing_icmp_does_not_suppress_tcp_and_no_fallback",
+    "test_host_transport.HostTransportTests.test_all_filtered_timeouts_not_offline_or_packets_for_unstarted",
+    "test_host_transport.HostTransportTests.test_scope_and_4403_caller_forgery_refuse_before_transport",
+    "test_host_transport.HostTransportTests.test_round_robin_late_range_rate_concurrency_and_single_host_deadline",
+    "test_host_transport.HostTransportTests.test_output_limit_is_shared_across_methods_owned_sockets_close",
+    "test_host_transport.HostTransportTests.test_interruption_selector_failure_and_expired_before_send_close_only_owned",
+    "test_host_transport.HostTransportTests.test_persistence_failure_retains_history_and_output_receipt_rolls_back",
+    "test_host_transport.HostTransportTests.test_original_later_lineage_and_foreign_methods_do_not_transfer_authority",
+    "test_host_transport.HostTransportTests.test_runtime_method_failure_preserves_other_method_positive",
+    "test_host_transport.HostTransportTests.test_host_budget_is_not_renewed_per_method_or_port",
+    "test_host_transport.HostTransportTests.test_completed_scheduler_returns_without_idle_operation_wait",
+    "test_host_transport.HostTransportTests.test_tcp_refusal_is_response_only_after_connect_not_socket_setup",
 }
 
 

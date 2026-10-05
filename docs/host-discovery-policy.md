@@ -1,12 +1,12 @@
-# Issue #6 host-discovery contract (stage 1)
+# Issue #6 host-discovery contract and bounded transport
 
 This is a narrow Phase 2 amendment, not service inventory or administration.
-The original charter remains intact. Stage 1 validates policy and implements a
-packet-free ICMP capability diagnostic only. New methods are **staged/not yet
-functional**: a ping request selecting ICMP or nonlegacy TCP ports refuses with
-`host_discovery_transport_staged` before capability checks, subprocesses, sockets
-or persistence. Passive requests and legacy TCP 80/443 discovery are unchanged.
-Stage 2 transport must receive independent exact-artifact review before use.
+The original charter remains intact. Stage 1 validated policy and implemented a
+packet-free ICMP capability diagnostic, refusing new transport before effects.
+Stage 2 implements the independently approved datagram/connect contract below.
+Passive requests and legacy TCP 80/443 discovery are unchanged. Each candidate
+still needs genuine native admission, independent exact-artifact review and
+separate delivery authorization; synthetic transport checks are not live validation.
 
 ## Operator authority and schema
 
@@ -23,7 +23,7 @@ sets, tuples, duplicates, unknown keys and over-cap lists fail closed. The
 validated tuple is sorted and immutable; caller list edits cannot alter grants.
 An empty list disables TCP, allowing ICMP-only policy. `ping: true` with no TCP
 ports and ICMP disabled is invalid. `icmp_echo: true` requires `ping: true`.
-Explicit TCP lists can be staged behind `ping: false` but authorize no traffic.
+Explicit TCP lists can be configured behind `ping: false` but authorize no traffic.
 IPv6 ICMP/active discovery is refused; IPv6 remains passive/storage-only.
 
 TCP **4403** (Meshtastic) is a code-enforced sensitive exclusion, rejected even
@@ -113,6 +113,11 @@ ICMP sends only the 8-byte echo header (one request, no data payload); replies
 must match numeric source, echo type/code and owned identifier/sequence. Reject
 out-of-scope, multicast and broadcast destinations before socket transport;
 account excluded addresses without pretending they were checked.
+Opt-in socket collection also excludes loopback, unspecified and reserved
+destinations. Network/broadcast endpoints are excluded for prefixes below /31;
+/31 and /32 retain their ordinary host-address semantics. Those excluded method
+records make coverage partial/failed, including an otherwise responsive /24.
+Legacy Nmap accounting remains unchanged rather than rewriting its semantics.
 
 All methods and ports consume ONE monotonic operation deadline (<=120s), ONE
 aggregate outstanding-probe ceiling (<=4), ONE aggregate initiation-rate cap
@@ -128,6 +133,23 @@ attempt per address/port. Socket closure owns cancellation; any legacy child
 still uses the reviewed terminate/reap process-group runner. Kernel TCP/ARP
 retransmits are not a promised instantaneous wire-packet sandbox. No real-world
 /24 completion or reachability guarantee is made.
+
+The implementation uses windows no larger than C addresses with rotated first
+methods and address/method passes within each window. It spaces initiation by
+1/(8*C) seconds with no burst. Each attempt additionally gets at most
+min(host,command)/(enabled-method-count+1) seconds, clipped to that host's
+original deadline and the shared transport deadline. This deliberate reduction
+reserves opportunities for other methods; rate waiting still consumes host time.
+There are no per-method operation deadlines, retries or independent concurrency.
+Expired queued methods report not_started/host_deadline_before_start; socket
+timeouts report timeout/effective_transport_deadline. A successful TCP connect
+or ECONNREFUSED qualifies as host response, never proof of a service. Other
+OS failures are unavailable with bounded diagnostics, never raw error text.
+Datagram replies must be exactly eight bytes with a valid Internet checksum;
+unrelated replies consume the SAME receive-byte budget and are ignored. Exhaustion
+closes owned sockets and leaves explicit output_limit outcomes. TCP does no
+application write/read; Linux kernel handshake/retransmission behavior is not
+claimed under instantaneous application control.
 
 Keep schema version 1 and immutable historical batches unchanged. New method
 probes use `icmp_<address-index>` and `tcp_<port>_<address-index>`; contributing
@@ -161,8 +183,10 @@ canonical verifier alongside all original chunk regressions. Capability tests
 are deterministic socket mocks with no raw sockets, helper execution or packets.
 The supported native candidate-bound fixture remains mandatory; schema/unit
 checks do not substitute for admission/dispatch/fresh-process restart acceptance.
-Both admitted native processes exercise staged selection/refusal through real
-tool/slash/CLI dispatch without new transport calls, files or persisted evidence.
+The native harness exercises invalid policy refusal through real tool/slash/CLI,
+and valid synthetic socket collection retains method evidence on all three
+routes. The restarted process reads the same batch/port/time/identity evidence
+without transport. Candidate-bound admission is never replaced by socket mocks.
 
 References assessed for this decision:
 - https://man7.org/linux/man-pages/man7/icmp.7.html (Linux echo socket permissions)

@@ -74,16 +74,23 @@ activation. IPv4 ping ranges have at most 256 addresses. Stored/passive IPv6 is
 not permission for active IPv6 scanning. Numeric ceilings and selection precedence
 are detailed in [contract-decisions.md](contract-decisions.md).
 
-Issue #6 stage 1 accepts network-local discovery.icmp_echo (default false) and
+Issue #6 accepts network-local discovery.icmp_echo (default false) and
 discovery.tcp_ports (default [80,443], at most four distinct integer ports;
-4403 is forbidden). These new methods are staged/not yet functional: nonlegacy
-ping returns diagnostic_code=host_discovery_transport_staged and persisted=false
-before any capability check, socket, child or store. Passive and legacy traffic
-are unchanged. ICMP-only policy uses tcp_ports: []; ICMP requires ping: true.
+4403 is forbidden). Nonlegacy ping uses bounded numeric-only echo datagrams and
+TCP connects with no application traffic. Passive and legacy traffic are unchanged.
+ICMP-only policy uses tcp_ports: []; ICMP requires ping: true. Socket permission
+is diagnosed honestly: unavailable ICMP does not suppress a TCP positive (or vice
+versa). A TCP refusal is positive host-response evidence, not a listening service.
 The synthetic example [80,443,2222,22000] is not a default or service claim.
 No helper, grants or fallback are enabled. Read
 [host-discovery-policy.md](host-discovery-policy.md) before selecting methods;
 old binaries reject the new keys. Query/status never opens a capability socket.
+Method outcomes retain port, UTC times and contributing positives without a schema
+migration. Status address_count/responding_address_count deduplicate hosts; total
+probe/observation counts include method evidence, not extra devices. An excluded,
+timed-out, unavailable or not-started method makes coverage absence-ineligible.
+Network/broadcast addresses (except /31 and /32 host semantics), multicast,
+loopback, unspecified and reserved destinations are excluded before transport.
 
 Policy stays local even with an explicitly configured absolute
 `store.shared_sqlite_path`. Another profile can read knowledge but cannot inherit

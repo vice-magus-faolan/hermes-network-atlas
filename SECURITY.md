@@ -21,13 +21,15 @@ Owned POSIX process groups have output/deadline cleanup and direct-child reaping
 trusted executables are not an OS sandbox. See docs/local-discovery.md for the
 exact argv, ARP/TCP behavior, identity limits and offline fixture evidence.
 
-Issue #6 stage 1 validates opt-in ICMP echo and at most four network-local TCP
-ports; 4403 is excluded with no override. New transport is staged and refuses
-before effects. Only Linux echo datagrams under existing permission are selected
-for later ICMP transport: no raw sockets, privileged helper fallback, sudo or
+Issue #6 validates opt-in ICMP echo and at most four network-local TCP
+ports; 4403 is excluded with no override. Opt-in sockets use numeric authorized
+destinations, no TCP writes/reads and only an eight-byte ICMP header. Only Linux
+echo datagrams under existing permission are selected for ICMP transport:
+no raw sockets, privileged helper fallback, sudo or
 grants. Packet-free open/close diagnostics do not prove transport/reachability.
 Existing policy/ceilings and TCP 80/443 behavior remain unchanged. See
-docs/host-discovery-policy.md for shared budgets and method/identity boundaries.
+docs/host-discovery-policy.md for shared budgets, socket cancellation and
+method/identity boundaries. Failed/partial method coverage never asserts absence.
 
 Phase 3 resolves only a current profile-authorized alias or uniquely mapped
 device ID. All seven remote commands are code-owned read-only Linux probes.

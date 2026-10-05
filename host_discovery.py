@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Staged host-discovery boundary and packet-free Linux echo-datagram diagnosis.
+"""Packet-free Linux echo-datagram diagnosis.
 
 No helper or raw-socket fallback. Opening a socket is not proof of transport,
-reachability or authority; future collection must still enforce current policy.
+reachability or authority; collection must still enforce current policy.
 """
 from __future__ import annotations
 
@@ -15,10 +15,6 @@ import sys
 import time
 
 from .config import Network, validate_network
-
-
-class TransportStaged(ValueError):
-    """Selected policy is valid but its transport is not implemented at this stage."""
 
 
 @dataclass(frozen=True)
