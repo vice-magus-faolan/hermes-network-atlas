@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 30
     env:
       NETWORK_ATLAS_HERMES_ROOT: ${{ github.workspace }}/.hermes-runtime-source
-      TMPDIR: ${{ github.workspace }}/.test-scratch
+      TMPDIR: ${{ runner.temp }}/atlas-test-scratch
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -29,15 +29,18 @@ jobs:
         run: |
           mkdir -p "$TMPDIR"
           python3 -m pip install --disable-pip-version-check -r requirements-test.txt
-      - name: Packet-denied inactive confirmation regressions (synthetic authority only)
-        run: python3 -B tests/test_caution_confirmation.py -v
-      # The external signed-consent route is INACTIVE. Do not add keys, approval
-      # files or automatic confirmation here. CAUTION still refuses this default
-      # non-TTY setup until separately authorized outside-candidate activation.
-      # See docs/native-caution-confirmation.md for the prospective trust boundary.
+      - name: Record complete checked-out source identity
+        run: git rev-parse HEAD HEAD^{tree}
+      - name: Packet-denied admission policy and legacy refusal regressions
+        run: |
+          python3 -B tests/test_ci_admission.py -v
+          python3 -B tests/test_caution_confirmation.py -v
+      # Explicit CAUTION-only exception on this fresh hosted Ubuntu VM. Full native
+      # scanning, dangerous refusal and dependency admission remain unchanged.
+      # No local/runtime force authority is implied by environment diagnostics.
       - name: Online prerequisite setup — isolated supported install and enable
         run: |
-          python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT" | tee "$TMPDIR/native-setup.log"
+          python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT" --admission-mode hosted-ci-caution | tee "$TMPDIR/native-setup.log"
           python3 -c 'import os,pathlib; lines=pathlib.Path(os.environ["TMPDIR"],"native-setup.log").read_text().splitlines(); value=next(x for x in lines if x.startswith("NETWORK_ATLAS_ACCEPTANCE_FIXTURE=")); pathlib.Path(os.environ["GITHUB_ENV"]).open("a").write(value+"\n")'
       - name: Canonical offline verification — mandatory cumulative host-method and native restart coverage
         run: python3 scripts/verify.py

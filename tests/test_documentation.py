@@ -73,20 +73,23 @@ class DocumentationTests(unittest.TestCase):
 
     def test_confirmation_route_is_inactive_external_and_canonically_required(self):
         workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text()
-        self.assertIn("INACTIVE", workflow)
+        self.assertIn("--admission-mode hosted-ci-caution", workflow)
+        self.assertIn("tests/test_ci_admission.py", workflow)
         self.assertIn("tests/test_caution_confirmation.py", workflow)
         for activation in ("--approval", "--allowed-signers", "--signer", "secrets."):
             self.assertNotIn(activation, workflow)
         contract = (ROOT / "docs" / "native-caution-confirmation.md").read_text()
-        for term in ("INACTIVE by default", "operator-owned launcher/controller", "DANGEROUS always",
-                     "not a replay", "separate scopes and signatures", "publication fails honestly",
+        for term in ("INACTIVE by default", "GitHub-hosted", "DANGEROUS always",
+                     "not an OS isolation", "no signing-controller", "publication fails honestly",
                      "not shipped", "no changed repository bytes", "not independent"):
             self.assertIn(term, contract)
         verifier = ast.parse((ROOT / "scripts" / "verify.py").read_text())
-        required = next(node for node in verifier.body if isinstance(node, ast.Assign)
-                        and any(isinstance(target, ast.Name) and target.id == "REQUIRED_CONFIRMATION_TESTS" for target in node.targets))
-        ids = ast.literal_eval(required.value)
-        tests = ast.parse((ROOT / "tests" / "test_caution_confirmation.py").read_text())
-        cls = next(node for node in tests.body if isinstance(node, ast.ClassDef))
-        self.assertEqual(ids, {"test_caution_confirmation.CautionConfirmationTests." + test.name
-                               for test in cls.body if isinstance(test, ast.FunctionDef) and test.name.startswith("test_")})
+        for manifest, module, class_name in (("REQUIRED_CONFIRMATION_TESTS", "test_caution_confirmation", "CautionConfirmationTests"),
+                                             ("REQUIRED_CI_ADMISSION_TESTS", "test_ci_admission", "HostedCIAdmissionTests")):
+            required = next(node for node in verifier.body if isinstance(node, ast.Assign)
+                            and any(isinstance(target, ast.Name) and target.id == manifest for target in node.targets))
+            ids = ast.literal_eval(required.value)
+            tests = ast.parse((ROOT / "tests" / (module + ".py")).read_text())
+            cls = next(node for node in tests.body if isinstance(node, ast.ClassDef))
+            self.assertEqual(ids, {module + "." + class_name + "." + test.name
+                                   for test in cls.body if isinstance(test, ast.FunctionDef) and test.name.startswith("test_")})

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Prepare disposable native admission OUTSIDE offline tests; never activate a live home.
 
-Setup may acquire dependencies online. Security consent is inactive unless an
-external exact-artifact signed authorization is explicitly supplied. No source,
+Setup may acquire dependencies online. Local CAUTION needs ordinary explicit
+exact-artifact consent. Hosted CI has a separately approved explicit mode. No source,
 resolver, enabled selection or admission mocks. Run again for a changed candidate.
 """
 from __future__ import annotations
@@ -26,6 +26,7 @@ import time
 from acceptance_support import HERMES_COMMIT, ROOT, fixture_environment, git_head, git_tree, plugin_hashes
 from caution_confirmation import install_confirmed, verify_approval
 from native_install import approval_values, confirmation_arguments
+from ci_admission import DIAGNOSTICS, MODE, select_mode
 
 
 def run(command: list[str], root: Path, env: dict, timeout: int = 600) -> str:
@@ -94,13 +95,58 @@ def snapshot(source: Path, root: Path) -> Path:
     return destination
 
 
+def candidate_snapshot(root: Path, env: dict) -> Path:
+    """Archive and verify the entire committed candidate before native admission."""
+    run(["git", "-C", str(ROOT), "diff", "--exit-code", "HEAD"], root, env)
+    archive = subprocess.check_output(["git", "-C", str(ROOT), "archive", git_head()], timeout=60)
+    candidate = root / "candidate"
+    candidate.mkdir()
+    with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+        bundle.extractall(candidate, filter="data")
+    if plugin_hashes(candidate) != plugin_hashes():
+        raise RuntimeError("worktree plugin differs from committed artifact")
+    for argv in (["init", "-q"], ["add", "."], ["-c", "user.name=Atlas Fixture", "-c", "user.email=atlas@example.invalid",
+                                                "commit", "-qm", "Synthetic candidate fixture"]):
+        run(["git", "-C", str(candidate), *argv], root, env)
+    if git_tree(candidate) != git_tree():
+        raise RuntimeError("complete archived tree differs from committed artifact")
+    return candidate
+
+
+def install_candidate(source: Path, candidate: Path, root: Path, env: dict, args: argparse.Namespace) -> None:
+    """Choose explicit admission transport, preserving ordinary local consent."""
+    command = [sys.executable, str(ROOT / "scripts" / "native_install.py"), str(source)]
+    fixture_commit = git_head(candidate)
+    install_command = [*command, "install", str(candidate), fixture_commit]
+    if args.admission_mode == MODE:
+        install_command.extend(("--admission-mode", MODE, "--origin-commit", git_head()))
+    consent = approval_values(args)
+    if consent:
+        request = json.loads(run([*command, "scan", str(candidate), fixture_commit,
+                                  "--origin-commit", git_head(), "--confirmation-scope", args.confirmation_scope], root, env))
+        # The detached authority is validated here AND by the child before its
+        # marker. A PTY by itself is never interpreted as consent.
+        verify_approval(request, consent[0], consent[1], consent[2], consent[3], (ROOT, root, source))
+        for flag, value in zip(("--approval", "--approval-signature", "--allowed-signers", "--signer", "--confirmation-scope"), consent):
+            install_command.extend((flag, str(value)))
+        install_command.extend(("--origin-commit", git_head()))
+        output = install_confirmed(install_command, root, env, request)
+    else:
+        output = run(install_command, root, env)
+    (root / "install.log").write_text(output)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--hermes-source", type=Path, required=True, help="Git checkout of exact public Hermes commit")
     parser.add_argument("--software-seed", type=Path, help="Optional authorized disposable tools/uv-cache, never live state")
+    parser.add_argument("--admission-mode", choices=("local", MODE), default="local")
     confirmation_arguments(parser)
     args = parser.parse_args()
     consent = approval_values(args)
+    hosted = select_mode(args.admission_mode, os.environ)
+    if hosted and consent:
+        raise ValueError("hosted CI mode cannot use signed consent")
     scratch = Path(os.environ["TMPDIR"]).resolve()
     if not scratch.is_dir():
         raise ValueError("existing TMPDIR required")
@@ -113,6 +159,8 @@ def main() -> int:
     home.mkdir()
     (home / "config.yaml").write_text(json.dumps({"plugins": {"enabled": [], "disabled": []}}))
     env = fixture_environment(root)
+    if hosted:
+        env.update({key: os.environ[key] for key in DIAGNOSTICS})
     source = snapshot(args.hermes_source.resolve(), root)
     if args.software_seed:
         seed = args.software_seed.resolve()
@@ -127,41 +175,19 @@ def main() -> int:
     # Install the ENTIRE committed repository, including docs/tests/harnesses:
     # scanning a reduced production-file subset would not prove admission of
     # the artifact an operator clones. Require a clean candidate before setup.
-    run(["git", "-C", str(ROOT), "diff", "--exit-code", "HEAD"], root, env)
-    archive = subprocess.check_output(["git", "-C", str(ROOT), "archive", git_head()], timeout=60)
-    candidate = root / "candidate"
-    candidate.mkdir()
-    with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
-        bundle.extractall(candidate, filter="data")
-    if plugin_hashes(candidate) != plugin_hashes():
-        raise RuntimeError("worktree plugin differs from committed artifact")
-    for argv in (["init", "-q"], ["add", "."], ["-c", "user.name=Atlas Fixture", "-c", "user.email=atlas@example.invalid",
-                                                "commit", "-qm", "Synthetic candidate fixture"]):
-        run(["git", "-C", str(candidate), *argv], root, env)
+    candidate = candidate_snapshot(root, env)
     fixture_commit = git_head(candidate)
     command = [sys.executable, str(ROOT / "scripts" / "native_install.py"), str(source)]
     print(f"Native setup scratch: {root}", flush=True)
-    install_command = [*command, "install", str(candidate), fixture_commit]
-    if consent:
-        request = json.loads(run([*command, "scan", str(candidate), fixture_commit,
-                                  "--origin-commit", git_head(), "--confirmation-scope", args.confirmation_scope], root, env))
-        # The detached authority is validated here AND by the child before its
-        # marker. A PTY by itself is never interpreted as consent.
-        verify_approval(request, consent[0], consent[1], consent[2], consent[3], (ROOT, root, source))
-        for flag, value in zip(("--approval", "--approval-signature", "--allowed-signers", "--signer", "--confirmation-scope"), consent):
-            install_command.extend((flag, str(value)))
-        install_command.extend(("--origin-commit", git_head()))
-        output = install_confirmed(install_command, root, env, request)
-    else:
-        output = run(install_command, root, env)
-    (root / "install.log").write_text(output)
+    install_candidate(source, candidate, root, env, args)
     enable([*command, "enable"], root, env)
     receipt = json.loads((root / "native-enabled.json").read_text())
     if (receipt["plugin_hashes"] != plugin_hashes() or receipt["installed_commit"] != fixture_commit
             or receipt["installed_tree"] != git_tree()):
         raise RuntimeError("installed bytes differ from candidate")
     receipt.update({"candidate_commit": git_head(), "candidate_tree": git_tree(), "fixture_commit": fixture_commit,
-                    "setup_network": "authorized online dependency/setup only", "environment": env})
+                    "setup_network": "authorized online dependency/setup only", "environment": env,
+                    "admission_mode": args.admission_mode})
     (root / "admission.json").write_text(json.dumps(receipt, indent=2, sort_keys=True))
     print(f"NETWORK_ATLAS_ACCEPTANCE_FIXTURE={root}")
     print("Supported install/enable read back; acceptance NOT YET RUN", flush=True)

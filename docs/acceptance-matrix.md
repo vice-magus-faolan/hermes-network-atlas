@@ -162,10 +162,22 @@ refusal, missing/candidate-controlled authority, exact-byte/scope/identity/findi
 and signature mismatch, signed dangerous refusal, candidate/core drift, real
 ordinary prompt with packet-denied PM failure, synthetic successful prompt transport
 and marker/output/deadline refusal. These are also run before default CI setup.
-No synthetic approval is candidate admission or real CI authority. See
-`docs/native-caution-confirmation.md` for the external signature/controller boundary;
-default CI still refuses CAUTION until separately authorized activation, and final
-successor local/CI admission, canonical acceptance and independent review remain gates.
+No synthetic approval is candidate admission or real CI authority. The legacy
+signed route remains inactive optional coverage, not a CI provisioning gate.
+`REQUIRED_CI_ADMISSION_TESTS` mandates all eight hosted-policy tests in
+`tests/test_ci_admission.py::HostedCIAdmissionTests`: explicit matching diagnostics,
+fresh contained nonreplacement fixture, real native CAUTION/force-policy selection
+without installation, native DANGEROUS refusal even with force, SAFE/no-force and
+candidate/core drift, parsed hosted/read-only/pinned/no-secret workflow, real local
+entrypoint/mixed-consent/enable refusals and origin/ref/config revalidation.
+The approved hosted workflow uses supported force only for CAUTION on fresh
+GitHub-hosted Ubuntu VMs with full scanning, DANGEROUS refusal, no supplied secrets
+or deployment access and unchanged native admission/enable/readback. Environment
+strings are not hosted isolation proof; local/runtime force remains prohibited.
+See `docs/native-caution-confirmation.md`. Fresh exact-byte ordinary local admission,
+canonical acceptance and independent review remain mandatory. The publisher checks
+actual exact-head hosted native/canonical execution after the reviewed branch push;
+no controller/key/anchor provisioning or per-commit signed CI consent is required.
 
 A01 setup is a real native CLI-entrypoint install/enable and PM publication in
 marked disposable homes. A13 uses real discovery/registry/command/core APIs and

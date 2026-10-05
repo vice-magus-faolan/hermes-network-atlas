@@ -25,7 +25,8 @@ live profile merely to verify this repository:
 Install clones/scans the exact artifact; enable uses native PM member-union
 resolution/publication, not a hand-edited enabled list. Retain security checks
 and ordinary dependency/capability consent. Do not use force or disable scanning
-to get a refused candidate through admission. No runtime activation/restart of a
+for local/runtime admission; the separate hosted-CI-only exception below is not
+local permission. No runtime activation/restart of a
 live gateway is authorized by these instructions. Native enable's restart hint
 is advice for a separately authorized deployment, not an action this test runs.
 
@@ -243,13 +244,18 @@ plugins_cmd.cmd_install(file://<synthetic-repo>, enable=False, ref=<exact-SHA>)
 and cmd_enable('network-atlas'), the entrypoints used by the supported CLI; reads
 back installed bytes/full Git tree, enabled selector, PM facts/generation, recipes/locks and
 candidate identity. No admission, scanner, registry, selection or resolver mocks.
-Only ordinary dependency consent can be answered; other warnings/refusals are
-not forced through by default. The optional externally signed exact-artifact
-ordinary CAUTION route is INACTIVE without all explicit approval inputs. It still
-needs new final-byte local/CI consent and separately authorized outside-candidate
-trust provisioning; the existing CI workflow supplies no such authority. See
-[native-caution-confirmation.md](native-caution-confirmation.md) for the prospective
-transport, required scope/identity/findings and honest packet-denied regressions.
+Default local setup answers only ordinary dependency consent; CAUTION without
+ordinary explicit exact-byte operator confirmation still refuses. Local/runtime
+force remains prohibited. The operator-approved hosted-CI exception explicitly
+selects `--admission-mode hosted-ci-caution` only in the reviewed push/pull_request
+workflow on fresh GitHub-hosted Ubuntu VMs. It preserves complete pinned source
+scanning, DANGEROUS refusal, fresh nonreplacement fixtures, ordinary native PM and
+tree/enable readback, contents: read, pinned actions and no supplied secrets or
+deployment access. Environment diagnostics cannot prove isolation or authorize
+force on this server. No signing-controller/real keys/per-commit signed CI approval
+is required; historical signed regressions remain inactive optional code. See
+[native-caution-confirmation.md](native-caution-confirmation.md) for guards, full
+scan records, local consent and the publisher's real exact-head hosted check.
 Explicit native enable on this runtime may not ask a separate
 Python dependency question. This is setup evidence, NOT the acceptance result.
 

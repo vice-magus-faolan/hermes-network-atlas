@@ -81,6 +81,17 @@ REQUIRED_CONFIRMATION_TESTS = {
     "test_caution_confirmation.CautionConfirmationTests.test_prompt_transport_without_matching_marker_or_with_bounds_never_confirms",
 }
 
+REQUIRED_CI_ADMISSION_TESTS = {
+    "test_ci_admission.HostedCIAdmissionTests.test_explicit_mode_and_matching_diagnostics_required",
+    "test_ci_admission.HostedCIAdmissionTests.test_fresh_marked_contained_fixture_no_replacement",
+    "test_ci_admission.HostedCIAdmissionTests.test_native_full_scan_caution_selects_supported_force_without_install",
+    "test_ci_admission.HostedCIAdmissionTests.test_native_dangerous_refuses_even_force_and_never_calls_installer",
+    "test_ci_admission.HostedCIAdmissionTests.test_safe_does_not_select_force_and_candidate_or_core_drift_refuses",
+    "test_ci_admission.HostedCIAdmissionTests.test_reviewed_workflow_hosted_readonly_pins_no_secrets_or_privileged_event",
+    "test_ci_admission.HostedCIAdmissionTests.test_real_entrypoints_refuse_local_ci_mode_mixed_consent_and_enable",
+    "test_ci_admission.HostedCIAdmissionTests.test_install_boundary_rechecks_context_origin_ref_and_modified_scan_policy",
+}
+
 
 def test_ids(suite: unittest.TestSuite) -> set[str]:
     """Require critical issue regressions in discovery, not just a nonzero count."""
@@ -140,14 +151,16 @@ def main() -> int:
     if count == 0:
         print("ERROR: no tests discovered")
         return 1
-    missing = (REQUIRED_CHUNK_TESTS | REQUIRED_HOST_DISCOVERY_TESTS | REQUIRED_CONFIRMATION_TESTS) - test_ids(suite)
+    missing = (REQUIRED_CHUNK_TESTS | REQUIRED_HOST_DISCOVERY_TESTS | REQUIRED_CONFIRMATION_TESTS
+               | REQUIRED_CI_ADMISSION_TESTS) - test_ids(suite)
     if missing:
         print(f"ERROR: required discovery regression coverage absent: {sorted(missing)}")
         return 1
     print(f"Canonical verification: {count} tests discovered; cumulative synthetic V1, NOT live validation", flush=True)
     print(f"Required discovery regressions: {len(REQUIRED_CHUNK_TESTS)} chunk/legacy and "
           f"{len(REQUIRED_HOST_DISCOVERY_TESTS)} host/native and "
-          f"{len(REQUIRED_CONFIRMATION_TESTS)} inert confirmation IDs present", flush=True)
+          f"{len(REQUIRED_CONFIRMATION_TESTS)} inert confirmation and "
+          f"{len(REQUIRED_CI_ADMISSION_TESTS)} hosted CI policy IDs present", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 
