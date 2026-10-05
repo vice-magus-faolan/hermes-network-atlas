@@ -154,6 +154,24 @@ profile-local exports/network_map.md and network_map.mmd, not authoritative.
 An interruption between file replacements can leave mismatched exports; regenerate
 both from SQLite. No service enumeration, full-atlas prompt hook or scheduler ships.
 
+### When discovery found responses but inventory has zero devices
+
+MAC-less ping response evidence correctly remains unidentified. It is not a
+reason to fabricate canonical devices or assign an IP's previous owner. Read it
+through `network_query` with `view=unresolved`, or the native query CLI:
+
+    hermes network-atlas query --query-json '{"view":"unresolved","address":"192.0.2.10","limit":10}'
+    hermes network-atlas query --query-json '{"view":"unresolved","batch_id":"<returned-batch-id>","limit":10,"offset":0}'
+
+The response's evidence array is distinct from devices. Check identity_state,
+historical_responder_evidence, freshness, origin/policy_context and batch/probe
+coverage. Never-reconciled, reconciled-unresolved/conflicting and later-resolved
+originals are explicitly distinguished; resolved historical originals remain
+listed, not mislabeled. Fresh evidence still does not prove reachability now,
+identity, ownership or inspection access. Foreign shared evidence remains visible
+knowledge, not permission to apply it. See [the strict bounded evidence contract](unresolved-evidence.md)
+for pagination, all output fields, lineage limits and partial/legacy batch handling.
+
 Passive collection needs installed iproute2; ping needs optional installed Nmap;
 SSH needs a supported OpenSSH client and existing operator-managed config/keys/
 known_hosts plus remote Linux utilities. Missing executables/remote commands

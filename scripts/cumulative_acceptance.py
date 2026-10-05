@@ -81,9 +81,16 @@ def collect(atlas: NativeAtlas, root: Path) -> dict:
     first = atlas.tool("network_discover", {"network": "lab", "mode": "ping"})
     assert first["completion"] == "complete" and not first["applied"], first
     assert not atlas.tool("network_query", {})["devices"]
+    original = atlas.tool("network_query", {"view": "unresolved", "batch_id": first["batch_id"]})
+    assert len(original["evidence"]) == 5 and not original["has_more"], original
+    assert {row["identity_state"] for row in original["evidence"]} == {"never_reconciled"}
+    assert all(row["historical_responder_evidence"] for row in original["evidence"])
     initial = atlas.slash("reconcile " + first["batch_id"])
     assert len(initial["new"]) == 4 and initial["unresolved"] and not initial["missing"], initial
     assert atlas.tool("network_reconcile", {"batch_id": first["batch_id"]}) == initial
+    unidentified = atlas.cli(["query", "--query-json", json.dumps({"view": "unresolved", "address": "192.0.2.4"})])
+    assert len(unidentified["evidence"]) == 1 and unidentified["evidence"][0]["identity_state"] == "reconciled_unresolved"
+    assert unidentified["evidence"][0]["identity_reason"] == "no_unique_stable_interface"
     ids = {}
     for number, alias in enumerate(("lab-a", "lab-b", "lab-c"), 1):
         device = atlas.tool("network_query", {"address": f"192.0.2.{number}"})["devices"][0]["id"]
@@ -140,7 +147,10 @@ def negatives(atlas: NativeAtlas, home: Path, root: Path) -> None:
                 ("network_inspect", {"target": "lab-denied"}),
                 ("network_discover", {"network": "198.51.100.0/24", "mode": "ping"}),
                 ("network_discover", {"network": "lab", "mode": "ping", "flags": "-sV"}),
-                ("network_update", {"source": "user"})]
+                ("network_update", {"source": "user"}),
+                ("network_query", {"view": "unresolved", "address": "192.0.2.0/29"}),
+                ("network_query", {"view": "unresolved", "batch_id": "../atlas.sqlite3"}),
+                ("network_query", {"view": "unresolved", "command": "id"})]
     for name, params in attempts:
         assert "error" in atlas.tool(name, params), (name, params)
     assert "error" in atlas.slash('update {"source":"user"}')
@@ -157,7 +167,13 @@ def snapshot(atlas: NativeAtlas, home: Path) -> dict:
     assert "isolated" in maps["text"]["content"]
     assert atlas.slash("map mermaid")["content"] == maps["mermaid"]["content"]
     assert all(not result["exports"] for result in maps.values())
+    unresolved = atlas.tool("network_query", {"view": "unresolved", "address": "192.0.2.4"})
+    assert len(unresolved["evidence"]) == 2 and not unresolved["has_more"], unresolved
+    assert all(row["identity_reason"] == "no_unique_stable_interface" for row in unresolved["evidence"])
+    originals = atlas.tool("network_query", {"view": "unresolved", "address": "192.0.2.1"})
+    assert originals["evidence"] and any(row["identity_state"] == "subsequently_resolved" for row in originals["evidence"])
     return {"devices": devices, "histories": histories, "maps": maps,
+            "unresolved": unresolved, "original_evidence": originals,
             "ssh": atlas.tool("network_query", {"access_method": "ssh"}), "status": atlas.slash("status"), "counts": counts(home)}
 
 

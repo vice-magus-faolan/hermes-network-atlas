@@ -118,6 +118,9 @@ def main() -> int:
     for definition in definitions:
         assert definition["function"]["parameters"]["additionalProperties"] is False
         assert "source" not in definition["function"]["parameters"]["properties"]
+        if definition["function"]["name"] == "network_query":
+            properties = definition["function"]["parameters"]["properties"]
+            assert "unresolved" in properties["view"]["enum"] and "batch_id" in properties
     if mode in {"ssh_inspection", "ssh_inspection_reopen"}:
         return _inspection_smoke(mode, home, manager, dispatch, get_plugin_command_handler("network"))
     if mode in {"local_discovery", "local_discovery_reopen"}:
