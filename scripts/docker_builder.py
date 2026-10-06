@@ -12,14 +12,17 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import shutil
+import sys
 import time
-from urllib.parse import urlsplit
 
 from acceptance_support import HERMES_COMMIT
 from docker_contract import OWNER, OWNER_VALUE, MEMORY, source_path
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docker"))
+from acquisition_plan import artifact, exact, validate_linkage, require_execution_ready
 
 CORE_TREE = "008b644d38770b7de0835592ddaf19a708e2fa82"
 UPSTREAM_DIGEST = "sha256:998acd06f485adfd6890e3e15a4b542543e0cf22ff904310095da328a5e3e561"
@@ -27,11 +30,11 @@ UPSTREAM = "python:3.14.7-slim-bookworm@" + UPSTREAM_DIGEST
 BOOTSTRAP_NAME = "network-atlas-bootstrap"
 BASE_TAG = "network-atlas-acceptance-base:current"
 BASE_LABEL = "org.network-atlas.acceptance.base"
-INPUT_FILES = ("Dockerfile", "base_setup.py", "dependencies.json", "acquisition_support.py", "offline_guard.py", "hermes.tar", "hermes.commit")
+INPUT_FILES = ("Dockerfile", "base_setup.py", "dependencies.json", "acquisition_support.py", "acquisition_plan.py", "offline_guard.py", "hermes.tar", "hermes.commit")
 RESERVE = 512 * 1024 ** 2
 OVERHEAD = 128 * 1024 ** 2
 CATEGORIES = {"upstream-layer", "apt-index", "apt-package", "pm-tool", "verifier-wheel", "union-wheel", "core-archive"}
-PUBLIC_HOSTS = {"files.pythonhosted.org", "github.com", "snapshot.debian.org", "registry-1.docker.io"}
+
 
 
 def digest(value: object, *, prefixed: bool = False) -> None:
@@ -46,38 +49,26 @@ def positive(value: object, ceiling: int) -> int:
 
 
 def validate_artifact(item: dict) -> None:
-    digest(item.get("sha256"))
-    positive(item.get("compressed_bytes"), 1024 ** 3)
-    positive(item.get("unpacked_bytes"), 4 * 1024 ** 3)
-    positive(item.get("members"), 200000)
-    if (item.get("category") not in CATEGORIES or not re.fullmatch(r"[A-Za-z0-9_.+-]{1,128}", item.get("version", ""))
-            or not re.fullmatch(r"[A-Za-z0-9_.+-]{1,128}", item.get("name", ""))):
-        raise ValueError("resolved artifact category/version required")
-    filename = item.get("filename", "")
-    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.+-]{0,199}", filename):
-        raise ValueError("literal artifact filename required")
-    parsed = urlsplit(item.get("url", ""))
-    if parsed.scheme != "https" or parsed.hostname not in PUBLIC_HOSTS or parsed.username or parsed.password or parsed.port:
-        raise ValueError("fixed public HTTPS artifact origin required")
+    artifact(item)
 
 
 def validate_plan(plan: dict) -> dict[str, int]:
-    expected = {"schema": 1, "status": "resolved", "unknowns": [], "core_commit": HERMES_COMMIT,
+    expected = {"schema": 2, "status": "linked_metadata_only", "unknowns": [], "core_commit": HERMES_COMMIT,
                 "core_tree": CORE_TREE, "platform": "linux/amd64", "upstream": UPSTREAM_DIGEST}
+    exact(plan, set(expected) | {"upstream_image", "rootfs_layers", "inputs", "sources", "artifacts"})
     if any(plan.get(key) != value for key, value in expected.items()):
-        raise ValueError("complete resolved pinned public acquisition plan required")
+        raise ValueError("strict pinned source-linkage projection required; not live authority")
     digest(plan.get("upstream_image"), prefixed=True)
     layers = plan.get("rootfs_layers", [])
-    if not layers or len(layers) > 16:
-        raise ValueError("resolved upstream rootfs layers required")
+    if type(layers) is not list or not 1 <= len(layers) <= 16:
+        raise ValueError("source-linked upstream rootfs layers required")
     for layer in layers:
         digest(layer, prefixed=True)
-    if plan.get("closures") != {name: True for name in ("apt", "pm", "verifier", "union")}:
-        raise ValueError("complete apt/PM/verifier/union closure required")
-    if set(plan.get("inputs", {})) != set(INPUT_FILES):
-        raise ValueError("complete fixed public input hash manifest required")
+
+    exact(plan["inputs"], set(INPUT_FILES))
     for value in plan["inputs"].values():
         digest(value)
+    validate_linkage(plan)
     return artifact_totals(plan["artifacts"])
 
 
@@ -101,14 +92,16 @@ def artifact_totals(artifacts: list[dict]) -> dict[str, int]:
     # formula or sampled monitor cannot turn an unknown expansion into proof.
     peak = 3 * compressed + 4 * unpacked + OVERHEAD + members * 8192
     return {"compressed_bytes": compressed, "unpacked_bytes": unpacked,
-            "members": members, "peak_bytes": peak, "reserve_bytes": RESERVE}
+            "members": members, "peak_bytes": peak, "reserve_bytes": RESERVE,
+            "planning_only": True, "fit_proven": False}
 
 
 def require_space(plan: dict, free: int) -> dict[str, int]:
+    """Compare a DECLARED estimate only; never prove authenticated bounds or fit."""
     result = validate_plan(plan)
     gap = result["peak_bytes"] + RESERVE - free
     if gap > 0:
-        raise ValueError(f"containerd budget needs {gap} additional bytes; no mutation permitted")
+        raise ValueError(f"declared estimate needs {gap} additional bytes; actual deficit unknown, no mutation permitted")
     return dict(result, free_before=free)
 
 
@@ -202,6 +195,14 @@ def commit_command(data: dict, identity: BootstrapIdentity, context: Path) -> li
 
 def registry_path(path: Path, scratch: Path) -> Path:
     """Explicit durable default-profile registry, never infer active profile HOME."""
+    expected = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".hermes/network-atlas/docker-acceptance"
+    return _registry_identity(path, scratch, expected)
+
+
+def _registry_identity(path: Path, scratch: Path, expected: Path) -> Path:
+    """Pure test seam; production callers cannot supply their own expected root."""
+    if path != expected:
+        raise ValueError("exact account-default durable registry identity required")
     if not path.is_absolute() or path.is_symlink() or path.resolve() != path:
         raise ValueError("literal nonsymlink durable registry required")
     if path.is_relative_to(scratch) or path.parts[-3:] != (".hermes", "network-atlas", "docker-acceptance"):
@@ -352,6 +353,7 @@ def verify_unrelated_preserved(docker, outcome: dict, identity: BootstrapIdentit
 def build_owned(docker, root: Path, source: Path, plan: dict, registry: Path, *, foreground: bool) -> dict:
     if not foreground:
         raise ValueError("reviewed first setup requires a real foreground operator")
+    require_execution_ready()
     budget = require_space(plan, shutil.disk_usage("/var/lib/containerd").free)
     registry_path(registry, root.parent)
     if (registry / "base.json").exists() or (registry / "bootstrap.json").exists():

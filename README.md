@@ -34,6 +34,13 @@ install/enable and a three-alias fixture workflow/restart are exercised by the
 canonical verifier. Passing synthetic checks does not establish live-network
 readiness, reviewer approval, target integration or publication.
 
+The Docker harness remains code/mock-only, not exercised acceptance. Production
+build/acquisition/root setup are explicitly disabled pending authenticated
+dependency closure and a reviewed aggregate storage architecture. Strict
+`linked_metadata_only` projections and declared budget estimates cannot enable
+that gate. The current artifact still needs fresh ordinary native admission;
+running the verifier in a predecessor interpreter is bootstrap evidence only.
+
 Network Atlas observes and remembers infrastructure. It does not administer it.
 The implementation uses local SQLite, bounded allowlisted discovery,
 fixed read-only SSH probes, and deterministic Markdown/Mermaid exports. No

@@ -24,6 +24,7 @@ import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, git_head, git_tree
 from docker_builder import BOOTSTRAP_NAME, INPUT_FILES, build_owned, registry_path, validate_plan, register_consumer
+from acquisition_plan import parse_plan
 from docker_evidence import BoundedDirectory, archive_directory, json_bytes, regular_read
 from docker_contract import (ENDPOINT, EVIDENCE_LIMIT, Identity, MODES, NAME, OWNER, OWNER_VALUE,
                              check_endpoint, cleanup_allowed, create_command, export_archive, validate_container,
@@ -189,6 +190,7 @@ def base_context(source: Path, destination: Path, plan: dict) -> str:
         raise ValueError("pinned public Hermes checkout required")
     if command(["git", "-C", str(source), "status", "--porcelain=v1", "--untracked-files=all"]):
         raise ValueError("clean actual public core checkout required")
+    validate_pinned_sources(source, plan)
     destination.mkdir(mode=0o755)
     hashes = {}
     for name in BASE_FILES:
@@ -214,6 +216,17 @@ def base_context(source: Path, destination: Path, plan: dict) -> str:
     for path in destination.iterdir():
         path.chmod(0o644)
     return hashlib.sha256(json_bytes({"inputs": hashes, "plan": plan})).hexdigest()
+
+
+def validate_pinned_sources(source: Path, plan: dict) -> None:
+    """Bind source projections to actual committed public inputs, not caller hashes."""
+    lock = command(["git", "-C", str(source), "show", f"{HERMES_COMMIT}:pm/lock.json"])
+    uv = command(["git", "-C", str(source), "show", f"{HERMES_COMMIT}:uv.lock"])
+    deps = command(["git", "-C", str(ROOT), "show", "HEAD:docker/dependencies.json"])
+    expected = plan["sources"]
+    if (lock != expected["pm"]["lock"]["text"].encode() or deps != expected["dependencies"]["text"].encode()
+            or hashlib.sha256(uv).hexdigest() != expected["uv_lock_sha256"]):
+        raise ValueError("source projection differs from exact native/recipe committed metadata")
 
 
 def require_supported_builder(info: dict) -> None:
@@ -430,14 +443,17 @@ def main() -> int:
     parser.add_argument("--registry", type=Path, required=True, help="explicit durable default-profile ownership registry")
     parser.add_argument("--mode", choices=MODES, default="smoke")
     args = parser.parse_args()
+    if args.action == "build":
+        from acquisition_plan import require_execution_ready
+        require_execution_ready()
     clean_checkout()
-    root = private_root()
     registry = registry_path(args.registry, Path(os.environ["TMPDIR"]))
     if args.action == "build" and (args.plan is None or not sys.stdin.isatty() or not sys.stdout.isatty()):
         raise ValueError("resolved plan and reviewed foreground first-setup invocation required before daemon access")
-    plan = json.loads(regular_read(args.plan, 1024 ** 2)) if args.plan is not None else None
+    plan = parse_plan(regular_read(args.plan, 1024 ** 2)) if args.plan is not None else None
     if args.action in ("preflight", "build"):
         validate_plan(plan if plan is not None else {})
+    root = private_root()
     if args.action != "preflight":
         registry.mkdir(mode=0o700, parents=True, exist_ok=True)
     with lease(root):

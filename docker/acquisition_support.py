@@ -212,6 +212,8 @@ def validate_inputs(inputs: Path, plan: dict) -> None:
 
 
 def acquire(inputs: Path, destination: Path, plan: dict) -> list[dict]:
+    from acquisition_plan import require_execution_ready
+    require_execution_ready()
     validate_inputs(inputs, plan)
     if plan.get("status") != "resolved" or plan.get("unknowns") != []:
         raise ValueError("complete finite resolved acquisition required")

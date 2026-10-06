@@ -97,6 +97,17 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_plan.PlanLinkageTests.test_cli_bad_plan_or_wrong_registry_refuses_before_resource_and_daemon",
+    "test_docker_plan.PlanLinkageTests.test_outer_duplicate_keys_and_declared_budgets_never_become_proven_fit",
+    "test_docker_builder.BuilderContractTests.test_invented_plan_without_source_closure_refuses_before_effects",
+    "test_docker_builder.BuilderContractTests.test_suffix_registry_wrong_home_profile_and_temporary_parent_refuse",
+    "test_docker_plan.PlanLinkageTests.test_strict_nested_schema_missing_extra_duplicate_and_category_source_refuse",
+    "test_docker_plan.PlanLinkageTests.test_oci_manifest_config_compressed_layer_and_ordered_diffid_linkage",
+    "test_docker_plan.PlanLinkageTests.test_each_closure_pin_edges_roots_and_exact_member_identity_refuse",
+    "test_docker_plan.PlanLinkageTests.test_native_and_recipe_literal_metadata_bound_before_context_write",
+    "test_docker_plan.PlanLinkageTests.test_live_build_and_acquire_remain_disabled_even_linked_metadata_no_effect",
+    "test_docker_plan.PlanLinkageTests.test_registry_account_identity_ignores_ambient_home_no_writes",
+    "test_docker_plan.PlanLinkageTests.test_native_hash_cache_uses_literal_lock_and_tiny_verified_seed_without_install",
     "test_docker_acceptance.DockerContractTests.test_identity_labels_endpoint_and_optimized_refusal",
     "test_docker_acceptance.DockerContractTests.test_readonly_mounts_no_network_privileges_ports_or_ambient_env",
     "test_docker_acceptance.DockerContractTests.test_inspection_drift_rejects_wrong_labels_image_mounts_flags_network",
@@ -138,7 +149,8 @@ REQUIRED_DOCKER_TESTS = {
 }
 DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", "scripts/docker_inside.py", "docker/base_setup.py",
                   "scripts/docker_builder.py", "scripts/docker_evidence.py", "scripts/docker_cold.py",
-                  "docker/acquisition_support.py", "scripts/test_result_report.py", "scripts/check_docker.py")
+                  "docker/acquisition_support.py", "docker/acquisition_plan.py",
+                  "scripts/test_result_report.py", "scripts/check_docker.py")
 
 
 def check_docker_source() -> bool:

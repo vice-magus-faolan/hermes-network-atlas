@@ -16,6 +16,7 @@ import tarfile
 import resource
 
 from acquisition_support import acquire, archive_bounds, validate_inputs, reconstruct_public_core
+from acquisition_plan import parse_plan, require_execution_ready
 
 SEED = Path("/opt/seed")
 CORE = SEED / "hermes-source"
@@ -39,8 +40,9 @@ def inventory(path: Path) -> dict[str, int]:
 
 
 def main() -> int:
+    require_execution_ready()
     public = Path("/opt/inputs")
-    plan = json.loads((public / "acquisition.json").read_text())
+    plan = parse_plan((public / "acquisition.json").read_bytes())
     validate_inputs(public, plan)
     inputs = json.loads((public / "dependencies.json").read_text())
     if sys.version_info[:3] != (3, 14, 7) or os.getuid() != 0:

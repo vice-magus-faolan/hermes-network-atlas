@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "docker"))
 import acquisition_support as acquisition
 
 
-def plan():
+def invented_plan():
     categories = ("upstream-layer", "apt-index", "apt-package", "pm-tool", "verifier-wheel", "union-wheel", "core-archive")
     return {"schema": 1, "status": "resolved", "core_commit": builder.HERMES_COMMIT,
             "core_tree": builder.CORE_TREE, "platform": "linux/amd64", "upstream": builder.UPSTREAM_DIGEST,
@@ -38,6 +38,13 @@ def plan():
                            "url": "https://files.pythonhosted.org/" + name, "sha256": "d" * 64,
                            "compressed_bytes": 100, "unpacked_bytes": 1000, "members": 10}
                           for name in categories], "unknowns": []}
+
+
+from docker_plan_fixture import linked_plan
+
+
+def plan():
+    return linked_plan(builder)
 
 
 def identity():
@@ -56,6 +63,31 @@ def inspected(context, running=False):
 
 
 class BuilderContractTests(unittest.TestCase):
+    def setUp(self):
+        # Synthetic OCI anchor only for pure/mock tests, never public acquisition.
+        pin = patch.object(builder, "UPSTREAM_DIGEST", plan()["upstream"])
+        pin.start()
+        self.addCleanup(pin.stop)
+        runtime_pin = patch.object(harness, "UPSTREAM_DIGEST", plan()["upstream"])
+        runtime_pin.start()
+        self.addCleanup(runtime_pin.stop)
+
+    def test_invented_plan_without_source_closure_refuses_before_effects(self):
+        calls = []
+        fake = SimpleNamespace(run=lambda *_args, **_kw: calls.append("effect"))
+        with self.assertRaises(ValueError):
+            builder.validate_plan(invented_plan())
+        with self.assertRaises(ValueError):
+            builder.build_owned(fake, Path("/unused"), Path("/unused"), invented_plan(), Path("/unused"), foreground=True)
+        self.assertEqual(calls, [])
+
+    def test_suffix_registry_wrong_home_profile_and_temporary_parent_refuse(self):
+        scratch = Path(os.environ["TMPDIR"])
+        for parent in (Path("/unrelated"), scratch, Path("/unrelated/.hermes/profiles/other")):
+            wrong = parent / ".hermes/network-atlas/docker-acceptance"
+            with self.subTest(parent=parent), self.assertRaises(ValueError):
+                builder.registry_path(wrong, scratch / "different-pruning-boundary")
+
     def test_public_input_context_exact_hashes_readable_for_capless_setup_without_broad_chmod(self):
         with scratch_home() as directory:
             root = Path(directory)
@@ -75,7 +107,8 @@ class BuilderContractTests(unittest.TestCase):
                     return payloads[Path(args[-1]).name]
                 return payloads["hermes.tar" if "archive" in args else "hermes.commit"]
             destination = root / "context"
-            with patch.object(harness, "command", side_effect=command), patch.object(harness, "git_head", return_value=builder.HERMES_COMMIT):
+            with patch.object(harness, "command", side_effect=command), patch.object(harness, "git_head", return_value=builder.HERMES_COMMIT), \
+                    patch.object(harness, "validate_plan"), patch.object(harness, "validate_pinned_sources"):
                 key = harness.base_context(source, destination, value)
             self.assertEqual(len(key), 64)
             self.assertEqual(root.stat().st_mode & 0o777, 0o700)
@@ -154,7 +187,7 @@ class BuilderContractTests(unittest.TestCase):
                 builder.registry_path(root / "registry", root)
             durable = root / ".hermes" / "network-atlas" / "docker-acceptance"
             # Tests use a separate synthetic pruning boundary, never a live registry.
-            self.assertEqual(builder.registry_path(durable, root / "scratch"), durable)
+            self.assertEqual(builder._registry_identity(durable, root / "scratch", durable), durable)
             durable.mkdir(parents=True)
             durable.chmod(0o700)
             link = root / "link"
@@ -224,7 +257,9 @@ class BuilderContractTests(unittest.TestCase):
                 value = plan()
                 fake = FakeBuilderDocker(root / "context", value, failure)
                 with patch.object(harness, "base_context", side_effect=lambda *_args: make_context(root / "context")), \
-                        patch.object(builder.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024 ** 3)):
+                        patch.object(builder.shutil, "disk_usage", return_value=SimpleNamespace(free=4 * 1024 ** 3)), \
+                        patch.object(builder, "registry_path", side_effect=lambda p, s: builder._registry_identity(p, s, registry)), \
+                        patch.object(builder, "require_execution_ready"):
                     result = builder.build_owned(fake, root, parent / "source", value, registry, foreground=True)
                 self.assertTrue(result["cleanup_verified"], result)
                 self.assertTrue(result["unrelated_preserved"], result)
@@ -328,6 +363,7 @@ class FakeBuilderDocker:
             self.identity = builder.BootstrapIdentity(labels[builder.BASE_LABEL], self.daemon,
                 self.plan["upstream_image"], labels["org.network-atlas.acceptance.plan"])
             self.data = inspected(self.context)
+            self.data["Image"] = self.identity.image
             self.data["Config"]["Labels"] = self.identity.labels()
         if operation == "start":
             if self.failure == "interrupt":

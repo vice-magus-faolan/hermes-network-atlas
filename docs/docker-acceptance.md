@@ -11,7 +11,10 @@ fallback or provisioning change is selected. First execution is still blocked:
 the public artifact metadata is incomplete, so no finite expansion/peak fit is
 proved, and exact-byte pre-canary review plus explicit root-inside-container
 setup authority are still required. Contract tests are not those permissions.
-This is not an exercised Docker deliverable or feature approval.
+This is not an exercised Docker deliverable or feature approval. Production
+build/acquisition/root setup are now explicitly disabled in code until real
+authenticated closure and aggregate storage proof have a reviewed implementation.
+`linked_metadata_only` projections cannot enable execution or claim proven fit.
 
 ## Authority and admission
 
@@ -44,7 +47,7 @@ download is deadline/length/hash bounded. Package installation and native PM
 run only after inherited syscall network denial. The offline resolver must
 really succeed; no mocked resolution, fabricated cache or fallback is allowed.
 
-The context contains the seven fixed committed public recipe/guard/core archive
+The context contains the eight fixed committed public recipe/guard/core archive
 inputs declared in `scripts/docker_builder.py`, plus their reviewed acquisition
 plan. It contains no candidate code, host `.git`, host environment, home,
 profile, credential, or venv. The base retains public tools/core/cache and a
@@ -74,7 +77,9 @@ python3 scripts/docker_acceptance.py run --daemon <expected-local-daemon-ID> \
   --registry <durable-default-profile-registry>
 ```
 
-`build` refuses nonforeground operation before daemon access. Bootstrap has
+`build` currently refuses ALL execution before daemon access, regardless of
+foreground or metadata. The lifecycle below is implemented/mock-tested only,
+not permission or a working first setup. Proposed bootstrap has
 stable name `network-atlas-bootstrap`, UID/GID 0:0 inside its private container,
 bridge egress only for bounded public acquisition, cap-drop ALL, no-new-privileges,
 default seccomp/AppArmor, no ports/devices/socket/host namespace/restart or added
@@ -160,8 +165,11 @@ removal, and a consistent synthetic SQLite backup when produced. At most eight
 attempt evidence directories and 256 MiB retained evidence are admitted; cap
 exhaustion refuses another attempt, never erases audits automatically. Retained
 review/publication consumers must end before explicit owned retirement. The
-durable default-profile registry ends in `.hermes/network-atlas/docker-acceptance`,
-is private, explicit and outside the prunable controller scratch. It records
+durable default-profile registry is exactly the OS-account home plus
+`.hermes/network-atlas/docker-acceptance`, not any path with that suffix. The
+account database, not ambient HOME/HERMES_HOME or a second caller argument,
+anchors identity. Wrong-home/profile/temporary parents refuse. It is private,
+explicit and outside the prunable controller scratch. It records
 base/upstream/image identities, bootstrap residue, consumers, retained evidence
 and last-consumer disposition. It is not inferred from active-profile HOME.
 No live registry/image is created by unit tests. The implementation refuses a
