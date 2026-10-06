@@ -1,0 +1,413 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Owned bootstrap/stopped-rootfs commit. No BuildKit, fallback or admission consent.
+
+Execution requires an externally reviewed invocation, a resolved finite public
+acquisition plan, a foreground operator and sufficient containerd headroom.
+Plan validation alone is NOT operator authority or measured build success.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import time
+from urllib.parse import urlsplit
+
+from acceptance_support import HERMES_COMMIT
+from docker_contract import OWNER, OWNER_VALUE, MEMORY, source_path
+from docker_evidence import BoundedDirectory, json_bytes, regular_read
+
+CORE_TREE = "008b644d38770b7de0835592ddaf19a708e2fa82"
+UPSTREAM_DIGEST = "sha256:998acd06f485adfd6890e3e15a4b542543e0cf22ff904310095da328a5e3e561"
+UPSTREAM = "python:3.14.7-slim-bookworm@" + UPSTREAM_DIGEST
+BOOTSTRAP_NAME = "network-atlas-bootstrap"
+BASE_TAG = "network-atlas-acceptance-base:current"
+BASE_LABEL = "org.network-atlas.acceptance.base"
+INPUT_FILES = ("Dockerfile", "base_setup.py", "dependencies.json", "acquisition_support.py", "offline_guard.py", "hermes.tar", "hermes.commit")
+RESERVE = 512 * 1024 ** 2
+OVERHEAD = 128 * 1024 ** 2
+CATEGORIES = {"upstream-layer", "apt-index", "apt-package", "pm-tool", "verifier-wheel", "union-wheel", "core-archive"}
+PUBLIC_HOSTS = {"files.pythonhosted.org", "github.com", "snapshot.debian.org", "registry-1.docker.io"}
+
+
+def digest(value: object, *, prefixed: bool = False) -> None:
+    if not isinstance(value, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}" if prefixed else r"[0-9a-f]{64}", value):
+        raise ValueError("exact lowercase digest required")
+
+
+def positive(value: object, ceiling: int) -> int:
+    if type(value) is not int or not 0 < value <= ceiling:
+        raise ValueError("known finite positive integer artifact bound required")
+    return value
+
+
+def validate_artifact(item: dict) -> None:
+    digest(item.get("sha256"))
+    positive(item.get("compressed_bytes"), 1024 ** 3)
+    positive(item.get("unpacked_bytes"), 4 * 1024 ** 3)
+    positive(item.get("members"), 200000)
+    if (item.get("category") not in CATEGORIES or not re.fullmatch(r"[A-Za-z0-9_.+-]{1,128}", item.get("version", ""))
+            or not re.fullmatch(r"[A-Za-z0-9_.+-]{1,128}", item.get("name", ""))):
+        raise ValueError("resolved artifact category/version required")
+    filename = item.get("filename", "")
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.+-]{0,199}", filename):
+        raise ValueError("literal artifact filename required")
+    parsed = urlsplit(item.get("url", ""))
+    if parsed.scheme != "https" or parsed.hostname not in PUBLIC_HOSTS or parsed.username or parsed.password or parsed.port:
+        raise ValueError("fixed public HTTPS artifact origin required")
+
+
+def validate_plan(plan: dict) -> dict[str, int]:
+    expected = {"schema": 1, "status": "resolved", "unknowns": [], "core_commit": HERMES_COMMIT,
+                "core_tree": CORE_TREE, "platform": "linux/amd64", "upstream": UPSTREAM_DIGEST}
+    if any(plan.get(key) != value for key, value in expected.items()):
+        raise ValueError("complete resolved pinned public acquisition plan required")
+    digest(plan.get("upstream_image"), prefixed=True)
+    layers = plan.get("rootfs_layers", [])
+    if not layers or len(layers) > 16:
+        raise ValueError("resolved upstream rootfs layers required")
+    for layer in layers:
+        digest(layer, prefixed=True)
+    if plan.get("closures") != {name: True for name in ("apt", "pm", "verifier", "union")}:
+        raise ValueError("complete apt/PM/verifier/union closure required")
+    if set(plan.get("inputs", {})) != set(INPUT_FILES):
+        raise ValueError("complete fixed public input hash manifest required")
+    for value in plan["inputs"].values():
+        digest(value)
+    return artifact_totals(plan["artifacts"])
+
+
+def artifact_totals(artifacts: list[dict]) -> dict[str, int]:
+    if not isinstance(artifacts, list) or not 1 <= len(artifacts) <= 512:
+        raise ValueError("finite complete artifact count required")
+    names = set()
+    for item in artifacts:
+        validate_artifact(item)
+        if item["filename"] in names:
+            raise ValueError("duplicate artifact filename")
+        names.add(item["filename"])
+    if {item["category"] for item in artifacts} != CATEGORIES:
+        raise ValueError("missing acquisition category")
+    compressed = sum(item["compressed_bytes"] for item in artifacts)
+    unpacked = sum(item["unpacked_bytes"] for item in artifacts)
+    members = sum(item["members"] for item in artifacts)
+    # Conservative declared envelope: download/PM partial/final duplication plus
+    # unpacked parent, setup/staging, committed blob and retained snapshot overlap.
+    # Every individual expansion ceiling still needs source metadata/review; a
+    # formula or sampled monitor cannot turn an unknown expansion into proof.
+    peak = 3 * compressed + 4 * unpacked + OVERHEAD + members * 8192
+    return {"compressed_bytes": compressed, "unpacked_bytes": unpacked,
+            "members": members, "peak_bytes": peak, "reserve_bytes": RESERVE}
+
+
+def require_space(plan: dict, free: int) -> dict[str, int]:
+    result = validate_plan(plan)
+    gap = result["peak_bytes"] + RESERVE - free
+    if gap > 0:
+        raise ValueError(f"containerd budget needs {gap} additional bytes; no mutation permitted")
+    return dict(result, free_before=free)
+
+
+@dataclass(frozen=True)
+class BootstrapIdentity:
+    base_key: str
+    daemon: str
+    image: str
+    plan_hash: str
+
+    def __post_init__(self) -> None:
+        for value in (self.base_key, self.plan_hash):
+            digest(value)
+        digest(self.image, prefixed=True)
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,128}", self.daemon):
+            raise ValueError("explicit daemon ID required")
+
+    def labels(self) -> dict[str, str]:
+        return {OWNER: OWNER_VALUE, BASE_LABEL: self.base_key, "org.network-atlas.acceptance.kind": "bootstrap",
+                "org.network-atlas.acceptance.daemon": self.daemon, "org.network-atlas.acceptance.upstream": UPSTREAM_DIGEST,
+                "org.network-atlas.acceptance.hermes": HERMES_COMMIT, "org.network-atlas.acceptance.core-tree": CORE_TREE,
+                "org.network-atlas.acceptance.plan": self.plan_hash}
+
+
+def bootstrap_host_config() -> dict:
+    return {"NetworkMode": "bridge", "ReadonlyRootfs": False, "CapDrop": ["ALL"], "CapAdd": None,
+            "SecurityOpt": ["no-new-privileges=true"], "Privileged": False, "Init": True,
+            "PidMode": "", "IpcMode": "private", "Memory": MEMORY, "MemorySwap": MEMORY,
+            "NanoCpus": 2000000000, "PidsLimit": 256, "Devices": [], "DeviceRequests": None,
+            "Binds": None, "PortBindings": {}, "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
+            "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=64m,mode=0700"},
+            "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1"}}}
+
+
+def bootstrap_command(identity: BootstrapIdentity, context: Path) -> list[str]:
+    source_path(context)
+    argv = ["create", "--name", BOOTSTRAP_NAME, "--platform", "linux/amd64", "--pull", "never",
+            "--network", "bridge", "--user", "0:0", "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true",
+            "--init", "--memory", str(MEMORY), "--memory-swap", str(MEMORY), "--cpus", "2", "--pids-limit", "256",
+            "--ipc", "private", "--restart", "no", "--log-driver", "local", "--log-opt", "max-size=4m",
+            "--log-opt", "max-file=1", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=0700",
+            "--mount", f"type=bind,src={context},dst=/opt/inputs,readonly",
+            "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", ""]
+    for key, value in identity.labels().items():
+        argv.extend(("--label", f"{key}={value}"))
+    return [*argv, identity.image, "python3", "/opt/inputs/base_setup.py"]
+
+
+def owned_bootstrap(data: dict, identity: BootstrapIdentity) -> str:
+    if (data.get("Name") != "/" + BOOTSTRAP_NAME or data.get("Image") != identity.image
+            or data.get("Config", {}).get("Labels") != identity.labels()
+            or not re.fullmatch(r"[0-9a-f]{64}", data.get("Id", ""))):
+        raise ValueError("bootstrap ownership/immutable identity mismatch")
+    return data["Id"]
+
+
+def validate_bootstrap(data: dict, identity: BootstrapIdentity, context: Path) -> str:
+    identifier = owned_bootstrap(data, identity)
+    host = data["HostConfig"]
+    if any(host.get(key) != value for key, value in bootstrap_host_config().items()):
+        raise ValueError("bootstrap isolation drift")
+    config = data["Config"]
+    if (config.get("User") != "0:0" or config.get("Entrypoint") or config.get("Volumes")
+            or config.get("Cmd") != ["python3", "/opt/inputs/base_setup.py"]):
+        raise ValueError("bootstrap image/user/command/volume drift")
+    if any(value.split("=", 1)[0].startswith(("GITHUB_", "DOCKER_", "HERMES_")) for value in config.get("Env", [])):
+        raise ValueError("unexpected bootstrap environment")
+    mounts = [value for value in data["Mounts"] if value["Type"] != "tmpfs"]
+    expected = {"Type": "bind", "Source": str(context), "Destination": "/opt/inputs", "RW": False}
+    if len(mounts) != 1 or any(mounts[0].get(key) != value for key, value in expected.items()):
+        raise ValueError("bootstrap only permits fixed readonly public input mount")
+    if set(data["NetworkSettings"]["Networks"]) != {"bridge"}:
+        raise ValueError("unexpected bootstrap network")
+    return identifier
+
+
+def commit_command(data: dict, identity: BootstrapIdentity, context: Path) -> list[str]:
+    identifier = validate_bootstrap(data, identity, context)
+    if data["State"]["Running"] or data["State"].get("Status") != "exited":
+        raise ValueError("stopped exited rootfs required before commit")
+    if data["State"].get("ExitCode") != 0 or data["State"].get("OOMKilled", False):
+        raise ValueError("successful bootstrap required before commit")
+    changes = ["USER 1000:1000", "WORKDIR /work", "CMD []", "ENTRYPOINT []", "ENV PYTHONDONTWRITEBYTECODE=1"]
+    labels = dict(identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})
+    changes.extend(f"LABEL {key}={value}" for key, value in labels.items())
+    argv = ["commit"]
+    for change in changes:
+        argv.extend(("--change", change))
+    return [*argv, identifier, BASE_TAG]
+
+
+def registry_path(path: Path, scratch: Path) -> Path:
+    """Explicit durable default-profile registry, never infer active profile HOME."""
+    if not path.is_absolute() or path.is_symlink() or path.resolve() != path:
+        raise ValueError("literal nonsymlink durable registry required")
+    if path.is_relative_to(scratch) or path.parts[-3:] != (".hermes", "network-atlas", "docker-acceptance"):
+        raise ValueError("durable network-atlas/docker-acceptance registry outside prunable scratch required")
+    if path.exists() and (path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077):
+        raise ValueError("private owned durable registry required")
+    return path
+
+
+def validate_upstream(data: dict, plan: dict) -> None:
+    references = {"python@" + UPSTREAM_DIGEST, "docker.io/library/python@" + UPSTREAM_DIGEST}
+    if (data["Id"] != plan["upstream_image"] or data.get("Architecture") != "amd64" or data.get("Os") != "linux"
+            or data.get("RootFS", {}).get("Layers") != plan["rootfs_layers"]
+            or not references.intersection(data.get("RepoDigests", []))):
+        raise ValueError("upstream manifest/config/platform/rootfs drift")
+    if data["Config"].get("Volumes") or data["Config"].get("ExposedPorts"):
+        raise ValueError("unexpected upstream volume/ports")
+
+
+def teardown_bootstrap(docker, identity: BootstrapIdentity) -> None:
+    data = docker.inspect(BOOTSTRAP_NAME, name=BOOTSTRAP_NAME)
+    if data is None:
+        return
+    identifier = owned_bootstrap(data, identity)
+    if data["State"]["Running"]:
+        docker.run(["stop", "--time", "5", identifier], timeout=20)
+    data = docker.inspect(identifier, name=BOOTSTRAP_NAME)
+    if data is None or owned_bootstrap(data, identity) != identifier:
+        raise ValueError("bootstrap cleanup target drift")
+    docker.run(["rm", identifier])
+    if docker.inspect(BOOTSTRAP_NAME, name=BOOTSTRAP_NAME) is not None:
+        raise RuntimeError("owned bootstrap cleanup residue")
+
+
+def export_bootstrap(docker, root: Path, identity: BootstrapIdentity) -> dict:
+    from docker_contract import evidence_members
+    data = docker.inspect(BOOTSTRAP_NAME, name=BOOTSTRAP_NAME)
+    if data is None:
+        raise ValueError("bootstrap absent before evidence export")
+    identifier = owned_bootstrap(data, identity)
+    if data["State"]["Running"]:
+        docker.run(["stop", "--time", "5", identifier], timeout=20)
+    budget = BoundedDirectory(root)
+    budget.json("stopped.json", docker.inspect(identifier, name=BOOTSTRAP_NAME))
+    budget.write("bootstrap.log", docker.run(["logs", identifier], limit=4 * 1024 ** 2))
+    payload = docker.run(["cp", f"{identifier}:/opt/seed/inventory.json", "-"], limit=1024 ** 2)
+    members = evidence_members(payload)
+    if [name for name, _data in members] != ["inventory.json"]:
+        raise ValueError("only retained-rootfs inventory may be copied")
+    budget.write("inventory.json", members[0][1])
+    return {"inventory.json": hashlib.sha256(members[0][1]).hexdigest()}
+
+
+def finish_build(docker, root: Path, identity: BootstrapIdentity, outcome: dict) -> None:
+    try:
+        outcome["export_hashes"] = export_bootstrap(docker, root, identity)
+    except BaseException as exc:
+        outcome["export_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        teardown_bootstrap(docker, identity)
+        outcome["cleanup_verified"] = True
+    except BaseException as exc:
+        outcome["cleanup_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        BoundedDirectory(root).json("outcome.json", outcome)
+    except BaseException as exc:
+        outcome["outcome_export_error"] = f"{type(exc).__name__}: {exc}"
+
+
+def wait_bootstrap(docker, identity: BootstrapIdentity, context: Path, deadline: float, samples: dict) -> dict:
+    while time.monotonic() < deadline:
+        free = shutil.disk_usage("/var/lib/containerd").free
+        samples["free_minimum"] = min(samples["free_minimum"], free)
+        if free < RESERVE:
+            raise RuntimeError("sampled containerd reserve crossed; stop, never relax budget")
+        data = docker.inspect(BOOTSTRAP_NAME, name=BOOTSTRAP_NAME)
+        if data is None:
+            raise RuntimeError("bootstrap disappeared")
+        validate_bootstrap(data, identity, context)
+        if not data["State"]["Running"]:
+            return data
+        time.sleep(0.2)
+    raise TimeoutError("bootstrap deadline exceeded")
+
+
+def verify_final_image(data: dict, identity: BootstrapIdentity) -> dict:
+    digest(data["Id"], prefixed=True)
+    expected = dict(identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})
+    config = data["Config"]
+    if (config.get("Labels") != expected or config.get("User") != "1000:1000" or config.get("Volumes")
+            or config.get("Entrypoint") or config.get("Cmd") or config.get("ExposedPorts")
+            or config.get("WorkingDir") != "/work" or not data.get("RootFS", {}).get("Layers")):
+        raise ValueError("committed base labels/config/nonroot/rootfs drift")
+    return {"image": data["Id"], "base_key": identity.base_key, "daemon": identity.daemon,
+            "upstream_digest": UPSTREAM_DIGEST, "core_commit": HERMES_COMMIT, "core_tree": CORE_TREE,
+            "plan_hash": identity.plan_hash, "labels": expected, "rootfs_layers": data["RootFS"]["Layers"],
+            "size": data["Size"], "consumers": [], "retention": "retain-until-explicit-last-consumer-retirement"}
+
+
+def registry_budget(root: Path) -> BoundedDirectory:
+    return BoundedDirectory(root, total=1024 ** 2, per_file=512 * 1024, count=8)
+
+
+def register_consumer(registry: Path, identity, attempt: Path, status: str) -> None:
+    """Consumers survive scratch pruning; no automatic audit/base retirement."""
+    record = json.loads(regular_read(registry / "base.json", 512 * 1024))
+    if record["image"] != identity.image or record["daemon"] != identity.daemon:
+        raise ValueError("consumer/base identity mismatch")
+    consumers = record["consumers"]
+    wanted = {"evidence": str(attempt), "commit": identity.commit, "tree": identity.tree, "status": status}
+    index = next((index for index, row in enumerate(consumers) if row["evidence"] == str(attempt)), None)
+    if index is None:
+        if len(consumers) >= 8:
+            raise ValueError("retained base consumer bound; explicit last-consumer retirement required")
+        consumers.append(wanted)
+    else:
+        consumers[index] = wanted
+    registry_budget(registry).json("base.json", record)
+
+
+def reject_existing_owned(docker) -> dict:
+    containers = docker.run(["ps", "-aq", "--no-trunc", "--filter", f"label={OWNER}={OWNER_VALUE}"])
+    images = docker.run(["image", "ls", "-q", "--no-trunc", "--filter", f"label={OWNER}={OWNER_VALUE}"])
+    if containers.strip() or images.strip():
+        raise ValueError("existing owned attempt/base: reuse or last-consumer retirement, no replacement")
+    return resource_ids(docker)
+
+
+def resource_ids(docker) -> dict:
+    return {"containers": sorted(set(docker.run(["ps", "-aq", "--no-trunc"]).decode().splitlines())),
+            "images": sorted(set(docker.run(["image", "ls", "-q", "--no-trunc"]).decode().splitlines()))}
+
+
+def verify_unrelated_preserved(docker, outcome: dict, identity: BootstrapIdentity) -> None:
+    before = outcome["unrelated_before"]
+    after = resource_ids(docker)
+    expected_images = set(before["images"])
+    if outcome.get("upstream_readback_verified"):
+        expected_images.add(identity.image)
+    if "base" in outcome:
+        expected_images.add(outcome["base"]["image"])
+    if after["containers"] != before["containers"] or set(after["images"]) != expected_images:
+        raise RuntimeError("resource drift/residue after owned cleanup; unrelated resources never removed")
+    outcome["unrelated_after"] = after
+    outcome["unrelated_preserved"] = True
+
+
+def build_owned(docker, root: Path, source: Path, plan: dict, registry: Path, *, foreground: bool) -> dict:
+    if not foreground:
+        raise ValueError("reviewed first setup requires a real foreground operator")
+    budget = require_space(plan, shutil.disk_usage("/var/lib/containerd").free)
+    registry_path(registry, root.parent)
+    if (registry / "base.json").exists() or (registry / "bootstrap.json").exists():
+        raise ValueError("durable base/attempt already registered; no replacement/retry")
+    from docker_acceptance import base_context
+    context = root / "context"
+    key = base_context(source, context, plan)
+    identity = BootstrapIdentity(key, docker.daemon, plan["upstream_image"], hashlib.sha256(json_bytes(plan)).hexdigest())
+    evidence = root / "bootstrap"
+    evidence.mkdir(mode=0o700)
+    outcome = {"identity": identity.labels(), "budget": budget, "native_acceptance": False}
+    try:
+        outcome["unrelated_before"] = reject_existing_owned(docker)
+        registry.mkdir(mode=0o700, parents=True, exist_ok=True)
+        registry_budget(registry).json("bootstrap.json", {"identity": identity.labels(), "evidence": str(evidence),
+            "status": "active", "upstream_image": identity.image, "before": outcome["unrelated_before"]})
+        docker.run(["pull", "--platform", "linux/amd64", UPSTREAM], timeout=900, limit=4 * 1024 ** 2)
+        validate_upstream(docker.json(["image", "inspect", identity.image])[0], plan)
+        outcome["upstream_readback_verified"] = True
+        docker.run(bootstrap_command(identity, context))
+        data = docker.inspect(BOOTSTRAP_NAME, name=BOOTSTRAP_NAME)
+        identifier = validate_bootstrap(data, identity, context)
+        BoundedDirectory(evidence).json("created.json", data)
+        docker.run(["start", identifier])
+        samples = {"free_minimum": budget["free_before"]}
+        data = wait_bootstrap(docker, identity, context, time.monotonic() + 1800, samples)
+        outcome["samples"] = dict(samples, free_after=shutil.disk_usage("/var/lib/containerd").free)
+        # Check retained-rootfs inventory before stopped commit. Input/cache/HOME
+        # data in the mount cannot supply this proof and is not retained by commit.
+        outcome["export_hashes"] = export_bootstrap(docker, evidence, identity)
+        inventory = json.loads(regular_read(evidence / "inventory.json", 512 * 1024))
+        if inventory.get("plan_sha256") != identity.plan_hash:
+            raise ValueError("retained rootfs inventory/acquisition-plan drift")
+        image_id = docker.run(commit_command(data, identity, context), timeout=300).decode().strip()
+        registry_budget(registry).json("bootstrap.json", {"identity": identity.labels(), "evidence": str(evidence),
+            "status": "commit-returned-awaiting-readback", "returned_image": image_id[:128], "upstream_image": identity.image})
+        result = verify_final_image(docker.json(["image", "inspect", image_id])[0], identity)
+        if result["rootfs_layers"][:-1] != plan["rootfs_layers"]:
+            raise ValueError("committed rootfs does not extend exact upstream layers")
+        result.update(input_hashes=plan["inputs"], dependency_inventory=inventory, evidence=str(evidence),
+                      upstream_image=identity.image, acquisition_budget=budget)
+        # Register immediately after immutable readback; later failure must not orphan the image.
+        registry_budget(registry).json("base.json", result)
+        outcome["base"] = result
+    except BaseException as exc:
+        outcome["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        finish_build(docker, evidence, identity, outcome)
+        if "unrelated_before" in outcome and outcome.get("cleanup_verified"):
+            try:
+                verify_unrelated_preserved(docker, outcome, identity)
+            except BaseException as exc:
+                outcome["resource_error"] = f"{type(exc).__name__}: {exc}"
+        try:
+            registry_budget(registry).json("bootstrap.json", {"identity": identity.labels(), "evidence": str(evidence),
+                "status": "retained-awaiting-review", "outcome": outcome})
+        except BaseException as exc:
+            outcome["registry_error"] = f"{type(exc).__name__}: {exc}"
+    return outcome

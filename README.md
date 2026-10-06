@@ -50,6 +50,7 @@ external database, web app, MCP server, or background service is required.
 - [Operator installation, configuration and cumulative verification](docs/operator-guide.md)
 - [Hosted-CI CAUTION exception and unchanged local consent](docs/native-caution-confirmation.md)
 - [Disposable Docker acceptance and separate local/native/hosted gates](docs/docker-acceptance.md)
+- [Finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)

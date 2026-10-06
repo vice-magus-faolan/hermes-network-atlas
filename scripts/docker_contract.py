@@ -71,7 +71,8 @@ def create_command(identity: Identity, candidate: Path, mode: str, evidence: Pat
                "--memory", str(MEMORY), "--memory-swap", str(MEMORY), "--cpus", "2", "--pids-limit", "256",
                "--ipc", "private", "--log-driver", "local", "--log-opt", "max-size=4m", "--log-opt", "max-file=1",
                "--mount", f"type=bind,src={candidate},dst=/candidate,readonly",
-               "--mount", f"type=bind,src={evidence},dst=/export"]
+               "--mount", f"type=bind,src={evidence},dst=/export",
+               "--env", f"NETWORK_ATLAS_IMAGE_ID={identity.image}"]
     for path, options in TMPFS.items():
         command.extend(("--tmpfs", f"{path}:{options}"))
     for key, value in identity.labels().items():
@@ -141,6 +142,18 @@ def verification_result(log: str, code: int) -> dict:
     return {"tests": int(ran[0]), "exit_code": code, "passed": True}
 
 
+def evidence_name(member: tarfile.TarInfo, names: set[str]) -> str:
+    name = member.name.removeprefix("./")
+    path = Path(name)
+    if not member.isfile() or path.is_absolute() or ".." in path.parts or name in names:
+        raise ValueError("unsafe/duplicate export member")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+        raise ValueError("export must contain bounded flat files")
+    if not 0 <= member.size <= 8 * 1024 ** 2:
+        raise ValueError("export member size bound")
+    return name
+
+
 def evidence_members(data: bytes) -> list[tuple[str, bytes]]:
     """Validate the entire export before creating any host file; no links/devices."""
     if len(data) > EVIDENCE_LIMIT:
@@ -153,11 +166,7 @@ def evidence_members(data: bytes) -> list[tuple[str, bytes]]:
             name = member.name.removeprefix("./")
             if member.isdir() and name in ("", "."):
                 continue
-            path = Path(name)
-            if not member.isfile() or path.is_absolute() or ".." in path.parts or name in names:
-                raise ValueError("unsafe/duplicate export member")
-            if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
-                raise ValueError("export must contain bounded flat files")
+            name = evidence_name(member, names)
             total += member.size
             if total > EVIDENCE_LIMIT or len(result) >= 64:
                 raise ValueError("export content exceeds bound")

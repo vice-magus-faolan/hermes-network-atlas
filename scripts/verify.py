@@ -110,8 +110,35 @@ REQUIRED_DOCKER_TESTS = {
     "test_docker_acceptance.DockerLifecycleTests.test_unattended_accept_refuses_before_any_daemon_effect",
     "test_docker_acceptance.DockerLifecycleTests.test_containerd_and_unknown_build_backend_refuse_before_mutation",
     "test_docker_acceptance.DockerLifecycleTests.test_optimized_native_readback_mismatch_manifest_and_generation_refuse",
+    "test_docker_builder.BuilderContractTests.test_complete_plan_identity_unknown_lengths_hashes_and_peak_reserve",
+    "test_docker_builder.BuilderContractTests.test_bootstrap_root_is_private_bounded_public_readonly_not_candidate",
+    "test_docker_builder.BuilderContractTests.test_commit_requires_stopped_exact_owned_rootfs_and_final_nonroot_labels",
+    "test_docker_builder.BuilderContractTests.test_durable_registry_contract_not_scratch_symlink_or_ambient_profile",
+    "test_docker_builder.BuilderContractTests.test_unapproved_or_incomplete_plan_never_reaches_daemon_or_native",
+    "test_docker_builder.BuilderContractTests.test_owned_cleanup_duplicate_wrong_labels_and_residue_preserve_unrelated",
+    "test_docker_builder.BuilderContractTests.test_finish_preserves_original_error_and_reports_export_cleanup_residue",
+    "test_docker_builder.BuilderContractTests.test_actual_synthetic_bootstrap_sequence_success_failure_interrupt_and_durable_identity",
+    "test_docker_builder.BuilderContractTests.test_daemon_drift_before_every_mutation_and_clean_environment_no_buildkit",
+    "test_docker_builder.BuilderContractTests.test_base_drift_wrong_user_rootfs_daemon_and_unrelated_resources_never_remove",
+    "test_docker_builder.BuilderContractTests.test_durable_consumers_retained_and_cap_exhaustion_no_auto_deletion",
+    "test_docker_builder.EvidenceWriteTests.test_exact_serialization_overwrite_transient_count_and_aggregate_before_write",
+    "test_docker_builder.EvidenceWriteTests.test_copy_symlink_member_file_bounds_and_archive_padding_before_allocation",
+    "test_docker_builder.EvidenceWriteTests.test_sqlite_consistent_backup_preflight_limit_and_no_partial_export",
+    "test_docker_builder.EvidenceWriteTests.test_usage_rejects_unexpected_directory_symlink_and_preserves_original_on_error",
+    "test_docker_builder.AcquisitionAndColdTests.test_exact_download_prewrite_length_hash_deadline_and_redirect_no_network",
+    "test_docker_builder.AcquisitionAndColdTests.test_archive_expansion_members_traversal_and_unknown_format_refuse_before_unpack",
+    "test_docker_builder.AcquisitionAndColdTests.test_debian_archive_control_data_counts_and_index_expansion_are_bounded",
+    "test_docker_builder.AcquisitionAndColdTests.test_actual_setup_child_bounded_output_failure_deadline_and_owned_reaping",
+    "test_docker_builder.AcquisitionAndColdTests.test_cold_selection_generation_prefix_config_and_installed_tree_refuse_in_optimized_mode",
+    "test_docker_builder.AcquisitionAndColdTests.test_cold_proof_missing_image_or_generation_fails_host_outcome_validation",
+    "test_docker_builder.AcquisitionAndColdTests.test_native_export_failure_preserves_original_without_fabricated_evidence",
+    "test_docker_builder.AcquisitionAndColdTests.test_real_count_parser_includes_standalone_native_statuses_not_constants",
+    "test_docker_builder.AcquisitionAndColdTests.test_public_core_git_reconstruction_complete_tree_commit_no_host_git_or_native_setup",
+    "test_docker_builder.BuilderContractTests.test_public_input_context_exact_hashes_readable_for_capless_setup_without_broad_chmod",
 }
-DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", "scripts/docker_inside.py", "docker/base_setup.py")
+DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", "scripts/docker_inside.py", "docker/base_setup.py",
+                  "scripts/docker_builder.py", "scripts/docker_evidence.py", "scripts/docker_cold.py",
+                  "docker/acquisition_support.py", "scripts/test_result_report.py", "scripts/check_docker.py")
 
 
 def check_docker_source() -> bool:

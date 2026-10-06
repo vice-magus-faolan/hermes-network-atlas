@@ -20,6 +20,7 @@ import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, fixture_environment, git_head, git_tree, plugin_hashes, validate_receipt
 from docker_contract import MODES, verification_result
+from docker_evidence import BoundedDirectory
 
 WORK = Path("/work")
 FIXTURE = WORK / "fixture"
@@ -28,18 +29,24 @@ SEED = Path("/opt/seed")
 
 
 def usage(root: Path) -> dict:
-    files = [path for path in root.rglob("*") if path.is_file() and not path.is_symlink()]
+    count = apparent = allocated = 0
+    for path in root.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        value = path.stat()
+        count += 1
+        apparent += value.st_size
+        allocated += value.st_blocks * 512
+        if count > 100000 or apparent > 2 * 1024 ** 3:
+            raise ValueError("native copy/inventory bound")
     stat = os.statvfs(root)
-    return {"files": len(files), "apparent_bytes": sum(path.stat().st_size for path in files),
-            "allocated_bytes": sum(path.stat().st_blocks * 512 for path in files),
+    return {"files": count, "apparent_bytes": apparent, "allocated_bytes": allocated,
             "filesystem_used_bytes": (stat.f_blocks - stat.f_bfree) * stat.f_frsize,
             "filesystem_free_bytes": stat.f_bavail * stat.f_frsize}
 
 
 def write_json(name: str, value: object) -> None:
-    if len(json.dumps(value).encode()) + sum(path.stat().st_size for path in EXPORT.iterdir() if path.is_file()) > 32 * 1024 ** 2:
-        raise ValueError("bounded evidence export exceeded")
-    (EXPORT / name).write_text(json.dumps(value, sort_keys=True, indent=2))
+    BoundedDirectory(EXPORT).json(name, value)
 
 
 def prepare() -> tuple[Path, dict[str, str]]:
@@ -63,7 +70,7 @@ def prepare() -> tuple[Path, dict[str, str]]:
     env = fixture_environment(FIXTURE)
     env.update(HERMES_RUNTIME_DIR=str(FIXTURE / "tools"), UV_CACHE_DIR=str(cache / "uv"))
     write_json("before.json", usage(WORK))
-    shutil.copy2(SEED / "inventory.json", EXPORT / "base-inventory.json")
+    BoundedDirectory(EXPORT).copy(SEED / "inventory.json", "base-inventory.json")
     return FIXTURE / "hermes-source", env
 
 
@@ -80,7 +87,7 @@ def execute(argv: list[str], env: dict, name: str, *, interactive: bool = False,
         code = 0
     except subprocess.CalledProcessError as exc:
         output, code = exc.output, exc.returncode
-    (EXPORT / name).write_bytes(output)
+    BoundedDirectory(EXPORT).write(name, output)
     return code, output.decode(errors="replace")
 
 
@@ -88,13 +95,11 @@ def export_native() -> None:
     for name in ("native-enabled.json", "admission.json"):
         path = FIXTURE / name
         if path.is_file():
-            shutil.copy2(path, EXPORT / name)
+            BoundedDirectory(EXPORT).copy(path, name)
     atlas = FIXTURE / "hermes" / "network-atlas" / "atlas.sqlite3"
     if atlas.is_file():
         # Consistent synthetic snapshot, never raw live/WAL file copying.
-        with sqlite3.connect(f"file:{atlas}?mode=ro", uri=True) as source:
-            with sqlite3.connect(EXPORT / "synthetic-atlas.sqlite3") as destination:
-                source.backup(destination)
+        BoundedDirectory(EXPORT).sqlite_backup(atlas, "synthetic-atlas.sqlite3")
     write_json("after.json", usage(WORK))
 
 
@@ -138,7 +143,13 @@ def canonical(receipt: dict, source: Path) -> int:
     validate_receipt(FIXTURE)
     env = fixture_environment(FIXTURE)
     env.update(TMPDIR=str(WORK), NETWORK_ATLAS_ACCEPTANCE_FIXTURE=str(FIXTURE),
-               NETWORK_ATLAS_HERMES_ROOT=str(source))
+               NETWORK_ATLAS_HERMES_ROOT=str(source), HERMES_RUNTIME_DIR=str(FIXTURE / "tools"))
+    image = os.environ["NETWORK_ATLAS_IMAGE_ID"]
+    cold_code, cold_text = execute([receipt["python"], str(ROOT / "scripts" / "docker_cold.py"),
+                                   str(FIXTURE), "--image", image], env, "cold.log", timeout=60)
+    if cold_code:
+        raise RuntimeError("fresh-process native consumer/PM selection failed")
+    write_json("cold.json", json.loads(cold_text))
     code, text = execute([receipt["python"], str(ROOT / "scripts" / "verify.py")], env, "canonical.log")
     result = verification_result(text, code)
     validate_receipt(FIXTURE)
@@ -155,6 +166,7 @@ def main() -> int:
     if mode == "accept" and (not sys.stdin.isatty() or not sys.stdout.isatty()):
         raise ValueError("ordinary foreground consent required before state creation")
     write_json("started.json", {"mode": mode, "native_acceptance": False, "commit": git_head(), "tree": git_tree()})
+    original = None
     try:
         if mode == "fail":
             write_json("result.json", {"native_acceptance": False, "intentional_failure": True})
@@ -174,10 +186,19 @@ def main() -> int:
             return 0
         return scan_and_install(source, env, mode)
     except BaseException as exc:
-        write_json("error.json", {"error": type(exc).__name__, "message": str(exc), "native_acceptance": False})
+        original = exc
+        try:
+            write_json("error.json", {"error": type(exc).__name__, "message": str(exc)[:4096], "native_acceptance": False})
+        except BaseException as export_error:
+            exc.add_note(f"error evidence export failed: {type(export_error).__name__}")
         raise
     finally:
-        export_native()
+        try:
+            export_native()
+        except BaseException as export_error:
+            if original is None:
+                raise
+            original.add_note(f"native evidence export failed: {type(export_error).__name__}")
 
 
 def interrupted(_signum: int, _frame: object) -> None:

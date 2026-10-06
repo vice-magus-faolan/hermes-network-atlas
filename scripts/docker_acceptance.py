@@ -23,15 +23,17 @@ import tarfile
 import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, git_head, git_tree
+from docker_builder import BOOTSTRAP_NAME, INPUT_FILES, build_owned, registry_path, validate_plan, register_consumer
+from docker_evidence import BoundedDirectory, archive_directory, json_bytes, regular_read
 from docker_contract import (ENDPOINT, EVIDENCE_LIMIT, Identity, MODES, NAME, OWNER, OWNER_VALUE,
                              check_endpoint, cleanup_allowed, create_command, export_archive, validate_container,
                              verification_result)
 
-BASE_FILES = ("Dockerfile", "base_setup.py", "dependencies.json")
+BASE_FILES = tuple(name for name in INPUT_FILES if name not in {"hermes.tar", "hermes.commit"})
 BASE_LABEL = "org.network-atlas.acceptance.base"
 BASE_TAG = "network-atlas-acceptance-base:current"
 LOG_LIMIT = 8 * 1024 ** 2
-STORAGE_REQUIRED = 2684354560  # 2 GiB build envelope plus 512 MiB unrelated-host reserve.
+
 UPSTREAM_DIGEST = "sha256:998acd06f485adfd6890e3e15a4b542543e0cf22ff904310095da328a5e3e561"
 
 
@@ -82,7 +84,7 @@ def command(argv: list[str], *, timeout: int = 120, limit: int = LOG_LIMIT, data
 
 
 def docker_environment() -> dict[str, str]:
-    return {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "DOCKER_BUILDKIT": "0"}
+    return {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
 
 class Docker:
@@ -95,10 +97,10 @@ class Docker:
         check_endpoint(dict(os.environ), self.info, identity)
 
     def run(self, args: list[str], **kwargs) -> bytes:
-        if args[0] in {"create", "start", "stop", "rm", "build", "rmi"}:
+        if args[0] in {"create", "start", "stop", "rm", "commit", "pull"}:
             info = json.loads(command([*self.prefix, "info", "--format", "{{json .}}"] ))
-            if info.get("ID") != self.daemon:
-                raise ValueError("daemon drift before mutation")
+            identity = Identity("0" * 40, "0" * 40, "sha256:" + "0" * 64, self.daemon)
+            check_endpoint(dict(os.environ), info, identity)
         return command([*self.prefix, *args], **kwargs)
 
     def json(self, args: list[str]):
@@ -115,15 +117,17 @@ class Docker:
         if result.returncode:
             raise RuntimeError("ordinary interactive native run failed")
 
-    def inspect(self, identifier: str) -> dict | None:
+    def inspect(self, identifier: str, *, name: str = NAME) -> dict | None:
         # A list read distinguishes absence from daemon errors; never swallow them.
-        ids = self.run(["ps", "-aq", "--no-trunc", "--filter", f"name=^/{NAME}$"]).decode().splitlines()
+        if name not in (NAME, BOOTSTRAP_NAME):
+            raise ValueError("fixed owned container names only")
+        ids = self.run(["ps", "-aq", "--no-trunc", "--filter", f"name=^/{name}$"]).decode().splitlines()
         if not ids:
             return None
         if len(ids) != 1:
             raise ValueError("ambiguous owned container")
         data = self.json(["inspect", ids[0]])[0]
-        if identifier not in (NAME, data["Id"]):
+        if identifier not in (name, data["Id"]):
             raise ValueError("unexpected container ID")
         return data
 
@@ -177,68 +181,56 @@ def snapshot(source: Path, commit: str, destination: Path) -> None:
         raise ValueError("archived candidate not clean")
 
 
-def base_context(source: Path, destination: Path) -> str:
-    """Only three explicit committed recipe files plus complete public core archive."""
-    if git_head(source) != HERMES_COMMIT:
+def base_context(source: Path, destination: Path, plan: dict) -> str:
+    """Fixed committed public inputs; retained artifacts go into ordinary rootfs."""
+    validate_plan(plan)
+    top = command(["git", "-C", str(source), "rev-parse", "--show-toplevel"]).decode().strip()
+    if top != str(source.resolve()) or git_head(source) != HERMES_COMMIT:
         raise ValueError("pinned public Hermes checkout required")
-    destination.mkdir(mode=0o700)
+    if command(["git", "-C", str(source), "status", "--porcelain=v1", "--untracked-files=all"]):
+        raise ValueError("clean actual public core checkout required")
+    destination.mkdir(mode=0o755)
     hashes = {}
     for name in BASE_FILES:
-        payload = command(["git", "-C", str(ROOT), "show", f"HEAD:docker/{name}"])
+        target = "scripts/offline_guard.py" if name == "offline_guard.py" else f"docker/{name}"
+        payload = command(["git", "-C", str(ROOT), "show", f"HEAD:{target}"])
         (destination / name).write_bytes(payload)
         hashes[name] = hashlib.sha256(payload).hexdigest()
     archive = command(["git", "-C", str(source), "archive", HERMES_COMMIT], limit=256 * 1024 ** 2)
+    expected_archive = next(item for item in plan["artifacts"] if item["category"] == "core-archive")
+    if len(archive) != expected_archive["compressed_bytes"]:
+        raise ValueError("public core archive differs from resolved acquisition length")
     (destination / "hermes.tar").write_bytes(archive)
     hashes["hermes.tar"] = hashlib.sha256(archive).hexdigest()
-    return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+    commit = command(["git", "-C", str(source), "cat-file", "commit", HERMES_COMMIT], limit=65536)
+    (destination / "hermes.commit").write_bytes(commit)
+    hashes["hermes.commit"] = hashlib.sha256(commit).hexdigest()
+    if hashes != plan["inputs"]:
+        raise ValueError("committed recipe/core public input hash mismatch")
+    (destination / "acquisition.json").write_bytes(json_bytes(plan))
+    # Exact PUBLIC context only, under a private controller parent. Setup UID0
+    # with cap-drop ALL cannot bypass a host UID1000 mode0700 input mount.
+    destination.chmod(0o755)
+    for path in destination.iterdir():
+        path.chmod(0o644)
+    return hashlib.sha256(json_bytes({"inputs": hashes, "plan": plan})).hexdigest()
 
 
 def require_supported_builder(info: dict) -> None:
-    """Fail before effects where the proposed legacy build/cache plan is not established."""
-    if info.get("Driver") != "overlay2" or info.get("DriverStatus"):
-        raise ValueError("no reviewed bounded/owned build backend for this daemon; legacy build refused before effects")
+    """Container commit needs no Dockerfile builder; unknown storage still refuses."""
+    supported = info.get("Driver") == "overlay2" or (info.get("Driver") == "overlayfs" and
+                 ["driver-type", "io.containerd.snapshotter.v1"] in info.get("DriverStatus", []))
+    if not supported:
+        raise ValueError("unknown image storage backend refused before effects")
 
 
-def build_base(docker: Docker, root: Path, source: Path) -> dict:
-    """No global prune/cache cleanup; legacy --rm builder avoids a persistent BuildKit cache."""
+def build_base(docker: Docker, root: Path, source: Path, plan: dict | None = None, registry: Path | None = None) -> dict:
+    """Separately reviewed foreground root-inside-container public setup ONLY."""
     require_supported_builder(docker.info)
-    if docker.run(["ps", "-aq", "--filter", f"label={OWNER}={OWNER_VALUE}"]).strip():
-        raise ValueError("active owned container prevents base build")
-    if docker.run(["image", "ls", "-q", "--filter", f"label={OWNER}={OWNER_VALUE}"]).strip():
-        raise ValueError("existing owned base: reuse it or explicitly retire after last consumer")
-    for path in (Path("/var/lib/containerd"), root):
-        if shutil.disk_usage(path).free < STORAGE_REQUIRED:
-            raise RuntimeError(f"insufficient conservative build headroom at {path}: require {STORAGE_REQUIRED} bytes")
-    context = root / "context"
-    if context.exists():
-        raise ValueError("owned context residue requires explicit inspection")
-    try:
-        key = base_context(source, context)
-        argv = ["build", "--rm=true", "--force-rm=true", "--no-cache", "--memory", "3g",
-                "--build-arg", f"BASE_KEY={key}",
-                "--label", f"{OWNER}={OWNER_VALUE}", "--label", f"{BASE_LABEL}={key}",
-                "--tag", BASE_TAG, str(context)]
-        log = docker.run(argv, timeout=1800)
-        (root / "build.log").write_bytes(log)
-        data = docker.json(["image", "inspect", BASE_TAG])[0]
-        if data["Config"]["Labels"].get(BASE_LABEL) != key:
-            raise ValueError("built base identity mismatch")
-        result = {"image": data["Id"], "base_key": key, "size": data["Size"], "daemon": docker.daemon,
-                  "upstream_digest": UPSTREAM_DIGEST, "core_commit": HERMES_COMMIT,
-                  "dependency_inputs": json.loads((context / "dependencies.json").read_text()),
-                  "dependency_inventory": None}
-        (root / "base.json").write_text(json.dumps(result, indent=2))
-        return result
-    except subprocess.CalledProcessError as exc:
-        (root / "build.log").write_bytes(exc.output)
-        raise
-    finally:
-        if context.exists() and not context.is_symlink():
-            shutil.rmtree(context)
-        # Intermediate image ownership is explicit but deletion needs ID/consumer readback.
-        # Leave failures visible, never silently prune unrelated shared layers.
-        rows = docker.run(["image", "ls", "--filter", f"label={OWNER}={OWNER_VALUE}", "--format", "{{json .}}"]).decode().splitlines()
-        (root / "build-residue.json").write_text(json.dumps([json.loads(row) for row in rows]))
+    if plan is None or registry is None:
+        raise ValueError("complete resolved public plan/durable registry required before effects")
+    return build_owned(docker, root, source, plan, registry,
+                       foreground=sys.stdin.isatty() and sys.stdout.isatty())
 
 
 def teardown(docker: Docker, identity: Identity) -> None:
@@ -274,17 +266,21 @@ def validate_base(data: dict, record: dict, daemon: str) -> None:
                 "org.network-atlas.acceptance.upstream": UPSTREAM_DIGEST}
     if (data["Id"] != record["image"] or record["daemon"] != daemon
             or record["upstream_digest"] != UPSTREAM_DIGEST or record["core_commit"] != HERMES_COMMIT
-            or any(labels.get(key) != value for key, value in expected.items())):
+            or any(labels.get(key) != value for key, value in expected.items())
+            or labels != record.get("labels") or data["Config"].get("User") != "1000:1000"
+            or data.get("RootFS", {}).get("Layers") != record.get("rootfs_layers")):
         raise ValueError("owned base key/upstream/core/image/daemon identity mismatch")
 
 
-def attempt_preflight(docker: Docker, root: Path, image: str, mode: str) -> tuple[Identity, Path]:
+def attempt_preflight(docker: Docker, root: Path, image: str, mode: str, registry: Path | None = None) -> tuple[Identity, Path]:
     if mode == "accept" and (not sys.stdin.isatty() or not sys.stdout.isatty()):
         raise ValueError("unattended ordinary consent refused before effects")
     commit, tree = clean_checkout()
     identity = Identity(commit, tree, image, docker.daemon)
     base = docker.json(["image", "inspect", image])[0]
-    record = json.loads((root / "base.json").read_text())
+    if registry is None:
+        raise ValueError("durable owned base registry required")
+    record = json.loads(regular_read(registry / "base.json", 512 * 1024))
     validate_base(base, record, docker.daemon)
     if base["Id"] != image:
         raise ValueError("requested image differs from base record")
@@ -294,11 +290,13 @@ def attempt_preflight(docker: Docker, root: Path, image: str, mode: str) -> tupl
         raise ValueError("existing container/active lease refused, never replacement")
     attempts = root / "evidence"
     attempts.mkdir(mode=0o700, exist_ok=True)
-    if len(list(attempts.iterdir())) >= 8 or sum(path.stat().st_size for path in attempts.rglob("*") if path.is_file()) > 256 * 1024 ** 2:
+    reserved = 3 * EVIDENCE_LIMIT + LOG_LIMIT + 1024 ** 2
+    if len(list(attempts.iterdir())) >= 8 or sum(path.stat().st_size for path in attempts.rglob("*") if path.is_file()) + reserved > 256 * 1024 ** 2:
         raise ValueError("retained evidence storage bound; last-consumer retirement required")
     attempt = attempts / f"{commit}-{mode}"
     attempt.mkdir(mode=0o700)
     (attempt / "incoming").mkdir(mode=0o700)
+    register_consumer(registry, identity, attempt, "active")
     return identity, attempt
 
 
@@ -309,7 +307,9 @@ def collect_export(docker: Docker, attempt: Path, identity: Identity) -> dict:
     cleanup_allowed(current, identity)
     if current["State"]["Running"]:
         docker.run(["stop", "--time", "5", current["Id"]], timeout=20)
-    (attempt / "container.log").write_bytes(docker.run(["logs", current["Id"]]))
+    metadata = attempt / "metadata"
+    metadata.mkdir(mode=0o700, exist_ok=True)
+    BoundedDirectory(metadata).write("container.log", docker.run(["logs", current["Id"]], limit=4 * 1024 ** 2))
     incoming = attempt / "incoming"
     archive = evidence_archive(incoming)
     hashes = export_archive(archive, attempt / "export")
@@ -317,24 +317,15 @@ def collect_export(docker: Docker, attempt: Path, identity: Identity) -> dict:
 
 
 def evidence_archive(incoming: Path) -> bytes:
-    """Validate mounted export without following any untrusted link or directory."""
-    buffer = io.BytesIO()
-    total = 0
-    entries = list(incoming.iterdir())
-    if len(entries) > 64:
-        raise ValueError("too many export members")
-    with tarfile.open(fileobj=buffer, mode="w") as bundle:
-        for path in entries:
-            if path.is_symlink() or not path.is_file():
-                raise ValueError("unsafe export member")
-            total += path.stat().st_size
-            if total > EVIDENCE_LIMIT:
-                raise ValueError("export exceeds byte bound")
-            with path.open("rb") as stream:
-                member = tarfile.TarInfo(path.name)
-                member.size = path.stat().st_size
-                bundle.addfile(member, stream)
-    return buffer.getvalue()
+    return archive_directory(incoming)
+
+
+def validate_cold(cold: dict, native: dict, identity: Identity) -> None:
+    expected = {"candidate_commit": identity.commit, "candidate_tree": identity.tree,
+                "native_generation": native.get("native_generation"), "image": identity.image,
+                "collected": False, "cold_native_selection": True}
+    if any(cold.get(key) != value for key, value in expected.items()):
+        raise ValueError("missing exact-image genuine cold native selection")
 
 
 def exported_outcome(attempt: Path, mode: str, identity: Identity, code: int) -> dict:
@@ -352,6 +343,8 @@ def exported_outcome(attempt: Path, mode: str, identity: Identity, code: int) ->
     if (native.get("candidate_commit") != identity.commit or native.get("candidate_tree") != identity.tree
             or native.get("installed_tree") != identity.tree or native.get("enabled") is not True):
         raise ValueError("exported native receipt identity/selection mismatch")
+    cold = json.loads((attempt / "export" / "cold.json").read_text())
+    validate_cold(cold, native, identity)
     log = (attempt / "export" / "canonical.log").read_text()
     parsed = verification_result(log, code)
     if result.get("tests") != parsed["tests"]:
@@ -359,19 +352,19 @@ def exported_outcome(attempt: Path, mode: str, identity: Identity, code: int) ->
     return {"native_acceptance": True, "canonical": parsed}
 
 
-def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity, outcome: dict) -> None:
+def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity, outcome: dict, registry: Path | None = None) -> None:
     try:
         outcome.update(collect_export(docker, attempt, identity))
         if "error" not in outcome:
             outcome.update(exported_outcome(attempt, outcome["mode"], identity, outcome["exit_code"]))
         inventory = attempt / "export" / "base-inventory.json"
         if inventory.is_file():
-            record = json.loads((root / "base.json").read_text())
+            if registry is None:
+                raise ValueError("durable registry required for inventory readback")
+            record = json.loads(regular_read(registry / "base.json", 512 * 1024))
             value = json.loads(inventory.read_text())
-            if value["inputs"] != record["dependency_inputs"]:
-                raise ValueError("actual image dependency inputs mismatch")
-            record["dependency_inventory"] = value
-            (root / "base.json").write_text(json.dumps(record, sort_keys=True, indent=2))
+            if value != record["dependency_inventory"]:
+                raise ValueError("actual image dependency inventory differs from registered base")
     except BaseException as exc:
         outcome["export_error"] = type(exc).__name__ + ": " + str(exc)
     try:
@@ -382,11 +375,18 @@ def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity
     candidate = root / "candidate"
     if candidate.exists() and not candidate.is_symlink() and docker.inspect(NAME) is None:
         shutil.rmtree(candidate)
-    (attempt / "outcome.json").write_text(json.dumps(outcome, indent=2, sort_keys=True))
+    metadata = attempt / "metadata"
+    metadata.mkdir(mode=0o700, exist_ok=True)
+    try:
+        BoundedDirectory(metadata).json("outcome.json", outcome)
+        if registry is not None:
+            register_consumer(registry, identity, attempt, "retained-awaiting-review")
+    except BaseException as exc:
+        outcome["outcome_export_error"] = type(exc).__name__ + ": " + str(exc)
 
 
-def run_attempt(docker: Docker, root: Path, image: str, mode: str) -> dict:
-    identity, attempt = attempt_preflight(docker, root, image, mode)
+def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Path | None = None) -> dict:
+    identity, attempt = attempt_preflight(docker, root, image, mode, registry)
     candidate = root / "candidate"
     outcome = {"identity": identity.labels(), "mode": mode, "native_acceptance": False}
     try:
@@ -396,7 +396,9 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str) -> dict:
         if inspected is None:
             raise RuntimeError("created container absent")
         identifier = validate_container(inspected, identity, candidate, mode, attempt / "incoming")
-        (attempt / "created.json").write_text(json.dumps(docker.inspect(identifier), indent=2))
+        metadata = attempt / "metadata"
+        metadata.mkdir(mode=0o700)
+        BoundedDirectory(metadata).json("created.json", docker.inspect(identifier))
         if mode == "accept":
             docker.interactive_start(identifier)
         else:
@@ -414,7 +416,7 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str) -> dict:
     except BaseException as exc:
         outcome["error"] = type(exc).__name__ + ": " + str(exc)
     finally:
-        finish_attempt(docker, root, attempt, identity, outcome)
+        finish_attempt(docker, root, attempt, identity, outcome, registry)
     return outcome
 
 
@@ -424,27 +426,52 @@ def main() -> int:
     parser.add_argument("--daemon", required=True)
     parser.add_argument("--hermes-source", type=Path)
     parser.add_argument("--image")
+    parser.add_argument("--plan", type=Path, help="reviewed complete finite public acquisition plan")
+    parser.add_argument("--registry", type=Path, required=True, help="explicit durable default-profile ownership registry")
     parser.add_argument("--mode", choices=MODES, default="smoke")
     args = parser.parse_args()
     clean_checkout()
     root = private_root()
+    registry = registry_path(args.registry, Path(os.environ["TMPDIR"]))
+    if args.action == "build" and (args.plan is None or not sys.stdin.isatty() or not sys.stdout.isatty()):
+        raise ValueError("resolved plan and reviewed foreground first-setup invocation required before daemon access")
+    plan = json.loads(regular_read(args.plan, 1024 ** 2)) if args.plan is not None else None
+    if args.action in ("preflight", "build"):
+        validate_plan(plan if plan is not None else {})
+    if args.action != "preflight":
+        registry.mkdir(mode=0o700, parents=True, exist_ok=True)
     with lease(root):
+        if args.action == "preflight":
+            return preflight_only(root, args.daemon, plan)
+        with lease(registry):
+            return dispatch_action(root, args, plan, registry)
+
+
+def preflight_only(root: Path, daemon: str, plan: dict) -> int:
+    client = root / "client"
+    client.mkdir(mode=0o700, exist_ok=True)
+    docker = Docker(client, daemon)
+    require_supported_builder(docker.info)
+    from docker_builder import require_space
+    result = require_space(plan, shutil.disk_usage("/var/lib/containerd").free)
+    print(json.dumps({"preflight_only": True, "daemon": docker.daemon, "budget": result}, indent=2))
+    return 0
+
+
+def dispatch_action(root: Path, args, plan: dict | None, registry: Path) -> int:
         client = root / "client"
         client.mkdir(mode=0o700, exist_ok=True)
         docker = Docker(client, args.daemon)
-        if args.action == "preflight":
-            require_supported_builder(docker.info)
-            result = {"preflight_only": True, "daemon": docker.daemon}
-        elif args.action == "build":
+        if args.action == "build":
             if args.hermes_source is None:
                 raise ValueError("exact public Hermes source required")
-            result = build_base(docker, root, args.hermes_source)
+            result = build_base(docker, root, args.hermes_source, plan, registry)
         else:
             if args.image is None:
                 raise ValueError("immutable owned image required")
-            result = run_attempt(docker, root, args.image, args.mode)
+            result = run_attempt(docker, root, args.image, args.mode, registry)
         print(json.dumps(result, indent=2, sort_keys=True))
-        return 1 if any(key in result for key in ("error", "export_error", "cleanup_error")) else 0
+        return 1 if any(key in result for key in ("error", "export_error", "cleanup_error", "outcome_export_error", "registry_error", "resource_error")) else 0
 
 
 if __name__ == "__main__":

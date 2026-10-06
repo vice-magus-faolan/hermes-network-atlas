@@ -5,12 +5,13 @@ GitHub runner. Its new Docker/native path must be exercised and independently
 reviewed on the exact committed artifact before it is accepted. Packet-free
 contract tests alone are not Docker, native admission, or full canonical proof.
 
-Current blocker: the proposed legacy build path is not established as compatible
-with the actual containerd image store. `preflight` and `build` now refuse that
-backend before Docker mutations. A reviewed compatible bounded builder/cache
-lifecycle is still required. Do not switch to the shared BuildKit cache or a
-privileged/unconfined helper to bypass this refusal. This implementation is
-incomplete, not an exercised Docker deliverable or feature approval.
+Code-only remediation replaces the legacy builder with one owned bootstrap
+container and stopped-rootfs commit. No Dockerfile builder, BuildKit, cache
+fallback or provisioning change is selected. First execution is still blocked:
+the public artifact metadata is incomplete, so no finite expansion/peak fit is
+proved, and exact-byte pre-canary review plus explicit root-inside-container
+setup authority are still required. Contract tests are not those permissions.
+This is not an exercised Docker deliverable or feature approval.
 
 ## Authority and admission
 
@@ -31,44 +32,71 @@ any ordinary CAUTION confirmation. Old host fixture approval does not apply.
 
 ## Public inputs and reusable base
 
-`docker/Dockerfile` pins the real linux/amd64 Python 3.14.7 manifest digest.
+`docker/Dockerfile` is a declarative upstream identity anchor, not an executable
+build recipe or fallback. It pins the linux/amd64 Python 3.14.7 manifest digest.
 `docker/dependencies.json` declares public dependency inputs. The complete
 public Hermes archive is pinned to
 `f42f579cf8bac4918ac9599bece71618afadd846`; its PM lock pins Python and uv
-artifacts and checksums. Apt uses a dated Debian snapshot. Python union
-resolution still uses the pinned native PM and its actual public inputs; this
-is not claimed to be a fully reproducible dependency build.
+artifacts and checksums. Apt package/index closure must be resolved from the
+dated Debian snapshot before effects. Only fixed length/hash public artifacts
+may be acquired; redirects are checked, proxies are not inherited, and every
+download is deadline/length/hash bounded. Package installation and native PM
+run only after inherited syscall network denial. The offline resolver must
+really succeed; no mocked resolution, fabricated cache or fallback is allowed.
 
-The context contains only the three committed recipe files and a public core
-archive. It contains no candidate code, host `.git`, host environment, home,
+The context contains the seven fixed committed public recipe/guard/core archive
+inputs declared in `scripts/docker_builder.py`, plus their reviewed acquisition
+plan. It contains no candidate code, host `.git`, host environment, home,
 profile, credential, or venv. The base retains public tools/core/cache and a
-verifier environment, not a plugin installation, facts, selected native union,
-CAUTION receipt, or previous admission. The base key depends on recipe/core/
-dependency bytes, not candidate SHA. `base.json` records the actual image ID,
-upstream digest, core commit and dependency inputs; actual package/cache
-inventory is exported by the first genuine canary, not guessed from a recipe.
+verifier environment, not a plugin installation, candidate/source-scoped facts,
+selected native union, CAUTION receipt or previous admission. Authentic public
+tool-entry manifests are prerequisites, not native admission evidence. The base
+key depends on recipe/core/dependency/acquisition-plan bytes, not candidate SHA.
+The public archive and its literal public commit object reconstruct a one-commit
+core Git identity; no host Git common directory is copied or mounted.
+The input bind at `/opt/inputs` stays read-only: Docker commit excludes it, while
+retained core/tools/cache/verifier and inventory are in ordinary rootfs. No
+privileged unmount or mutable mount configuration is used. Exact stopped-state
+inventory, labels/config/rootfs and immutable image readback are mandatory.
 
 ## Commands and modes
 
-After exact-byte safety review and committing a clean candidate:
+Proposed invocation ONLY after a resolved reviewed acquisition plan, exact-byte
+pre-canary safety review and separate foreground setup permission:
 
 ```sh
 python3 scripts/docker_acceptance.py build --daemon <expected-local-daemon-ID> \
-  --hermes-source <complete-public-pinned-core-checkout>
+  --hermes-source <complete-public-pinned-core-checkout> \
+  --plan <reviewed-complete-public-acquisition-plan> \
+  --registry <durable-default-profile-registry>
 python3 scripts/docker_acceptance.py run --daemon <expected-local-daemon-ID> \
-  --image sha256:<actual-owned-base-ID> --mode smoke
+  --image sha256:<actual-owned-base-ID> --mode smoke \
+  --registry <durable-default-profile-registry>
 ```
 
-`build` is a separate public prerequisite acquisition phase. Runtime is always
+`build` refuses nonforeground operation before daemon access. Bootstrap has
+stable name `network-atlas-bootstrap`, UID/GID 0:0 inside its private container,
+bridge egress only for bounded public acquisition, cap-drop ALL, no-new-privileges,
+default seccomp/AppArmor, no ports/devices/socket/host namespace/restart or added
+capabilities. CPU/memory/PID/log limits match runtime; setup deadline is 1800s.
+Apt/dpkg under those constraints is unproven. A permission/syscall failure stops
+for a narrow decision; it never relaxes capability or security flags. Its rootfs
+must be stopped and successful before commit; final USER is 1000:1000.
+
+Runtime is always
 Docker `network none`; the canonical verifier additionally uses its inherited
 packet-denial layer. Other run modes are `fail`, `interrupt`, `refusal`, and
 `accept`. Passing/failing/interrupted modes must be exercised on real Docker;
 their expected exit codes are checked against actual exported outcomes.
 `smoke` is explicitly not native admission or full canonical acceptance.
 `accept` must yield fresh genuine native installation/enable/PM-selected UUID
-generation, validate containment and run the unchanged complete canonical
+generation, validate containment and run the complete canonical
 verifier. Counts are parsed from actual discovery/result lines, with nonzero
-exit, missing totals, disagreement and skips refused.
+exit, missing totals, disagreement and skips refused. Before canonical tests,
+`scripts/docker_cold.py` starts a fresh selected-generation consumer and binds
+interpreter prefix, source facts, installed complete commit/tree, enabled config
+and actual host-inspected image. It registers native tools/slash/CLI without
+collection. Old fixtures/interpreters can bootstrap synthetic tests only.
 
 ## Runtime layout and limits
 
@@ -91,9 +119,13 @@ Runtime UID/GID are 1000:1000, cap-drop ALL, no-new-privileges, init, read-only
 root, private IPC, network none, no ports/socket/devices/host namespaces or
 unconfined flags. The declared scratch is 2 GiB `/work` tmpfs plus 64 MiB `/tmp`.
 Memory/swap limits both equal 3 GiB (no extra container swap), CPU is 2, PID limit
-256, logs 4 MiB, operation deadline 900 seconds. Export parsing limits flat files
-to 64 members/32 MiB. Export write-side bounds and peak usage need genuine
-canary verification; do not infer a filesystem quota from a parsing limit.
+256, logs 4 MiB, operation deadline 900 seconds. Flat evidence is capped at 64
+members, 8 MiB per file and 32 MiB aggregate including tar block padding.
+Write-side bounds cover exact serialized bytes, copies, overwrite overlap,
+logs and consistent synthetic SQLite backups BEFORE writes. SQLite reserves its
+full file ceiling, aborts on growth and publishes atomically. Export errors are
+separate from original errors. These are cooperative application bounds, not a
+quota on the writable host bind or a sandbox against malicious test code.
 Tmpfs consumes real RAM and can cause OOM; it is not free storage.
 
 The local daemon is rootful: host daemon access is effectively powerful. This
@@ -105,14 +137,19 @@ redirection is refused, and no host Docker credential/config is inherited.
 
 Budget conservatively against `/var/lib/containerd`, not the larger
 DockerRootDir filesystem: external containerd/snapshotter image storage uses
-the former here. The preliminary build preflight requires 2 GiB construction
-headroom plus a 512 MiB unrelated-host reserve. This is an envelope to verify,
-not measured proof that all build peaks fit. The recipe refuses public
+the former here. See `docs/docker-acquisition-plan.md`: unknown artifact lengths,
+counts, closures or expansion bounds refuse before effects. The conservative
+declared peak counts compressed/staging/PM-partial duplication, unpacked parent,
+working/commit blobs/retained snapshot overlap and per-member filesystem
+overhead, PLUS 512 MiB untouched unrelated-host reserve. No fixed 2 GiB envelope
+or final image.Size is a fit proof. Sampled free-space minimum adds observability
+and abort protection, not a hard quota. The recipe additionally refuses public
 prerequisites above 1 GiB. Storage mapping, actual peak and failure residue
 must be verified before claiming the bounded build works. Do not migrate or
 restart daemons, grant privilege, or prune unrelated resources to make it fit.
 
-One active attempt is enforced by a nonblocking lease and stable name. Exact
+One active attempt is enforced by nonblocking controller AND durable-registry
+leases and stable names. Exact
 commit/tree/image/daemon/ownership labels and immutable IDs are read back before
 cleanup; mismatches are preserved and refused. Cleanup runs on success,
 failure, interruption and export error. Original errors are retained, cleanup
@@ -123,7 +160,12 @@ removal, and a consistent synthetic SQLite backup when produced. At most eight
 attempt evidence directories and 256 MiB retained evidence are admitted; cap
 exhaustion refuses another attempt, never erases audits automatically. Retained
 review/publication consumers must end before explicit owned retirement. The
-current implementation refuses a second owned base; predecessor rotation and
+durable default-profile registry ends in `.hermes/network-atlas/docker-acceptance`,
+is private, explicit and outside the prunable controller scratch. It records
+base/upstream/image identities, bootstrap residue, consumers, retained evidence
+and last-consumer disposition. It is not inferred from active-profile HOME.
+No live registry/image is created by unit tests. The implementation refuses a
+second owned base or stale registered bootstrap; predecessor rotation and
 build-residue retirement require verified consumer/ID handling, not global
 prune or blind deletion. Inspect all owned build residue on failure.
 
