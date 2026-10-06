@@ -29,6 +29,10 @@ def select_mode(mode: str, env: Mapping[str, str]) -> bool:
         return False
     if mode != MODE:
         raise ValueError("unknown admission mode")
+    if env.get("GITHUB_JOB") == "hosted-docker":
+        from hosted_contract import require_hosted
+        require_hosted(env, workspace=ROOT, commit=git_head(ROOT))
+        return True
     expected = {"GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted", "RUNNER_OS": "Linux",
                 "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_JOB": "offline-verification",
                 "GITHUB_SHA": git_head(ROOT), "GITHUB_WORKSPACE": str(ROOT)}

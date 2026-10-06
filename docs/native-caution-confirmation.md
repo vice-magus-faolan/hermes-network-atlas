@@ -25,6 +25,16 @@ subset archive, scanned-source rewrite or policy override is supplied.
 
 ## Hosted workflow and evidence
 
+The approved [hosted-first continuation](hosted-first-docker.md) adds one INITIAL
+feature-push `hosted-docker` job on a standard `ubuntu-24.04` x64 VM, 60 minutes,
+with actual network-none/capability-dropped nonroot Docker native acceptance.
+Its explicit diagnostics require push/feature/exact source/job/workspace/attempt1;
+the container workspace is the real `/candidate` read-only bind. Environment
+strings are not host-isolation proof. Main/PR regression contexts below remain
+separate. First hosted authorization/invocation belongs to the delivery owner,
+not this code builder, and no prior local-native/all-green requirement is invented
+for the approved first-attempt exception. Final actual acceptance still must pass.
+
 `.github/workflows/verify.yml` tests pushes to `main` and `feat/6-host-discovery`
 and pull requests targeting `main`, with pinned actions and a fresh
 `ubuntu-latest` hosted runner, top-level `contents: read` and checkout with

@@ -164,6 +164,9 @@ def readable_seed(root: Path) -> None:
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["prewarm"]:
+        require_execution_ready()
+        from offline_guard import deny_network
+        deny_network()
         sys.path.insert(0, str(CORE))
         from pm.plugin_inputs import Members
         import pm

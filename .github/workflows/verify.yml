@@ -7,7 +7,46 @@ on:
 permissions:
   contents: read
 jobs:
+  hosted-docker:
+    # Initial diagnostic feature push only. Later main/PR tests stay separate;
+    # no matrix, cache, workflow dispatch, retry or local fallback.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Exact public native core
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: NousResearch/hermes-agent
+          ref: f42f579cf8bac4918ac9599bece71618afadd846
+          path: .hermes-runtime-source
+          persist-credentials: false
+      - name: Initialize hosted scratch at step scope
+        env:
+          TMPDIR: ${{ runner.temp }}/atlas-test-scratch
+        run: |
+          mkdir -p "$TMPDIR"
+          printf 'TMPDIR=%s\n' "$TMPDIR" >> "$GITHUB_ENV"
+          git rev-parse HEAD HEAD^{tree}
+      - name: One bounded public setup then real network-none native canonical acceptance
+        run: python3 scripts/hosted_docker.py --hermes-source "$GITHUB_WORKSPACE/.hermes-runtime-source" --admission-mode hosted-ci-caution
+      - name: Bound and hash retained proof even when acceptance failed
+        if: always()
+        run: python3 scripts/hosted_evidence.py "$TMPDIR/atlas-docker" "$TMPDIR/hosted-evidence.tar"
+      - name: Retain compact exact-artifact proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: hosted-native-evidence-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/atlas-test-scratch/hosted-evidence.tar
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
   offline-verification:
+    if: github.event_name != 'push' || github.ref != 'refs/heads/feat/6-host-discovery'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

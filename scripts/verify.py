@@ -97,6 +97,17 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_hosted_docker.HostedDockerTests.test_real_legacy_prewarm_dispatch_refuses_before_pm_import_or_call",
+    "test_hosted_docker.HostedDockerTests.test_explicit_hosted_initial_feature_context_and_local_refusal",
+    "test_hosted_docker.HostedDockerTests.test_real_hosted_setup_dispatch_and_warm_refuse_before_pm",
+    "test_hosted_docker.HostedDockerTests.test_real_prewarm_refusal_normal_and_optimized_children",
+    "test_hosted_docker.HostedDockerTests.test_hosted_native_mode_scope_and_force_still_use_original_boundary",
+    "test_hosted_docker.HostedDockerTests.test_hosted_runtime_exact_diagnostics_and_isolation_readback",
+    "test_hosted_docker.HostedDockerTests.test_hosted_bootstrap_readback_and_commit_clear_attempt_diagnostics",
+    "test_hosted_docker.HostedDockerTests.test_verified_public_wheel_index_hash_size_type_and_native_tools",
+    "test_hosted_docker.HostedDockerTests.test_mocked_hosted_sequence_preserves_failure_no_retry_and_owned_cleanup",
+    "test_hosted_docker.HostedDockerTests.test_compact_export_hashes_refuses_missing_symlink_and_no_context",
+    "test_hosted_docker.HostedDockerTests.test_workflow_single_initial_vm_job_pins_permissions_and_step_context",
     "test_docker_plan.PlanLinkageTests.test_cli_bad_plan_or_wrong_registry_refuses_before_resource_and_daemon",
     "test_docker_plan.PlanLinkageTests.test_outer_duplicate_keys_and_declared_budgets_never_become_proven_fit",
     "test_docker_builder.BuilderContractTests.test_invented_plan_without_source_closure_refuses_before_effects",
@@ -150,7 +161,8 @@ REQUIRED_DOCKER_TESTS = {
 DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", "scripts/docker_inside.py", "docker/base_setup.py",
                   "scripts/docker_builder.py", "scripts/docker_evidence.py", "scripts/docker_cold.py",
                   "docker/acquisition_support.py", "docker/acquisition_plan.py",
-                  "scripts/test_result_report.py", "scripts/check_docker.py")
+                  "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
+                  "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py")
 
 
 def check_docker_source() -> bool:

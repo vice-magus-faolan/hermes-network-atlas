@@ -122,6 +122,8 @@ def scan_and_install(source: Path, env: dict, mode: str) -> int:
         return 20
     if report["verdict"] == "dangerous":
         raise RuntimeError("native DANGEROUS refusal is unconditional")
+    if mode == "hosted-accept":
+        return hosted_install(base, candidate, source, env)
     code, _text = execute([*base, "install", str(candidate), git_head()], env, "install.log", interactive=True)
     if code:
         raise RuntimeError("ordinary native installation failed")
@@ -132,6 +134,29 @@ def scan_and_install(source: Path, env: dict, mode: str) -> int:
     receipt.update(candidate_commit=git_head(), candidate_tree=git_tree(), fixture_commit=git_head(),
                    setup_network="Docker network none; genuine fresh PM from public prerequisite cache", environment=env,
                    admission_mode="local")
+    (FIXTURE / "admission.json").write_text(json.dumps(receipt, sort_keys=True, indent=2))
+    return canonical(receipt, source)
+
+
+def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) -> int:
+    """Genuine hosted-only admission, then ordinary native dependency consent."""
+    from hosted_contract import require_hosted
+    from prepare_acceptance import enable
+    diagnostics = require_hosted(os.environ, workspace=ROOT, commit=git_head())
+    env.update(diagnostics)
+    env['UV_OFFLINE'] = '1'  # real native cache-only resolution, no online fallback
+    install = [*base, "install", str(candidate), git_head(), "--admission-mode", "hosted-ci-caution",
+               "--origin-commit", git_head()]
+    code, _text = execute(install, env, "install.log")
+    if code:
+        raise RuntimeError("real hosted native admission failed")
+    # Narrow supported PM prompt only, not blanket yes or scan confirmation.
+    enable([*base, "enable"], FIXTURE, env)
+    BoundedDirectory(EXPORT).copy(FIXTURE / "enable.log", "enable.log")
+    receipt = json.loads((FIXTURE / "native-enabled.json").read_text())
+    receipt.update(candidate_commit=git_head(), candidate_tree=git_tree(), fixture_commit=git_head(),
+                   setup_network="Docker network none plus inherited syscall denial", environment=env,
+                   admission_mode="hosted-ci-caution")
     (FIXTURE / "admission.json").write_text(json.dumps(receipt, sort_keys=True, indent=2))
     return canonical(receipt, source)
 
@@ -163,6 +188,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("mode", choices=MODES)
     mode = parser.parse_args().mode
+    if mode == "hosted-accept":
+        from hosted_contract import require_hosted
+        from offline_guard import deny_network
+        require_hosted(os.environ, workspace=ROOT, commit=git_head())
+        deny_network()  # inherited by real native PM/resolver as well as tests
     if mode == "accept" and (not sys.stdin.isatty() or not sys.stdout.isatty()):
         raise ValueError("ordinary foreground consent required before state creation")
     write_json("started.json", {"mode": mode, "native_acceptance": False, "commit": git_head(), "tree": git_tree()})

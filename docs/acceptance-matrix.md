@@ -1,5 +1,12 @@
 # Acceptance matrix
 
+For the staged first-hosted Docker continuation, see
+[hosted-first-docker.md](hosted-first-docker.md). Local implementation tests are
+not native admission; absent fresh current-artifact acceptance remains FAILED.
+The first hosted trigger needs exact-code/workflow plus invocation/evidence-control
+independent approval, not a claimed guaranteed-fit/local-all-green precondition.
+Final actual native/canonical/hosted/independent/publication gates are unchanged.
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission

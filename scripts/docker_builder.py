@@ -19,7 +19,7 @@ import sys
 import time
 
 from acceptance_support import HERMES_COMMIT
-from docker_contract import OWNER, OWNER_VALUE, MEMORY, source_path
+from docker_contract import OWNER, OWNER_VALUE, MEMORY, source_path, validate_environment
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docker"))
 from acquisition_plan import artifact, exact, validate_linkage, require_execution_ready
@@ -129,14 +129,14 @@ class BootstrapIdentity:
 def bootstrap_host_config() -> dict:
     return {"NetworkMode": "bridge", "ReadonlyRootfs": False, "CapDrop": ["ALL"], "CapAdd": None,
             "SecurityOpt": ["no-new-privileges=true"], "Privileged": False, "Init": True,
-            "PidMode": "", "IpcMode": "private", "Memory": MEMORY, "MemorySwap": MEMORY,
+            "PidMode": "", "IpcMode": "private", "UTSMode": "", "UsernsMode": "", "Memory": MEMORY, "MemorySwap": MEMORY,
             "NanoCpus": 2000000000, "PidsLimit": 256, "Devices": [], "DeviceRequests": None,
             "Binds": None, "PortBindings": {}, "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
             "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=64m,mode=0700"},
             "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1"}}}
 
 
-def bootstrap_command(identity: BootstrapIdentity, context: Path) -> list[str]:
+def bootstrap_command(identity: BootstrapIdentity, context: Path, *, hosted: dict | None = None) -> list[str]:
     source_path(context)
     argv = ["create", "--name", BOOTSTRAP_NAME, "--platform", "linux/amd64", "--pull", "never",
             "--network", "bridge", "--user", "0:0", "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true",
@@ -147,7 +147,11 @@ def bootstrap_command(identity: BootstrapIdentity, context: Path) -> list[str]:
             "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", ""]
     for key, value in identity.labels().items():
         argv.extend(("--label", f"{key}={value}"))
-    return [*argv, identity.image, "python3", "/opt/inputs/base_setup.py"]
+    if hosted is not None:
+        for key, value in hosted.items():
+            argv.extend(("--env", f"{key}={value}"))
+    script = "hosted_setup.py" if hosted is not None else "base_setup.py"
+    return [*argv, identity.image, "python3", f"/opt/inputs/{script}"]
 
 
 def owned_bootstrap(data: dict, identity: BootstrapIdentity) -> str:
@@ -158,17 +162,17 @@ def owned_bootstrap(data: dict, identity: BootstrapIdentity) -> str:
     return data["Id"]
 
 
-def validate_bootstrap(data: dict, identity: BootstrapIdentity, context: Path) -> str:
+def validate_bootstrap(data: dict, identity: BootstrapIdentity, context: Path, *, hosted: dict | None = None) -> str:
     identifier = owned_bootstrap(data, identity)
     host = data["HostConfig"]
     if any(host.get(key) != value for key, value in bootstrap_host_config().items()):
         raise ValueError("bootstrap isolation drift")
     config = data["Config"]
+    script = "hosted_setup.py" if hosted is not None else "base_setup.py"
     if (config.get("User") != "0:0" or config.get("Entrypoint") or config.get("Volumes")
-            or config.get("Cmd") != ["python3", "/opt/inputs/base_setup.py"]):
+            or config.get("Cmd") != ["python3", f"/opt/inputs/{script}"]):
         raise ValueError("bootstrap image/user/command/volume drift")
-    if any(value.split("=", 1)[0].startswith(("GITHUB_", "DOCKER_", "HERMES_")) for value in config.get("Env", [])):
-        raise ValueError("unexpected bootstrap environment")
+    validate_environment(config.get("Env", []), hosted, native=True)
     mounts = [value for value in data["Mounts"] if value["Type"] != "tmpfs"]
     expected = {"Type": "bind", "Source": str(context), "Destination": "/opt/inputs", "RW": False}
     if len(mounts) != 1 or any(mounts[0].get(key) != value for key, value in expected.items()):
@@ -178,13 +182,15 @@ def validate_bootstrap(data: dict, identity: BootstrapIdentity, context: Path) -
     return identifier
 
 
-def commit_command(data: dict, identity: BootstrapIdentity, context: Path) -> list[str]:
-    identifier = validate_bootstrap(data, identity, context)
+def commit_command(data: dict, identity: BootstrapIdentity, context: Path, *, hosted: dict | None = None) -> list[str]:
+    identifier = validate_bootstrap(data, identity, context, hosted=hosted)
     if data["State"]["Running"] or data["State"].get("Status") != "exited":
         raise ValueError("stopped exited rootfs required before commit")
     if data["State"].get("ExitCode") != 0 or data["State"].get("OOMKilled", False):
         raise ValueError("successful bootstrap required before commit")
     changes = ["USER 1000:1000", "WORKDIR /work", "CMD []", "ENTRYPOINT []", "ENV PYTHONDONTWRITEBYTECODE=1"]
+    if hosted is not None:
+        changes.extend(f"ENV {key}=" for key in hosted)
     labels = dict(identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})
     changes.extend(f"LABEL {key}={value}" for key, value in labels.items())
     argv = ["commit"]

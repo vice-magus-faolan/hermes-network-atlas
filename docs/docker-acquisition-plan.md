@@ -1,5 +1,13 @@
 # Finite Docker acquisition and peak plan
 
+This remains the DISABLED legacy metadata-plan path. See the approved staged
+[hosted-first successor](hosted-first-docker.md) for its distinct private PUBLIC
+prerequisite resolution/real native PM and network-none acceptance architecture.
+The successor does not promote projections to resolved/fit evidence and does not
+authorize any local execution. Exact code/workflow review precedes the owner's
+one future hosted attempt; current-artifact native acceptance is still required
+afterward. The actual legacy `prewarm` dispatcher also refuses before PM effects.
+
 This document specifies the fail-closed input contract. It is NOT a resolved
 acquisition lock, measured build result, first-setup permission or native receipt.
 Read `docs/docker-acceptance.md` for the separate exact-byte review/authority gates.

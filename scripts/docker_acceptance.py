@@ -313,7 +313,7 @@ def attempt_preflight(docker: Docker, root: Path, image: str, mode: str, registr
     return identity, attempt
 
 
-def collect_export(docker: Docker, attempt: Path, identity: Identity) -> dict:
+def collect_export(docker: Docker, attempt: Path, identity: Identity, *, hosted_export: bool = False) -> dict:
     current = docker.inspect(NAME)
     if current is None:
         return {}
@@ -324,7 +324,10 @@ def collect_export(docker: Docker, attempt: Path, identity: Identity) -> dict:
     metadata.mkdir(mode=0o700, exist_ok=True)
     BoundedDirectory(metadata).write("container.log", docker.run(["logs", current["Id"]], limit=4 * 1024 ** 2))
     incoming = attempt / "incoming"
-    archive = evidence_archive(incoming)
+    # Hosted runner UID can differ from container UID1000. Read ONLY the exact
+    # owned export through Docker's bounded archive API; no host chown/sudo.
+    archive = (docker.run(["cp", f"{current['Id']}:/export/.", "-"], limit=EVIDENCE_LIMIT)
+               if hosted_export else evidence_archive(incoming))
     hashes = export_archive(archive, attempt / "export")
     return {"export_hashes": hashes}
 
@@ -343,12 +346,13 @@ def validate_cold(cold: dict, native: dict, identity: Identity) -> None:
 
 def exported_outcome(attempt: Path, mode: str, identity: Identity, code: int) -> dict:
     result = json.loads((attempt / "export" / "result.json").read_text())
-    expected = {"smoke": 0, "fail": 21, "refusal": 20, "interrupt": 22, "accept": 0}
-    if code != expected.get(mode) or result.get("native_acceptance") != (mode == "accept"):
+    expected = {"smoke": 0, "fail": 21, "refusal": 20, "interrupt": 22, "accept": 0, "hosted-accept": 0}
+    acceptance = mode in {"accept", "hosted-accept"}
+    if code != expected.get(mode) or result.get("native_acceptance") != acceptance:
         raise ValueError("unexpected container exit/acceptance outcome")
     fields = {"smoke": "packet_denial_smoke", "fail": "intentional_failure", "refusal": "ordinary_refusal",
               "interrupt": "interrupted"}
-    if mode != "accept":
+    if not acceptance:
         if result.get(fields[mode]) is not True:
             raise ValueError("missing genuine canary result")
         return {"canary_verified": True}
@@ -367,7 +371,10 @@ def exported_outcome(attempt: Path, mode: str, identity: Identity, code: int) ->
 
 def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity, outcome: dict, registry: Path | None = None) -> None:
     try:
-        outcome.update(collect_export(docker, attempt, identity))
+        if outcome.get("hosted_export"):
+            outcome.update(collect_export(docker, attempt, identity, hosted_export=True))
+        else:
+            outcome.update(collect_export(docker, attempt, identity))
         if "error" not in outcome:
             outcome.update(exported_outcome(attempt, outcome["mode"], identity, outcome["exit_code"]))
         inventory = attempt / "export" / "base-inventory.json"
@@ -398,17 +405,25 @@ def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity
         outcome["outcome_export_error"] = type(exc).__name__ + ": " + str(exc)
 
 
-def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Path | None = None) -> dict:
+def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Path | None = None, *, hosted: dict | None = None, hosted_export: bool = False) -> dict:
+    if mode == "hosted-accept" or hosted_export:
+        from hosted_contract import require_hosted
+        require_hosted(os.environ, workspace=ROOT, commit=git_head())
     identity, attempt = attempt_preflight(docker, root, image, mode, registry)
     candidate = root / "candidate"
-    outcome = {"identity": identity.labels(), "mode": mode, "native_acceptance": False}
+    outcome = {"identity": identity.labels(), "mode": mode, "native_acceptance": False, "hosted_export": hosted_export}
     try:
         snapshot(ROOT, identity.commit, candidate)
-        docker.run(create_command(identity, candidate, mode, attempt / "incoming"))
+        # Public snapshot search permissions only; private host controller parent
+        # is not visible through the container bind. No broad host permission edit.
+        candidate.chmod(0o755)
+        if hosted_export:
+            (attempt / "incoming").chmod(0o733)
+        docker.run(create_command(identity, candidate, mode, attempt / "incoming", hosted=hosted))
         inspected = docker.inspect(NAME)
         if inspected is None:
             raise RuntimeError("created container absent")
-        identifier = validate_container(inspected, identity, candidate, mode, attempt / "incoming")
+        identifier = validate_container(inspected, identity, candidate, mode, attempt / "incoming", hosted=hosted)
         metadata = attempt / "metadata"
         metadata.mkdir(mode=0o700)
         BoundedDirectory(metadata).json("created.json", docker.inspect(identifier))
@@ -426,6 +441,8 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Pat
             state = wait_container(docker, identifier, time.monotonic() + 5)
         outcome["exit_code"] = state["State"]["ExitCode"]
         outcome["oom_killed"] = state["State"].get("OOMKilled", False)
+        if outcome["oom_killed"]:
+            raise RuntimeError("owned acceptance OOM is failure")
     except BaseException as exc:
         outcome["error"] = type(exc).__name__ + ": " + str(exc)
     finally:

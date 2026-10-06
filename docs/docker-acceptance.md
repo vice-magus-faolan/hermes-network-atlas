@@ -1,5 +1,14 @@
 # Disposable Docker acceptance
 
+The approved staged successor is [hosted-first-docker.md](hosted-first-docker.md).
+It permits a separately reviewed FIRST standard-hosted diagnostic attempt without
+claiming guaranteed fit or requiring new local admission first. The builder may
+only implement/review committed code and mocks; local build/install/admission and
+publication remain unauthorized. Legacy schema-2 build/acquire/setup below stays
+execution-disabled, including its actual prewarm dispatcher. This document's
+former all-green/fit-before-first-trigger sequencing does not control that staged
+exception; final genuine native/canonical/independent/publication gates survive.
+
 This is a local, opt-in acceptance harness, not a runtime deployment or hosted
 GitHub runner. Its new Docker/native path must be exercised and independently
 reviewed on the exact committed artifact before it is accepted. Packet-free

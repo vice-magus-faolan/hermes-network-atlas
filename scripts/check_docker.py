@@ -14,6 +14,7 @@ def main() -> int:
         raise ValueError("harness complexity/source check failed")
     root = Path(__file__).resolve().parents[1]
     suite = unittest.defaultTestLoader.discover(str(root / "tests"), pattern="test_docker*.py")
+    suite.addTests(unittest.defaultTestLoader.discover(str(root / "tests"), pattern="test_hosted_docker.py"))
     if suite.countTestCases() == 0:
         raise ValueError("no Docker contract tests discovered")
     print(f"Focused packet-denied harness: {suite.countTestCases()} tests; no real Docker/native effects", flush=True)

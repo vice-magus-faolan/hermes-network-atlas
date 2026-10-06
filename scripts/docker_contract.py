@@ -18,7 +18,7 @@ MEMORY = 3 * 1024 ** 3
 EVIDENCE_LIMIT = 32 * 1024 ** 2
 TMPFS = {"/work": "rw,nosuid,nodev,size=2g,uid=1000,gid=1000,mode=0700",
          "/tmp": "rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=0700"}
-MODES = ("smoke", "fail", "interrupt", "refusal", "accept")
+MODES = ("smoke", "fail", "interrupt", "refusal", "accept", "hosted-accept")
 
 
 @dataclass(frozen=True)
@@ -60,12 +60,14 @@ def source_path(candidate: Path) -> Path:
     return candidate
 
 
-def create_command(identity: Identity, candidate: Path, mode: str, evidence: Path | None = None) -> list[str]:
+def create_command(identity: Identity, candidate: Path, mode: str, evidence: Path | None = None, *, hosted: dict | None = None) -> list[str]:
     """Public readonly snapshot and separate private evidence export directory."""
     source_path(candidate)
     evidence = source_path(evidence if evidence is not None else candidate.parent / "incoming")
     if mode not in MODES:
         raise ValueError("unknown Docker acceptance mode")
+    if (mode == "hosted-accept") != (hosted is not None):
+        raise ValueError("explicit hosted acceptance diagnostics required")
     command = ["create", "--name", NAME, "--network", "none", "--user", "1000:1000", "--read-only",
                "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true", "--init",
                "--memory", str(MEMORY), "--memory-swap", str(MEMORY), "--cpus", "2", "--pids-limit", "256",
@@ -79,6 +81,9 @@ def create_command(identity: Identity, candidate: Path, mode: str, evidence: Pat
         command.extend(("--label", f"{key}={value}"))
     if mode == "accept":
         command.extend(("--interactive", "--tty"))
+    if hosted is not None:
+        for key, value in hosted.items():
+            command.extend(("--env", f"{key}={value}"))
     command.extend((identity.image, "python3", "/candidate/scripts/docker_inside.py", mode))
     return command
 
@@ -94,7 +99,15 @@ def cleanup_allowed(inspected: dict | None, identity: Identity) -> bool:
     return True
 
 
-def validate_container(data: dict, identity: Identity, candidate: Path, mode: str, evidence: Path | None = None) -> str:
+def validate_environment(values: list[str], expected: dict | None = None, *, native: bool = False) -> None:
+    observed = dict(value.split("=", 1) for value in values if "=" in value)
+    prefixes = ("GITHUB_", "RUNNER_", "DOCKER_", "HERMES_") if native else ("GITHUB_", "RUNNER_", "DOCKER_")
+    sensitive = {key: value for key, value in observed.items() if value and key.startswith(prefixes)}
+    if sensitive != (expected or {}):
+        raise ValueError("unexpected hosted/daemon environment")
+
+
+def validate_container(data: dict, identity: Identity, candidate: Path, mode: str, evidence: Path | None = None, *, hosted: dict | None = None) -> str:
     """Read back actual isolation, not merely intended create arguments."""
     if not cleanup_allowed(data, identity):
         raise ValueError("container absent")
@@ -105,14 +118,13 @@ def validate_container(data: dict, identity: Identity, candidate: Path, mode: st
     host = data["HostConfig"]
     if any(host.get(key) != value for key, value in expected.items()):
         raise ValueError("Docker isolation drift")
-    if any(host.get(key) for key in ("CapAdd", "Devices", "Binds", "PortBindings", "DeviceRequests")):
+    if any(host.get(key) for key in ("CapAdd", "Devices", "Binds", "PortBindings", "DeviceRequests", "UTSMode", "UsernsMode")):
         raise ValueError("unexpected Docker privilege/mount/device/port")
     config = data["Config"]
     if (config.get("User") != "1000:1000" or config.get("Entrypoint") or config.get("Volumes")
             or config.get("Cmd") != ["python3", "/candidate/scripts/docker_inside.py", mode]):
         raise ValueError("image command/user/volume drift")
-    if any(value.split("=", 1)[0].startswith(("GITHUB_", "DOCKER_")) for value in config.get("Env", [])):
-        raise ValueError("unexpected hosted/daemon environment")
+    validate_environment(config.get("Env", []), hosted)
     check_mounts(data["Mounts"], candidate, evidence if evidence is not None else candidate.parent / "incoming")
     if set(data["NetworkSettings"]["Networks"]) != {"none"}:
         raise ValueError("unexpected attached network")
