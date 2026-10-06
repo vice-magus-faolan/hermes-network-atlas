@@ -72,6 +72,7 @@ def create_command(identity: Identity, candidate: Path, mode: str, evidence: Pat
                "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true", "--init",
                "--memory", str(MEMORY), "--memory-swap", str(MEMORY), "--cpus", "2", "--pids-limit", "256",
                "--ipc", "private", "--log-driver", "local", "--log-opt", "max-size=4m", "--log-opt", "max-file=1",
+               "--log-opt", "compress=false",
                "--mount", f"type=bind,src={candidate},dst=/candidate,readonly",
                "--mount", f"type=bind,src={evidence},dst=/export",
                "--env", f"NETWORK_ATLAS_IMAGE_ID={identity.image}"]
@@ -114,7 +115,7 @@ def validate_container(data: dict, identity: Identity, candidate: Path, mode: st
     expected = {"NetworkMode": "none", "ReadonlyRootfs": True, "CapDrop": ["ALL"], "Privileged": False,
                 "SecurityOpt": ["no-new-privileges=true"], "Init": True, "PidMode": "", "IpcMode": "private",
                 "Memory": MEMORY, "MemorySwap": MEMORY, "NanoCpus": 2000000000, "PidsLimit": 256, "Tmpfs": TMPFS,
-                "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1"}}}
+                "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1", "compress": "false"}}}
     host = data["HostConfig"]
     if any(host.get(key) != value for key, value in expected.items()):
         raise ValueError("Docker isolation drift")

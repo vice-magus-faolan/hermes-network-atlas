@@ -164,6 +164,62 @@ class BuilderContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 builder.validate_bootstrap(value, identity(), root)
 
+    def test_bootstrap_command_requires_exact_uncompressed_bounded_local_logs(self):
+        with scratch_home() as directory:
+            for hosted in (None, {"GITHUB_WORKSPACE": "/opt/inputs"}):
+                argv = builder.bootstrap_command(identity(), Path(directory), hosted=hosted)
+                options = [argv[index + 1] for index, value in enumerate(argv) if value == "--log-opt"]
+                self.assertEqual(argv.count("--log-driver"), 1)
+                self.assertEqual(argv[argv.index("--log-driver") + 1], "local")
+                self.assertCountEqual(options, ["max-size=4m", "max-file=1", "compress=false"])
+
+    def test_bootstrap_inspection_refuses_missing_compressed_extra_or_expanded_logs(self):
+        exact = {"Type": "local", "Config": {"max-size": "4m", "max-file": "1", "compress": "false"}}
+        with scratch_home() as directory:
+            root = Path(directory)
+            data = inspected(root)
+            data["HostConfig"]["LogConfig"] = copy.deepcopy(exact)
+            builder.validate_bootstrap(data, identity(), root)
+            for change in ({"compress": None}, {"compress": "true"}, {"compress": False},
+                           {"max-size": "8m"}, {"max-size": None}, {"max-file": "2"},
+                           {"max-file": None}, {"extra": "false"}):
+                mutated = copy.deepcopy(data)
+                config = mutated["HostConfig"]["LogConfig"]["Config"]
+                config.update(change)
+                config = {key: value for key, value in config.items() if value is not None}
+                mutated["HostConfig"]["LogConfig"]["Config"] = config
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    builder.validate_bootstrap(mutated, identity(), root)
+            data["HostConfig"]["LogConfig"]["Type"] = "json-file"
+            with self.assertRaises(ValueError):
+                builder.validate_bootstrap(data, identity(), root)
+
+    def test_bootstrap_stopped_error_survives_log_failure_and_owned_teardown(self):
+        with scratch_home() as directory:
+            root = Path(directory)
+            data = inspected(root)
+            error = "failed to initialize logging driver: compression cannot be enabled when max file count is 1"
+            data["State"].update(Status="created", ExitCode=128, Error=error)
+            calls = []
+            def run(argv, **_kwargs):
+                calls.append(argv)
+                if argv[0] == "logs":
+                    raise OSError("synthetic failed log export")
+                if argv[0] == "rm":
+                    data.clear()
+                return b""
+            fake = SimpleNamespace(inspect=lambda *_args, **_kw: data or None, run=run)
+            outcome = {"error": "original start failed"}
+            builder.finish_build(fake, root, identity(), outcome)
+            stopped = json.loads((root / "stopped.json").read_text())
+            self.assertEqual(stopped["State"]["Error"], error)
+            self.assertEqual(stopped["State"]["Status"], "created")
+            self.assertEqual(outcome["error"], "original start failed")
+            self.assertIn("failed log export", outcome["export_error"])
+            self.assertTrue(outcome["cleanup_verified"])
+            self.assertEqual([argv[0] for argv in calls], ["logs", "rm"])
+            self.assertNotIn("base", outcome)
+
     def test_commit_requires_stopped_exact_owned_rootfs_and_final_nonroot_labels(self):
         with scratch_home() as directory:
             root = Path(directory)

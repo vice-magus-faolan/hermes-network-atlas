@@ -79,7 +79,7 @@ class DockerContractTests(unittest.TestCase):
                                "PidMode": "", "IpcMode": "private", "Devices": [],
                                "Binds": None, "PortBindings": {}, "Memory": contract.MEMORY,
                                "MemorySwap": contract.MEMORY, "NanoCpus": 2000000000,
-                               "PidsLimit": 256, "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1"}},
+                               "PidsLimit": 256, "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1", "compress": "false"}},
                                "Tmpfs": contract.TMPFS},
                 "Mounts": [{"Type": "bind", "Source": str(candidate), "Destination": "/candidate", "RW": False},
                            {"Type": "bind", "Source": str(candidate.parent / "incoming"), "Destination": "/export", "RW": True}],
@@ -110,6 +110,36 @@ class DockerContractTests(unittest.TestCase):
             inspected["Mounts"][0]["RW"] = True
             with self.assertRaises(ValueError):
                 contract.validate_container(inspected, self.identity(), candidate, "smoke")
+
+    def test_acceptance_command_requires_exact_uncompressed_bounded_local_logs(self):
+        with scratch_home() as directory:
+            root = Path(directory)
+            for mode in contract.MODES:
+                hosted = {"GITHUB_WORKSPACE": "/candidate"} if mode == "hosted-accept" else None
+                argv = contract.create_command(self.identity(), root, mode, root, hosted=hosted)
+                options = [argv[index + 1] for index, value in enumerate(argv) if value == "--log-opt"]
+                self.assertEqual(argv.count("--log-driver"), 1)
+                self.assertEqual(argv[argv.index("--log-driver") + 1], "local")
+                self.assertCountEqual(options, ["max-size=4m", "max-file=1", "compress=false"])
+
+    def test_acceptance_inspection_refuses_missing_compressed_extra_or_expanded_logs(self):
+        with scratch_home() as directory:
+            candidate = Path(directory)
+            data = self.inspection(candidate)
+            contract.validate_container(data, self.identity(), candidate, "smoke")
+            for change in ({"compress": None}, {"compress": "true"}, {"compress": False},
+                           {"max-size": "8m"}, {"max-size": None}, {"max-file": "2"},
+                           {"max-file": None}, {"extra": "false"}):
+                mutated = json.loads(json.dumps(data))
+                config = mutated["HostConfig"]["LogConfig"]["Config"]
+                config.update(change)
+                config = {key: value for key, value in config.items() if value is not None}
+                mutated["HostConfig"]["LogConfig"]["Config"] = config
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    contract.validate_container(mutated, self.identity(), candidate, "smoke")
+            data["HostConfig"]["LogConfig"]["Type"] = "json-file"
+            with self.assertRaises(ValueError):
+                contract.validate_container(data, self.identity(), candidate, "smoke")
 
     def test_actual_counts_exit_zero_skips_missing_and_mismatch_refuse(self):
         log = "Canonical verification: 3 tests discovered; synthetic\nRan 3 tests in 1.0s\n\nOK\n"
@@ -240,6 +270,32 @@ class DockerLifecycleTests(unittest.TestCase):
             self.assertIn("export failed", outcome["export_error"])
             cleanup.assert_called_once()
             self.assertTrue(outcome["cleanup_verified"])
+
+    def test_acceptance_stopped_error_survives_log_failure_and_owned_teardown(self):
+        with scratch_home() as directory:
+            root = Path(directory)
+            data = self.inspection(root)
+            error = "failed to initialize logging driver: compression cannot be enabled when max file count is 1"
+            data["State"].update(Status="created", ExitCode=128, Error=error)
+            calls = []
+            def run(argv, **_kwargs):
+                calls.append(argv)
+                if argv[0] == "logs":
+                    raise OSError("synthetic failed log export")
+                if argv[0] == "rm":
+                    data.clear()
+                return b""
+            fake = SimpleNamespace(inspect=lambda *_args: data or None, run=run)
+            outcome = {"error": "original start failed", "mode": "smoke"}
+            harness.finish_attempt(fake, root, root, self.identity(), outcome)
+            stopped = json.loads((root / "metadata" / "stopped.json").read_text())
+            self.assertEqual(stopped["State"]["Error"], error)
+            self.assertEqual(stopped["State"]["Status"], "created")
+            self.assertEqual(outcome["error"], "original start failed")
+            self.assertIn("failed log export", outcome["export_error"])
+            self.assertTrue(outcome["cleanup_verified"])
+            self.assertEqual([argv[0] for argv in calls], ["logs", "rm"])
+            self.assertNotIn("native_acceptance", outcome)
 
     def test_unattended_accept_refuses_before_any_daemon_effect(self):
         fake = SimpleNamespace(json=lambda _args: self.fail("daemon read before consent refusal"))

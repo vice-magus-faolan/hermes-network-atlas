@@ -322,6 +322,12 @@ def collect_export(docker: Docker, attempt: Path, identity: Identity, *, hosted_
         docker.run(["stop", "--time", "5", current["Id"]], timeout=20)
     metadata = attempt / "metadata"
     metadata.mkdir(mode=0o700, exist_ok=True)
+    # A container can fail before its log driver starts. Preserve State.Error
+    # before log export, which may fail too, and still perform owned teardown.
+    stopped = docker.inspect(current["Id"])
+    if stopped is None or not cleanup_allowed(stopped, identity):
+        raise ValueError("container absent or changed before stopped evidence export")
+    BoundedDirectory(metadata).json("stopped.json", stopped)
     BoundedDirectory(metadata).write("container.log", docker.run(["logs", current["Id"]], limit=4 * 1024 ** 2))
     incoming = attempt / "incoming"
     # Hosted runner UID can differ from container UID1000. Read ONLY the exact

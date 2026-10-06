@@ -133,7 +133,16 @@ Runtime UID/GID are 1000:1000, cap-drop ALL, no-new-privileges, init, read-only
 root, private IPC, network none, no ports/socket/devices/host namespaces or
 unconfined flags. The declared scratch is 2 GiB `/work` tmpfs plus 64 MiB `/tmp`.
 Memory/swap limits both equal 3 GiB (no extra container swap), CPU is 2, PID limit
-256, logs 4 MiB, operation deadline 900 seconds. Flat evidence is capped at 64
+256, logs use the `local` driver with exactly `max-size=4m`, `max-file=1` and
+`compress=false`, and operation deadline is 900 seconds. Bootstrap uses the
+same explicit logging options. Docker's default local-driver compression is
+incompatible with a one-file limit; disabling it does not increase either bound
+or change daemon defaults. Actual `HostConfig.LogConfig` must match all three
+options exactly; missing, true, extra or expanded options fail readback.
+Stopped inspection, including `State.Error`, is retained before attempting log
+export, so a failed log driver does not erase the original start diagnostic.
+Log export and owned teardown failures remain separate from the original error;
+no unverified base image is blindly removed. Flat evidence is capped at 64
 members, 8 MiB per file and 32 MiB aggregate including tar block padding.
 Write-side bounds cover exact serialized bytes, copies, overwrite overlap,
 logs and consistent synthetic SQLite backups BEFORE writes. SQLite reserves its

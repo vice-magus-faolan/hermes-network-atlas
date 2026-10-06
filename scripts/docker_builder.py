@@ -133,7 +133,7 @@ def bootstrap_host_config() -> dict:
             "NanoCpus": 2000000000, "PidsLimit": 256, "Devices": [], "DeviceRequests": None,
             "Binds": None, "PortBindings": {}, "RestartPolicy": {"Name": "no", "MaximumRetryCount": 0},
             "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=64m,mode=0700"},
-            "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1"}}}
+            "LogConfig": {"Type": "local", "Config": {"max-size": "4m", "max-file": "1", "compress": "false"}}}
 
 
 def bootstrap_command(identity: BootstrapIdentity, context: Path, *, hosted: dict | None = None) -> list[str]:
@@ -142,7 +142,7 @@ def bootstrap_command(identity: BootstrapIdentity, context: Path, *, hosted: dic
             "--network", "bridge", "--user", "0:0", "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true",
             "--init", "--memory", str(MEMORY), "--memory-swap", str(MEMORY), "--cpus", "2", "--pids-limit", "256",
             "--ipc", "private", "--restart", "no", "--log-driver", "local", "--log-opt", "max-size=4m",
-            "--log-opt", "max-file=1", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=0700",
+            "--log-opt", "max-file=1", "--log-opt", "compress=false", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=0700",
             "--mount", f"type=bind,src={context},dst=/opt/inputs,readonly",
             "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", ""]
     for key, value in identity.labels().items():

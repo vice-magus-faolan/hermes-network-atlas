@@ -97,6 +97,12 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_builder.BuilderContractTests.test_bootstrap_command_requires_exact_uncompressed_bounded_local_logs",
+    "test_docker_builder.BuilderContractTests.test_bootstrap_inspection_refuses_missing_compressed_extra_or_expanded_logs",
+    "test_docker_builder.BuilderContractTests.test_bootstrap_stopped_error_survives_log_failure_and_owned_teardown",
+    "test_docker_acceptance.DockerContractTests.test_acceptance_command_requires_exact_uncompressed_bounded_local_logs",
+    "test_docker_acceptance.DockerContractTests.test_acceptance_inspection_refuses_missing_compressed_extra_or_expanded_logs",
+    "test_docker_acceptance.DockerLifecycleTests.test_acceptance_stopped_error_survives_log_failure_and_owned_teardown",
     "test_hosted_docker.HostedDockerTests.test_real_legacy_prewarm_dispatch_refuses_before_pm_import_or_call",
     "test_hosted_docker.HostedDockerTests.test_explicit_hosted_initial_feature_context_and_local_refusal",
     "test_hosted_docker.HostedDockerTests.test_real_hosted_setup_dispatch_and_warm_refuse_before_pm",

@@ -12,6 +12,18 @@ Only the delivery owner may separately authorize and perform one non-force
 feature-branch update and one initial hosted attempt. No retries are authorized.
 Missing current-artifact native acceptance remains FAILED, not skipped or green.
 
+A hosted bootstrap failed before public setup began because Docker's default
+`local` log compression cannot be combined with `max-file=1`. The repair sets
+`compress=false` explicitly for both bootstrap and acceptance, retaining exactly
+`max-size=4m` and `max-file=1` and matching strict inspected-config predicates.
+Normal/optimized packet-denied regressions cover production argv, missing/true/
+extra options, increased size/file limits and retained stopped-state errors when
+log export fails. These tests are not proof that a successor hosted run started
+or completed. The failed attempt and its consumed trigger remain immutable; a
+new attempt requires separately recorded authority, fresh exact-source/workflow
+and one-use invocation/evidence-control review. Code repair alone is not retry
+permission or final acceptance, and never enables local Docker or native setup.
+
 The old schema-2 metadata-plan build/acquire/setup path remains permanently
 execution-disabled. Its `prewarm` executable dispatcher now refuses before PM
 import/call, including optimized Python. No CLI/plan/environment rearm enables it.
