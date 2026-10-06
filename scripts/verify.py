@@ -96,6 +96,43 @@ REQUIRED_CI_ADMISSION_TESTS = {
 }
 
 
+REQUIRED_DOCKER_TESTS = {
+    "test_docker_acceptance.DockerContractTests.test_identity_labels_endpoint_and_optimized_refusal",
+    "test_docker_acceptance.DockerContractTests.test_readonly_mounts_no_network_privileges_ports_or_ambient_env",
+    "test_docker_acceptance.DockerContractTests.test_inspection_drift_rejects_wrong_labels_image_mounts_flags_network",
+    "test_docker_acceptance.DockerContractTests.test_actual_counts_exit_zero_skips_missing_and_mismatch_refuse",
+    "test_docker_acceptance.DockerContractTests.test_evidence_bounds_traversal_symlinks_export_failure_and_hashes",
+    "test_docker_acceptance.DockerLifecycleTests.test_actual_bounded_command_pass_fail_deadline_output_and_owned_cleanup",
+    "test_docker_acceptance.DockerLifecycleTests.test_active_lease_refuses_and_releases_without_suffix_retry",
+    "test_docker_acceptance.DockerLifecycleTests.test_complete_shallow_snapshot_exact_public_commit_tree_no_host_git",
+    "test_docker_acceptance.DockerLifecycleTests.test_teardown_duplicate_residue_wrong_identity_no_unrelated_remove",
+    "test_docker_acceptance.DockerLifecycleTests.test_failed_export_keeps_original_failure_and_still_tears_down",
+    "test_docker_acceptance.DockerLifecycleTests.test_unattended_accept_refuses_before_any_daemon_effect",
+    "test_docker_acceptance.DockerLifecycleTests.test_containerd_and_unknown_build_backend_refuse_before_mutation",
+    "test_docker_acceptance.DockerLifecycleTests.test_optimized_native_readback_mismatch_manifest_and_generation_refuse",
+}
+DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", "scripts/docker_inside.py", "docker/base_setup.py")
+
+
+def check_docker_source() -> bool:
+    valid = True
+    for filename in DOCKER_SOURCES:
+        tree = ast.parse((ROOT / filename).read_text(), filename=filename)
+        compile(tree, filename, "exec")
+        for function in (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)):
+            score = 1
+            for node in ast.walk(function):
+                if isinstance(node, (ast.If, ast.For, ast.While, ast.IfExp, ast.ExceptHandler, ast.comprehension)):
+                    score += 1
+                if isinstance(node, ast.BoolOp):
+                    score += len(node.values) - 1
+            if score > 10:
+                print(f"Complexity review: {filename}:{function.lineno} {function.name} estimate={score}")
+            if score > 15:
+                valid = False
+    return valid
+
+
 def test_ids(suite: unittest.TestSuite) -> set[str]:
     """Require critical issue regressions in discovery, not just a nonzero count."""
     result = set()
@@ -146,7 +183,7 @@ def main() -> int:
     """Run discovered tests and refuse a misleading zero-test success."""
     os.chdir(ROOT)
     deny_network()
-    if not check_source():
+    if not check_source() or not check_docker_source():
         print("ERROR: refactor function(s) estimated above 15 before review")
         return 1
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
@@ -155,7 +192,7 @@ def main() -> int:
         print("ERROR: no tests discovered")
         return 1
     missing = (REQUIRED_CHUNK_TESTS | REQUIRED_HOST_DISCOVERY_TESTS | REQUIRED_CONFIRMATION_TESTS
-               | REQUIRED_CI_ADMISSION_TESTS) - test_ids(suite)
+               | REQUIRED_CI_ADMISSION_TESTS | REQUIRED_DOCKER_TESTS) - test_ids(suite)
     if missing:
         print(f"ERROR: required discovery regression coverage absent: {sorted(missing)}")
         return 1
@@ -163,7 +200,8 @@ def main() -> int:
     print(f"Required discovery regressions: {len(REQUIRED_CHUNK_TESTS)} chunk/legacy and "
           f"{len(REQUIRED_HOST_DISCOVERY_TESTS)} host/native and "
           f"{len(REQUIRED_CONFIRMATION_TESTS)} inert confirmation and "
-          f"{len(REQUIRED_CI_ADMISSION_TESTS)} hosted CI policy IDs present", flush=True)
+          f"{len(REQUIRED_CI_ADMISSION_TESTS)} hosted CI policy and "
+          f"{len(REQUIRED_DOCKER_TESTS)} Docker contract IDs present", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
 

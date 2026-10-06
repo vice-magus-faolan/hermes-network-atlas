@@ -39,15 +39,18 @@ def readback(root: Path, source: Path, home: Path, action: str) -> dict:
 
     config = load_config_readonly()
     enabled = "network-atlas" in config.get("plugins", {}).get("enabled", [])
-    assert enabled == (action == "enable"), config.get("plugins")
+    if enabled != (action == "enable"):
+        raise ValueError("native enabled selection differs from requested action")
     plugin = home / "plugins" / "network-atlas"
-    assert (plugin / "plugin.yaml").is_file()
+    if not (plugin / "plugin.yaml").is_file():
+        raise ValueError("native installed manifest absent")
     result = {"action": action, "enabled": enabled, "plugin": str(plugin),
               "installed_commit": git_head(plugin), "installed_tree": git_tree(plugin)}
     if enabled:
         venv = contained(root, str(selected_venv(source)))
         facts = contained(root, str(runtime_facts_path(source)))
-        assert (venv / "pyvenv.cfg").is_file()
+        if not (venv / "pyvenv.cfg").is_file():
+            raise ValueError("native selected generation absent")
         paths = [facts, home / "config.yaml", plugin / "plugin.yaml",
                  *(source / name for name in ("pyproject.toml", "uv.lock", "pm/pyproject.toml", "pm/uv.lock", "pm/lock.json"))]
         # Capture the actual member-union recipe and lock produced by native PM.
@@ -104,7 +107,8 @@ def main() -> int:
     from hermes_cli import plugins_cmd
 
     if action == "install":
-        assert candidate is not None
+        if candidate is None:
+            raise ValueError("native install candidate absent")
         if hosted:
             report = install_ci(source, candidate, args.ref, args.origin_commit, root, os.environ, plugins_cmd.cmd_install)
             print(json.dumps({"admission_mode": MODE, "verdict": report["verdict"],

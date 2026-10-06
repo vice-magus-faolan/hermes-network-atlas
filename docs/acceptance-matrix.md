@@ -28,6 +28,25 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 | A13 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `tests/test_harness.py::AcceptanceHarnessTests::test_socket_denial_is_inherited_through_exec`; `tests/test_harness.py::AcceptanceHarnessTests::test_code_and_native_selection_changes_invalidate_receipt` | `docs/operator-guide.md`; `scripts/cumulative_acceptance.py`; `scripts/cumulative_transport.py`; `scripts/offline_guard.py` |
 | A14 | `tests/test_documentation.py::DocumentationTests::test_matrix_paths_and_exact_test_symbols_exist`; `tests/test_documentation.py::DocumentationTests::test_readme_distinguishes_implementation_from_live_delivery`; `tests/test_commands.py::OperatorStatusTests::test_empty_status_has_consistent_counts_scopes_and_no_file_effects`; `tests/test_commands.py::OperatorStatusTests::test_discovery_and_inspection_are_distinct_local_qualified_summaries`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_complete_partial_failed_and_small_control_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_lowered_detail_limits_do_not_change_whole_batch_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_status_keep_distinct_complete_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_complete_and_failed_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_status_output_cap_still_refuses_without_store_changes` | `README.md`; `docs/operator-guide.md`; `docs/atlas-core.md`; `SECURITY.md`; `CONTRIBUTING.md` |
 
+## Docker harness evidence boundaries
+
+Docker contract regressions are required by the same canonical verifier. They
+exercise synthetic inspection/ownership/export refusals and actual owned local
+CLI child cleanup, not Docker daemon/native admission substitutes:
+
+| Gate | Evidence and interpretation |
+| --- | --- |
+| Contract | `tests/test_docker_acceptance.py::DockerContractTests::test_inspection_drift_rejects_wrong_labels_image_mounts_flags_network`; `tests/test_docker_acceptance.py::DockerContractTests::test_actual_counts_exit_zero_skips_missing_and_mismatch_refuse`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_active_lease_refuses_and_releases_without_suffix_retry`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_optimized_native_readback_mismatch_manifest_and_generation_refuse` |
+| Actual owned child/lifecycle | `tests/test_docker_acceptance.py::DockerLifecycleTests::test_actual_bounded_command_pass_fail_deadline_output_and_owned_cleanup`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_failed_export_keeps_original_failure_and_still_tears_down`; real Docker passing/failing/interrupted cleanup still requires external run evidence |
+| Genuine container native acceptance | Fresh real native scan/install/enable/PM-selected generation, contained receipt, full canonical logs and cold/restart evidence on exact commit/tree/image; missing proof fails acceptance, never a smoke-to-native promotion |
+| Minimal host evidence | Required packet-free host/kernel permission diagnostics remain explicit; container fixtures do not prove host ICMP capabilities or live readiness |
+| Final/hosted/publication | Independent cumulative exact-SHA review and publisher-owned actual hosted CI/PR review remain separate; local Docker is not hosted-CI authority |
+
+See `docs/docker-acceptance.md` for exact layout, resource/retention constraints,
+ordinary local consent and the pre-canary exact-byte safety gate. New Docker
+runtime/native proof remains pending until exercised; no full success is inferred
+from the Dockerfile or packet-free unit regressions.
+
 ## Acceptance requirements
 
 ### Complete issue-6 criterion audit
