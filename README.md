@@ -81,8 +81,8 @@ full scanning, DANGEROUS refusal, pinned source/actions and read-only permission
 without supplied secrets or deployment access. Local/runtime force remains
 prohibited; changed local candidates need fresh ordinary exact-byte consent.
 No signing-controller provisioning is a CI gate. See docs/native-caution-confirmation.md.
-CI uses the same setup/verifier path, but
-GitHub CI execution has not been performed on this unpushed implementation.
+CI uses the same setup/verifier path, but full hosted native acceptance remains
+separately gated on the reviewed exact artifact; local workflow checks do not prove it.
 Tests must use synthetic fixtures and isolated Hermes homes. They must not scan
 a real LAN, inspect a real SSH host, or read the operator's live atlas.
 

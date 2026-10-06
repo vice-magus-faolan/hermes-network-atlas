@@ -12,7 +12,6 @@ jobs:
     timeout-minutes: 30
     env:
       NETWORK_ATLAS_HERMES_ROOT: ${{ github.workspace }}/.hermes-runtime-source
-      TMPDIR: ${{ runner.temp }}/atlas-test-scratch
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -28,8 +27,13 @@ jobs:
           path: .hermes-runtime-source
           persist-credentials: false
       - name: Prepare isolated verifier prerequisites
+        # runner is available at step scope, not job env. Persist this same
+        # contained scratch path for every later admission/verification step.
+        env:
+          TMPDIR: ${{ runner.temp }}/atlas-test-scratch
         run: |
           mkdir -p "$TMPDIR"
+          printf 'TMPDIR=%s\n' "$TMPDIR" >> "$GITHUB_ENV"
           python3 -m pip install --disable-pip-version-check -r requirements-test.txt
       - name: Record complete checked-out source identity
         run: git rev-parse HEAD HEAD^{tree}

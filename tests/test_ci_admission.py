@@ -211,6 +211,36 @@ class HostedCIAdmissionTests(unittest.TestCase):
                 if step["uses"].startswith("actions/checkout@"):
                     self.assertIs(step["with"]["persist-credentials"], False)
 
+    def test_workflow_runner_context_scratch_initialized_at_step_then_persisted(self):
+        from ruamel.yaml import YAML
+        workflow = YAML(typ="safe").load((ROOT / ".github" / "workflows" / "verify.yml").read_text())
+        job = workflow["jobs"]["offline-verification"]
+        # GitHub evaluates job env before runner assignment; runner.* belongs
+        # in step env/run. Full expression validation is a separate actionlint
+        # preflight, not something a YAML parser or this narrow test replaces.
+        for values in (workflow.get("env", {}), job.get("env", {})):
+            for value in values.values():
+                self.assertNotRegex(str(value), r"\brunner\.", "runner context is unavailable before step env")
+        self.assertNotIn("TMPDIR", job["env"])
+        steps = job["steps"]
+        setup = next(step for step in steps if step.get("name") == "Prepare isolated verifier prerequisites")
+        self.assertEqual(setup["env"], {"TMPDIR": "${{ runner.temp }}/atlas-test-scratch"})
+        initialization, pip_command, remainder = setup["run"].partition("python3 -m pip")
+        self.assertTrue(pip_command)
+        self.assertIn("-r requirements-test.txt", remainder)
+        # Exercise the actual initialization shell without dependency acquisition.
+        # Space-containing paths also require correct quoting in GITHUB_ENV.
+        scratch = self.case / "runner temp" / "atlas-test-scratch"
+        github_env = self.case / "github env"
+        env = dict(fixture_environment(self.case), TMPDIR=str(scratch), GITHUB_ENV=str(github_env))
+        subprocess.run(["/bin/bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", initialization],
+                       cwd=self.case, env=env, check=True, capture_output=True, timeout=10)
+        self.assertTrue(scratch.is_dir())
+        self.assertEqual(github_env.read_text(), f"TMPDIR={scratch}\n")
+        for step in steps[steps.index(setup) + 1:]:
+            self.assertNotIn("TMPDIR", step.get("env", {}))
+        self.assertEqual(job["env"]["NETWORK_ATLAS_HERMES_ROOT"], "${{ github.workspace }}/.hermes-runtime-source")
+
     def test_real_entrypoints_refuse_local_ci_mode_mixed_consent_and_enable(self):
         native = [sys.executable, str(ROOT / "scripts" / "native_install.py"), str(self.source)]
         setup = [sys.executable, str(ROOT / "scripts" / "prepare_acceptance.py"), "--hermes-source", str(self.source)]

@@ -220,8 +220,22 @@ an exact public Hermes Git checkout and `/usr/bin/ssh-keygen` with detached-sign
 support for the synthetic confirmation regressions. No live config, atlas, credentials, homes or
 profile selections are copied. A lean disposable verifier can be prepared with
 requirements-test.txt (setup only). Do not install into production. GitHub CI
-checks out the exact Hermes pin and uses this same path; GitHub execution itself
-remains unperformed until separately authorized publication.
+checks out the exact Hermes pin and uses this same path; complete hosted native
+acceptance remains unperformed until separate publication and exact-artifact readback.
+
+CI initializes TMPDIR from runner.temp in the prerequisite step's env, where that
+context is available, and writes the same directory to GITHUB_ENV for subsequent
+steps. Runner expressions are invalid in job-level env. Before native admission
+of a changed workflow, validate the entire definition with primary-source
+actionlint v1.7.7 (commit 03d0035246f3e81f36aed592ffb4bebf33a03106):
+
+    actionlint -shellcheck= -pyflakes= .github/workflows/verify.yml
+
+Verify its release archive against the primary release checksums when using the
+prebuilt tool. These flags disable only optional external shell/Python lint
+integrations, not workflow/expression/context/trigger checks. The canonical
+hosted-policy suite separately executes scratch initialization and export; neither
+local check proves that a hosted native install or the canonical job has run.
 
 First, ONLINE PREREQUISITE SETUP, outside the test process:
 

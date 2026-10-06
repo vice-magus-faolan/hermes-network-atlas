@@ -164,14 +164,20 @@ ordinary prompt with packet-denied PM failure, synthetic successful prompt trans
 and marker/output/deadline refusal. These are also run before default CI setup.
 No synthetic approval is candidate admission or real CI authority. The legacy
 signed route remains inactive optional coverage, not a CI provisioning gate.
-`REQUIRED_CI_ADMISSION_TESTS` mandates all ten hosted-policy tests in
+`REQUIRED_CI_ADMISSION_TESTS` mandates all eleven hosted-policy tests in
 `tests/test_ci_admission.py::HostedCIAdmissionTests`: explicit matching diagnostics,
 fresh contained nonreplacement fixture, real native CAUTION/force-policy selection
 without installation, native DANGEROUS refusal even with force, SAFE/no-force and
 candidate/core drift, parsed hosted/read-only/pinned/no-secret workflow, real local
 entrypoint/mixed-consent/enable refusals and origin/ref/config revalidation,
 main/feature push and PR merge refs matching parsed workflow branch filters,
-and disallowed event/branch/tag/malformed/non-merge ref refusal. Pushes are limited
+and disallowed event/branch/tag/malformed/non-merge ref refusal. The runner-context
+regression rejects runner expressions before step scope and executes scratch
+initialization/export with
+space-containing paths; the same scratch directory persists through GITHUB_ENV
+for later admission and canonical steps. Full workflow expression/context
+validation uses pinned actionlint before a changed candidate's local admission;
+YAML parsing alone is not proof that GitHub accepts a workflow. Pushes are limited
 to main/the issue-6 feature and PRs target main; a main test context is not authority
 to push/merge main. PR evidence binds the checked-out merge artifact, not head tip.
 The approved hosted workflow uses supported force only for CAUTION on fresh

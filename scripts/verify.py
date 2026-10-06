@@ -90,6 +90,7 @@ REQUIRED_CI_ADMISSION_TESTS = {
     "test_ci_admission.HostedCIAdmissionTests.test_native_dangerous_refuses_even_force_and_never_calls_installer",
     "test_ci_admission.HostedCIAdmissionTests.test_safe_does_not_select_force_and_candidate_or_core_drift_refuses",
     "test_ci_admission.HostedCIAdmissionTests.test_reviewed_workflow_hosted_readonly_pins_no_secrets_or_privileged_event",
+    "test_ci_admission.HostedCIAdmissionTests.test_workflow_runner_context_scratch_initialized_at_step_then_persisted",
     "test_ci_admission.HostedCIAdmissionTests.test_real_entrypoints_refuse_local_ci_mode_mixed_consent_and_enable",
     "test_ci_admission.HostedCIAdmissionTests.test_install_boundary_rechecks_context_origin_ref_and_modified_scan_policy",
 }
