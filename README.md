@@ -50,6 +50,11 @@ The subsequent observed native CLI flag refusal is repaired with supported named
 `pm.cli install python uv` (no incompatible `--tools-only`, no enlarged default
 closure). Actual pinned parser/dispatch/API regressions and bounded command-phase
 diagnostics accompany [the full native PM audit](docs/native-pm-contract-audit.md).
+Failed-command exceptions now carry exit summaries, not full child output in
+tracebacks. Encoded started/terminal diagnostics share a 1 MiB cumulative budget
+with pre-spawn terminal reservation; the 4 MiB child/export limits are unchanged.
+Real near-limit and repeated hostile-output regressions retain primary evidence
+under the actual aggregate exporter bound; they are not hosted acceptance.
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict

@@ -177,7 +177,7 @@ class NativePMContractTests(unittest.TestCase):
                 output = io.StringIO()
                 with patch.object(setup, 'CORE', root), redirect_stdout(output):
                     if code:
-                        with self.assertRaisesRegex(RuntimeError, 'xxx'):
+                        with self.assertRaisesRegex(RuntimeError, 'public setup command failed: exit=7'):
                             setup.run([sys.executable, str(child)])
                     else:
                         self.assertEqual(len(setup.run([sys.executable, str(child)])), 40001)

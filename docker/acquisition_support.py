@@ -62,8 +62,11 @@ def bounded_run(argv: list[str], cwd: Path, *, timeout: float = 900, limit: int 
                     output.extend(block[:limit - len(output)])
                     raise ValueError("public setup output bound exceeded")
                 output.extend(block)
-        if child.wait(timeout=5):
-            raise RuntimeError(output.decode(errors="replace"))
+        code = child.wait(timeout=5)
+        if code:
+            # Raw output belongs in the bounded audit, never the traceback. A
+            # near-limit child plus JSON diagnostics must still be exportable.
+            raise RuntimeError(f"public setup command failed: exit={code}; see terminal audit") from None
         return output.decode(errors="replace")
     finally:
         finish_command(child, selector, output, audit)

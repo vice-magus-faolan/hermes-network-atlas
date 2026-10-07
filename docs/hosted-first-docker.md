@@ -197,6 +197,20 @@ phase/exit/output diagnostics go to the existing bounded bootstrap log on succes
 and failure, preserving primary error precedence. Real downstream/native/cold
 success remains pending exact-head hosted execution.
 
+Independent pre-CI review of the unpublished successor identified a failure-only
+export defect: a valid near-4-MiB failed child was repeated in Python's traceback,
+so terminal JSON plus traceback exceeded the unchanged 4 MiB aggregate reader.
+This was reproduced locally with a real packet-denied child, NOT another hosted
+failure. Nonzero exceptions now summarize the actual exit, leaving raw output
+only in the bounded terminal audit. The wrapper caps cumulative encoded JSON at
+1 MiB/32 commands, bounding argv and reserving 256 KiB for terminal evidence
+before every spawn. This handles sixfold JSON expansion and repeated failed rows
+without dropping evidence or widening child/Docker/export ceilings. Four new
+mandatory normal/-O regressions verify near-limit aggregate capture/export,
+cumulative hostile rows/no-spawn refusal and diagnostic-error precedence.
+Historical reviews and failures remain unchanged; actual hosted acceptance is
+still pending a fresh exact-source review and coordinator-owned corrected run.
+
 The always-run export includes only bounded summary, owned bootstrap provenance,
 registry and compact native export/metadata directories. No contexts, tools,
 opaque uv cache, profiles or fixture homes are uploaded. A maximum 128 MiB/256

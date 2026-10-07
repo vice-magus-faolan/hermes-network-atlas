@@ -68,10 +68,25 @@ the existing bounded `bootstrap.log`: actual argv, phase, exit, elapsed time,
 output byte count/hash, and at most 32 KiB head/tail output with explicit
 truncation. The existing child capture remains capped at 4 MiB with a 900-second
 deadline and owned-process-group reaping. Diagnostic failure never replaces a
-primary command exception. Actual tiny owned children cover success/failure and
-truncated diagnostic output; these children are NOT PM installation mocks being
-reported as real installs. Existing APT incremental proof/export and complete
-success-only inventory remain unchanged and mandatory.
+primary command exception. Nonzero exits raise a bounded exit-code summary, never
+the captured output; no exception cause reintroduces raw output in traceback.
+Started/terminal JSON is limited to 1 MiB encoded bytes per wrapper process and
+32 commands. Bounded argv (64 tokens, 8 KiB encoded started row) and a reserved
+256 KiB terminal row are checked BEFORE spawn. Reservation accounts for worst-case
+sixfold JSON escaping of the 32 KiB head/tail plus argv/metadata. Exhaustion refuses
+before emitting a new started row or launching a child; evidence is never silently
+dropped. Actual row bytes (including newline) consume the budget before emission,
+even if the stream write fails. Nested wrapper output remains captured/bounded
+by its parent's command audit; the root aggregate leaves ample traceback headroom
+under the UNCHANGED 4 MiB bootstrap exporter. It is not an OS write quota.
+
+Four additional mandatory `CommandLogTests` execute a real near-4-MiB failed child
+with an uncaught wrapper traceback through the actual aggregate reader and
+production exporter (synthetic daemon only), repeated failed hostile-output rows
+to cumulative refusal, metadata/count pre-effect refusal, and real failure with
+broken terminal emission. Real hashes/counts/head-tail/exit and primary tracebacks
+survive in normal/-O; no package/Docker/native effects are exercised. Existing
+APT incremental proof/export and complete success-only inventory remain mandatory.
 
 A parser/dispatch/signature pass cannot establish PM archive usability, actual
 manager/verifier/union installation, native admission/enable, exact selected

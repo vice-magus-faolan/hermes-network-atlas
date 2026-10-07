@@ -97,6 +97,10 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_command_logs.CommandLogTests.test_near_limit_failed_child_traceback_and_actual_export_preserve_primary",
+    "test_docker_command_logs.CommandLogTests.test_repeated_hostile_rows_reserve_terminal_before_spawn_under_aggregate_cap",
+    "test_docker_command_logs.CommandLogTests.test_command_metadata_and_count_refuse_before_child_or_log_effects",
+    "test_docker_command_logs.CommandLogTests.test_real_nonzero_command_survives_terminal_emission_error_without_output_chain",
     "test_docker_pm.NativePMContractTests.test_candidate_argv_passes_actual_parser_and_flag_predicate",
     "test_docker_pm.NativePMContractTests.test_predecessor_tools_only_names_refuse_before_dispatch",
     "test_docker_pm.NativePMContractTests.test_named_dispatch_keeps_exact_tools_and_never_syncs_or_defaults",

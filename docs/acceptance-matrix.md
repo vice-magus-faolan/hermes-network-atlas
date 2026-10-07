@@ -33,6 +33,17 @@ processes are required. See [native-pm-contract-audit.md](native-pm-contract-aud
 for every hosted PM call and exact pinned source coordinates. The tests never
 install/acquire; signature/dispatch success is not native acceptance.
 
+Four additional mandatory `tests/test_docker_command_logs.py::CommandLogTests`
+IDs exercise real failed children through the production wrapper and the actual
+4 MiB aggregate reader: near-limit output plus uncaught traceback and actual
+exporter readback; repeated failed rows with non-ASCII/invalid UTF-8/control/JSON
+escaping and pre-spawn cumulative-budget refusal; argv/count effect-free bounds;
+and real nonzero failure surviving terminal-emission errors. Normal/-O are required.
+The exception is a bounded exit summary; the audit retains actual count/hash and
+32 KiB head/tail. Its 1 MiB encoded cumulative ceiling, 256 KiB terminal reservation
+and 32-command cap do not widen existing child/log/export budgets. No Docker is
+executed; synthetic daemon export seams are not real native/hosted acceptance.
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission

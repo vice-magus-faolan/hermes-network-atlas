@@ -127,6 +127,18 @@ and bounded head/tail output. They use the existing owned bounded child and
 preserve the primary exception even when final diagnostic writing fails. Success
 inventory and APT incremental diagnostics remain complete mandatory exports.
 
+The subsequent independent source review reproduced oversized aggregate failure
+logs in a real local child, not in a new hosted run. Full child output in a
+nonzero exception duplicated captured bytes in the traceback. Bounded exit-code
+summaries now avoid that duplication. Started/terminal JSON has a 1 MiB encoded
+cumulative budget and 32-command cap; before spawn, bounded argv and a 256 KiB
+terminal-row reservation account for worst-case escaping of 32 KiB head/tail.
+Budget exhaustion refuses before effects, never silently drops a terminal row.
+The unchanged 4 MiB child/export/log ceilings and primary-error/owned-reaping
+contract remain. Four mandatory real packet-denied near-limit/cumulative/error
+regressions prove aggregate capture and production exporter readback using only
+synthetic daemon state, not actual Docker/native acceptance. See the native PM audit.
+
 Static review also confirms the pinned PM build-env accepts the existing offline
 wheelhouse/requirement arguments, member-union sync accepts explicit Members and
 project_root, runtime facts/selected-generation APIs match the recipe, and custom
