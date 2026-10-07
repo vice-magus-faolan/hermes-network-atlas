@@ -88,6 +88,18 @@ broken terminal emission. Real hashes/counts/head-tail/exit and primary tracebac
 survive in normal/-O; no package/Docker/native effects are exercised. Existing
 APT incremental proof/export and complete success-only inventory remain mandatory.
 
+The shared `acquisition_support.audited_run` now also covers all six fixed Git
+reconstruction commands and the disabled legacy public wrapper. Hosted phases
+and reconstruction use the SAME process-local `COMMAND_LOG`; importing the helper
+does not create another quota. The only remaining production low-level caller,
+`hosted_apt.AptProof.command`, already supplies its incremental file audit.
+Five mandatory `ReconstructionLogTests` execute actual child failures at every
+Git stage through the aggregate reader/exporter, a tiny actual Git tree/commit
+success, the combined ordinary command budget, pre-effect count/byte refusal,
+primary-error precedence on terminal-write failure and deadline/owned reaping.
+The exporter seam is synthetic; neither acquisition nor Docker/native acceptance
+is inferred. The earlier run80 review reports remain immutable.
+
 A parser/dispatch/signature pass cannot establish PM archive usability, actual
 manager/verifier/union installation, native admission/enable, exact selected
 runtime, full canonical suite, cold/restart behavior or owned Docker cleanup.

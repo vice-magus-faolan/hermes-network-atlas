@@ -55,6 +55,11 @@ tracebacks. Encoded started/terminal diagnostics share a 1 MiB cumulative budget
 with pre-spawn terminal reservation; the 4 MiB child/export limits are unchanged.
 Real near-limit and repeated hostile-output regressions retain primary evidence
 under the actual aggregate exporter bound; they are not hosted acceptance.
+Public-core Git reconstruction and both public setup wrappers now share that
+same bounded command audit. All six fixed Git stages retain failed argv/exit/
+output count/hash/head-tail in bootstrap.log rather than pointing to a missing
+terminal audit. Real-child/export, tiny real-Git success, deadline/reaping and
+pre-effect budget regressions cover this repair without executing Docker.
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict

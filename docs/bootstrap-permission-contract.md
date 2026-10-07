@@ -139,6 +139,32 @@ contract remain. Four mandatory real packet-denied near-limit/cumulative/error
 regressions prove aggregate capture and production exporter readback using only
 synthetic daemon state, not actual Docker/native acceptance. See the native PM audit.
 
+An independent provisioning review then found that public-core reconstruction
+still invoked the low-level child runner without an audit sink. A real failed
+child returned exit 17 but no terminal evidence; this was a diagnostic regression,
+not an observed failure of ordinary Git reconstruction on a hosted runner.
+The existing command audit/reservation wrapper now lives in
+`docker/acquisition_support.py`. Its one process-local `COMMAND_LOG` is shared
+by reconstruction and both public setup wrappers. All six fixed Git commands
+use `audited_run`; `hosted_setup.run` and the disabled `base_setup.run` delegate
+to it. No new export member, separate per-stage quota or enlarged budget is used.
+The only other production low-level caller is `hosted_apt.AptProof.command`,
+which already passes its explicit bounded incremental file audit and resource poll.
+
+Five mandatory packet-denied reconstruction tests prove real failed children at
+each stage retain argv/phase/exit/count/hash/head-tail through the actual bounded
+aggregate reader and production exporter. One child emits near the unchanged
+4 MiB cap; others exercise invalid UTF-8, controls and JSON escaping. Tiny actual
+Git reconstruction preserves tree/commit/status predicates. Its six commands,
+five representative hosted parent commands and one disabled legacy-wrapper call
+share the same tested budget. Count/byte exhaustion refuses before log/spawn;
+terminal-write failures preserve the primary exit; deadlines reap the owned
+child while an unrelated child survives. In source, the ordinary hosted parent
+has eleven commands (six Git, fetch, named install, resolver, verifier build,
+warm); nested warm has one inventory command in its own process. APT commands
+stay in their separate file audit. This is a call-count audit and fixture proof,
+not real provisioning or a guarantee of peak filesystem/log fit.
+
 Static review also confirms the pinned PM build-env accepts the existing offline
 wheelhouse/requirement arguments, member-union sync accepts explicit Members and
 project_root, runtime facts/selected-generation APIs match the recipe, and custom

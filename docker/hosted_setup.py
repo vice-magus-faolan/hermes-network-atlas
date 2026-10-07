@@ -23,7 +23,9 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from hosted_contract import container_setup_guard
-from acquisition_support import bounded_run, finite_download, reconstruct_public_core
+from acquisition_support import (bounded_run, finite_download, reconstruct_public_core, audited_run,
+                                 CommandLog, COMMAND_LOG, COMMAND_LOG_LIMIT, COMMAND_COUNT_LIMIT,
+                                 TERMINAL_ROW_LIMIT, COMMAND_ARGV_LIMIT)
 from base_setup import readable_seed, inventory
 from hosted_apt import provision
 
@@ -34,72 +36,9 @@ HERMES = 'f42f579cf8bac4918ac9599bece71618afadd846'
 TREE = '008b644d38770b7de0835592ddaf19a708e2fa82'
 
 
-COMMAND_LOG_LIMIT = 1024 ** 2
-COMMAND_COUNT_LIMIT = 32
-TERMINAL_ROW_LIMIT = 256 * 1024
-COMMAND_ARGV_LIMIT = 8192
-
-
-class CommandLog:
-    """Reserve encoded terminal evidence before spawning; bound cumulative rows.
-
-    A 32 KiB head/tail can expand sixfold in JSON (invalid UTF-8, controls,
-    non-ASCII). Reserve 256 KiB, including bounded argv/metadata, for each
-    terminal row. The 1 MiB process-local aggregate leaves traceback/headroom
-    under the unchanged 4 MiB bootstrap exporter, without silently dropping rows.
-    Nested wrapper output is captured by its parent's bounded command audit.
-    """
-    def __init__(self):
-        self.bytes = 0
-        self.commands = 0
-
-    def begin(self, argv: list[str]) -> None:
-        if not argv or len(argv) > 64 or any(not isinstance(item, str) for item in argv):
-            raise ValueError('bounded public command argv required')
-        row = {'public_command': argv, 'state': 'started'}
-        size = len(json.dumps(row, sort_keys=True).encode()) + 1
-        if size > COMMAND_ARGV_LIMIT:
-            raise ValueError('public command argv diagnostic bound exceeded')
-        if self.commands >= COMMAND_COUNT_LIMIT or self.bytes + size + TERMINAL_ROW_LIMIT > COMMAND_LOG_LIMIT:
-            raise ValueError('public command diagnostic budget exhausted')
-        self.commands += 1
-        self.emit(row, limit=COMMAND_ARGV_LIMIT)
-
-    def emit(self, row: dict, *, limit: int = TERMINAL_ROW_LIMIT) -> None:
-        payload = json.dumps(row, sort_keys=True)
-        size = len(payload.encode()) + 1
-        if size > limit or self.bytes + size > COMMAND_LOG_LIMIT:
-            raise ValueError('public command diagnostic row bound exceeded')
-        # Consume before printing: a failed stream write cannot renew the budget.
-        self.bytes += size
-        print(payload, flush=True)
-
-
-COMMAND_LOG = CommandLog()
-
-
 def run(argv: list[str]) -> str:
     """Retain actual bounded phase/exit/output evidence in bootstrap.log."""
-    COMMAND_LOG.begin(argv)
-    audit: dict[str, object] = {'public_command': argv}
-    started = time.monotonic()
-    original = None
-    try:
-        output = bounded_run(argv, CORE, timeout=900, audit=audit)
-        audit['state'] = 'complete'
-        return output
-    except BaseException as exc:
-        original = exc
-        audit.update(state='failed', error=type(exc).__name__)
-        raise
-    finally:
-        audit['elapsed_seconds'] = time.monotonic() - started
-        try:
-            COMMAND_LOG.emit(audit)
-        except BaseException as diagnostic_error:
-            if original is None:
-                raise
-            original.add_note(f'command diagnostic failed: {type(diagnostic_error).__name__}')
+    return audited_run(argv, CORE, log=COMMAND_LOG, runner=bounded_run)
 
 
 def public_json(url: str) -> dict:

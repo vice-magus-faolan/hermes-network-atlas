@@ -23,8 +23,8 @@ CORE = SEED / "hermes-source"
 
 
 def run(argv: list[str]) -> str:
-    from acquisition_support import bounded_run
-    return bounded_run(argv, CORE)
+    from acquisition_support import audited_run
+    return audited_run(argv, CORE)
 
 
 def inventory(path: Path) -> dict[str, int]:

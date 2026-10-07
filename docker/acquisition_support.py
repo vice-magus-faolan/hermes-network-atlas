@@ -89,6 +89,81 @@ def finish_command(child, selector, output: bytearray, audit: dict | None) -> No
                      output_sha256=hashlib.sha256(output).hexdigest())
 
 
+COMMAND_LOG_LIMIT = 1024 ** 2
+COMMAND_COUNT_LIMIT = 32
+TERMINAL_ROW_LIMIT = 256 * 1024
+COMMAND_ARGV_LIMIT = 8192
+
+
+class CommandLog:
+    """Reserve encoded terminal evidence before spawning; bound cumulative rows.
+
+    A 32 KiB head/tail can expand sixfold in JSON (invalid UTF-8, controls,
+    non-ASCII). Reserve 256 KiB, including bounded argv/metadata, for each
+    terminal row. The 1 MiB process-local aggregate leaves traceback/headroom
+    under the unchanged 4 MiB bootstrap exporter, without silently dropping rows.
+    Nested wrapper output is captured by its parent's bounded command audit.
+    """
+    def __init__(self):
+        self.bytes = 0
+        self.commands = 0
+
+    def begin(self, argv: list[str]) -> None:
+        if not argv or len(argv) > 64 or any(not isinstance(item, str) for item in argv):
+            raise ValueError('bounded public command argv required')
+        row = {'public_command': argv, 'state': 'started'}
+        size = len(json.dumps(row, sort_keys=True).encode()) + 1
+        if size > COMMAND_ARGV_LIMIT:
+            raise ValueError('public command argv diagnostic bound exceeded')
+        if self.commands >= COMMAND_COUNT_LIMIT or self.bytes + size + TERMINAL_ROW_LIMIT > COMMAND_LOG_LIMIT:
+            raise ValueError('public command diagnostic budget exhausted')
+        self.commands += 1
+        self.emit(row, limit=COMMAND_ARGV_LIMIT)
+
+    def emit(self, row: dict, *, limit: int = TERMINAL_ROW_LIMIT) -> None:
+        payload = json.dumps(row, sort_keys=True)
+        size = len(payload.encode()) + 1
+        if size > limit or self.bytes + size > COMMAND_LOG_LIMIT:
+            raise ValueError('public command diagnostic row bound exceeded')
+        # Consume before printing: a failed stream write cannot renew the budget.
+        self.bytes += size
+        print(payload, flush=True)
+
+
+COMMAND_LOG = CommandLog()
+
+
+def audited_run(argv: list[str], cwd: Path, *, log: CommandLog | None = None, runner=None) -> str:
+    """Retain actual phase/exit/output in bootstrap.log, including Git reconstruction.
+
+    All public setup wrappers share one process-local budget. APT retains its
+    separate incremental file audit. The low-level runner remains available for
+    that explicit sink; public phase commands must use this wrapper instead.
+    """
+    log = COMMAND_LOG if log is None else log
+    runner = bounded_run if runner is None else runner
+    log.begin(argv)
+    audit: dict[str, object] = {'public_command': argv}
+    started = time.monotonic()
+    original = None
+    try:
+        output = runner(argv, cwd, timeout=900, audit=audit)
+        audit['state'] = 'complete'
+        return output
+    except BaseException as exc:
+        original = exc
+        audit.update(state='failed', error=type(exc).__name__)
+        raise
+    finally:
+        audit['elapsed_seconds'] = time.monotonic() - started
+        try:
+            log.emit(audit)
+        except BaseException as diagnostic_error:
+            if original is None:
+                raise
+            original.add_note(f'command diagnostic failed: {type(diagnostic_error).__name__}')
+
+
 def finite_download(item: dict, directory: Path, *, opener=None, deadline: float) -> Path:
     """Exact length/hash, bounded blocks and deadline checked BEFORE every write."""
     public_url(item["url"])
@@ -247,17 +322,17 @@ def acquire(inputs: Path, destination: Path, plan: dict) -> list[dict]:
 
 
 def reconstruct_public_core(core: Path, commit: Path, expected_commit: str, expected_tree: str) -> None:
-    """Reconstruct one public commit, never copy a host common Git directory."""
+    """Reconstruct one public commit with bounded phase evidence, never host Git."""
     env_keys = [name for name in os.environ if name.startswith("GIT_")]
     if env_keys or (core / ".git").exists():
         raise ValueError("fresh isolated public core Git state required")
-    bounded_run(["git", "init", "--quiet"], core)
-    bounded_run(["git", "add", "--force", "--all"], core)
-    if bounded_run(["git", "write-tree"], core).strip() != expected_tree:
+    audited_run(["git", "init", "--quiet"], core)
+    audited_run(["git", "add", "--force", "--all"], core)
+    if audited_run(["git", "write-tree"], core).strip() != expected_tree:
         raise ValueError("complete public core archive tree mismatch")
-    if bounded_run(["git", "hash-object", "-t", "commit", "-w", str(commit)], core).strip() != expected_commit:
+    if audited_run(["git", "hash-object", "-t", "commit", "-w", str(commit)], core).strip() != expected_commit:
         raise ValueError("literal public core commit object mismatch")
     (core / ".git" / "shallow").write_text(expected_commit + "\n")
-    bounded_run(["git", "update-ref", "HEAD", expected_commit], core)
-    if bounded_run(["git", "status", "--porcelain=v1", "--untracked-files=all"], core):
+    audited_run(["git", "update-ref", "HEAD", expected_commit], core)
+    if audited_run(["git", "status", "--porcelain=v1", "--untracked-files=all"], core):
         raise ValueError("reconstructed public core has extra files")

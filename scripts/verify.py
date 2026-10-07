@@ -97,6 +97,11 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_reconstruction.ReconstructionLogTests.test_budget_refuses_before_git_or_log_effects",
+    "test_docker_reconstruction.ReconstructionLogTests.test_each_failed_git_stage_retains_real_child_evidence_in_export",
+    "test_docker_reconstruction.ReconstructionLogTests.test_success_outputs_and_hosted_phases_share_existing_budget",
+    "test_docker_reconstruction.ReconstructionLogTests.test_terminal_write_failure_preserves_real_primary_exit",
+    "test_docker_reconstruction.ReconstructionLogTests.test_deadline_reaps_owned_child_and_preserves_terminal_audit",
     "test_docker_command_logs.CommandLogTests.test_near_limit_failed_child_traceback_and_actual_export_preserve_primary",
     "test_docker_command_logs.CommandLogTests.test_repeated_hostile_rows_reserve_terminal_before_spawn_under_aggregate_cap",
     "test_docker_command_logs.CommandLogTests.test_command_metadata_and_count_refuse_before_child_or_log_effects",

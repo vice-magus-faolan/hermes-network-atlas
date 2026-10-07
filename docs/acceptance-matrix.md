@@ -44,6 +44,17 @@ The exception is a bounded exit summary; the audit retains actual count/hash and
 and 32-command cap do not widen existing child/log/export budgets. No Docker is
 executed; synthetic daemon export seams are not real native/hosted acceptance.
 
+Five mandatory `tests/test_docker_reconstruction.py::ReconstructionLogTests` IDs
+extend that same audit to every fixed Git reconstruction stage: actual failed
+children (including near-cap and hostile output) survive the aggregate reader
+and production exporter; a tiny real Git tree/commit reconstruction still passes
+its original predicates; six Git stages and five ordinary hosted phase commands
+plus the disabled legacy wrapper use one unchanged budget; count/byte exhaustion
+refuses before Git/log effects; terminal-write errors retain the actual primary
+exit; and deadline evidence survives owned-child reaping without affecting an
+unrelated child. Normal/-O are required. These are packet-denied source/fixture
+regressions, not acquisition, package/native acceptance or real Docker cleanup.
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission
