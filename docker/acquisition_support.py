@@ -37,7 +37,8 @@ class PublicRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def bounded_run(argv: list[str], cwd: Path, *, timeout: float = 900, limit: int = 4 * 1024 ** 2) -> str:
+def bounded_run(argv: list[str], cwd: Path, *, timeout: float = 900, limit: int = 4 * 1024 ** 2,
+                audit: dict | None = None, poll=None) -> str:
     """Bound setup output before retaining it; reap only the owned process group."""
     child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, start_new_session=True)
@@ -49,6 +50,8 @@ def bounded_run(argv: list[str], cwd: Path, *, timeout: float = 900, limit: int 
             raise RuntimeError("owned setup output absent")
         selector.register(child.stdout, selectors.EVENT_READ)
         while selector.get_map():
+            if poll is not None:
+                poll()
             if time.monotonic() >= deadline:
                 raise TimeoutError("public setup command deadline")
             for key, _event in selector.select(0.1):
@@ -56,20 +59,31 @@ def bounded_run(argv: list[str], cwd: Path, *, timeout: float = 900, limit: int 
                 if not block:
                     selector.unregister(key.fileobj)
                 if len(output) + len(block) > limit:
+                    output.extend(block[:limit - len(output)])
                     raise ValueError("public setup output bound exceeded")
                 output.extend(block)
         if child.wait(timeout=5):
             raise RuntimeError(output.decode(errors="replace"))
         return output.decode(errors="replace")
     finally:
-        selector.close()
-        try:
-            os.killpg(child.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        child.wait()
-        if child.stdout is not None:
-            child.stdout.close()
+        finish_command(child, selector, output, audit)
+
+
+def finish_command(child, selector, output: bytearray, audit: dict | None) -> None:
+    """Reap owned children and retain bounded actual output even on failure."""
+    selector.close()
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    child.wait()
+    if child.stdout is not None:
+        child.stdout.close()
+    if audit is not None:
+        retained = bytes(output) if len(output) <= 32768 else bytes(output[:16384] + output[-16384:])
+        audit.update(exit_code=child.returncode, output=retained.decode(errors="replace"),
+                     output_bytes=len(output), output_truncated=len(output) > len(retained),
+                     output_sha256=hashlib.sha256(output).hexdigest())
 
 
 def finite_download(item: dict, directory: Path, *, opener=None, deadline: float) -> Path:

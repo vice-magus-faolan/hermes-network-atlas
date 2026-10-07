@@ -13,6 +13,17 @@ and runs non-root/offline. Complete audit is in
 [bootstrap-permission-contract.md](bootstrap-permission-contract.md). Local tests
 and preliminary source review do not prove actual hosted/native acceptance.
 
+Mandatory `tests/test_docker_apt.py::AptProofTests` covers preinstall genuine
+archive hashes surviving normal post-install cache removal, unchanged base package
+versions, distinct empty index/archive refusals, control/index/installed drift,
+each APT command's failure-stage/output/exit retention, explicit all-preinstalled
+zero-archive refusal, malformed/nonregular/size/count proof, real owned child
+failure/deadline/output/resource audit, diagnostic-error precedence and independent
+failed-bootstrap diagnostic export/compact manifest. Native tool hash retention
+before PM publication and direct local fetch/APT guard refusals are covered too.
+These eleven IDs are mandatory in `scripts/verify.py`; fixtures are tiny and
+packet-denied, not real signed APT/native acceptance or a successful hosted retry.
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from hosted_contract import container_setup_guard
 from acquisition_support import bounded_run, finite_download, reconstruct_public_core
 from base_setup import readable_seed, inventory
+from hosted_apt import provision
 
 PUBLIC = Path('/opt/inputs')
 SEED = Path('/opt/seed')
@@ -99,20 +100,7 @@ def apt(inputs: dict) -> dict:
     snapshot = inputs['debian_snapshot']
     if snapshot != '20260919T000000Z':
         raise ValueError('exact Debian snapshot input required')
-    sources = Path('/etc/apt/sources.list.d/debian.sources')
-    sources.write_text('Types: deb\nURIs: https://snapshot.debian.org/archive/debian/' + snapshot +
-                       '/\nSuites: bookworm\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\nCheck-Valid-Until: no\n')
-    logs = run(['apt-get', '-o', 'APT::Sandbox::User=root', '-o', 'Acquire::Retries=0', 'update'])
-    logs += run(['apt-get', '-o', 'APT::Sandbox::User=root', '-o', 'Acquire::Retries=0', '-o', 'APT::Keep-Downloaded-Packages=true',
-                 'install', '-y', '--no-install-recommends', 'git', 'openssh-client', 'ca-certificates'])
-    indexes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-               for path in Path('/var/lib/apt/lists').iterdir() if path.is_file()}
-    archives = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in Path('/var/cache/apt/archives').glob('*.deb')}
-    if not indexes or not archives:
-        raise ValueError('actual authenticated apt index/package proof absent')
-    return {'snapshot': snapshot, 'indexes': indexes, 'archives': archives,
-            'log': logs, 'installed': run(['dpkg-query', '-W'])}
+    return provision(snapshot, SEED, CORE)
 
 
 def warm() -> None:
@@ -133,16 +121,37 @@ def warm() -> None:
 
 
 def tool_artifacts(lock: dict) -> list[dict]:
-    """Read actual native fetch-cache bytes against the unchanged public lock."""
+    """Read actual native fetch-cache bytes BEFORE PM publication releases them."""
     result = []
     for name in ('python', 'uv'):
         item = lock['packages'][name]['artifacts']['linux-x64']
         archive = SEED / 'tools' / ('fetch-' + item['sha256']) / Path(urlsplit(item['url']).path).name
-        actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if not 0 < archive.stat().st_size <= 128 * 1024 ** 2:
+            raise ValueError('native tool archive byte bound')
+        with archive.open('rb') as stream:
+            actual = hashlib.file_digest(stream, 'sha256').hexdigest()
         if actual != item['sha256']:
             raise ValueError('actual native tool archive differs from source lock')
         result.append({'name': name, 'url': item['url'], 'sha256': actual, 'bytes': archive.stat().st_size})
     return result
+
+
+def fetch_tools() -> None:
+    """Use pinned native acquisition, then retain hashes before genuine install."""
+    container_setup_guard()
+    sys.path.insert(0, str(CORE))
+    from pm.store import Store
+    lock = json.loads((CORE / 'pm/lock.json').read_text())
+    artifacts = [lock['packages'][name]['artifacts']['linux-x64'] for name in ('python', 'uv')]
+    deadline = time.monotonic() + 900
+    def progress(done, total, _ranges):
+        if done > 256 * 1024 ** 2 or total > 256 * 1024 ** 2 or time.monotonic() >= deadline:
+            raise ValueError('native tool acquisition resource/deadline bound')
+    store = Store(SEED / 'tools')
+    with store.install_lock(), store.scratch() as scratch:
+        store.fetch_many(artifacts, scratch, progress=progress)
+        records = tool_artifacts(lock)
+    (SEED / 'tool-archives.json').write_text(json.dumps(records, sort_keys=True))
 
 
 def main() -> int:
@@ -163,6 +172,9 @@ def main() -> int:
     os.environ.update(HOME=str(SEED / 'user'), HERMES_HOME=str(home), TMPDIR=str(SEED),
                       HERMES_RUNTIME_DIR=str(SEED / 'tools'), UV_PYTHON_DOWNLOADS='never',
                       HERMES_MANAGED='false', HERMES_ENABLE_PROJECT_PLUGINS='0')
+    # Native PM deletes fetch-<hash> entries on successful publication. Capture
+    # their genuine bytes first; never infer an archive from installed facts.
+    run([sys.executable, str(PUBLIC / 'hosted_setup.py'), 'fetch-tools'])
     run([sys.executable, '-m', 'pm.cli', 'install', 'python', 'uv', '--tools-only'])
     wheels = verifier(inputs)
     member = SEED / 'dependency-input'
@@ -178,7 +190,7 @@ def main() -> int:
               'resolved_union_sha256': hashlib.sha256((SEED / 'resolved-union.lock').read_bytes()).hexdigest(),
               'union_packages': json.loads((SEED / 'union-packages.json').read_text()),
               'tools': {name: lock['packages'][name] for name in ('python', 'uv')},
-              'actual_tool_artifacts': tool_artifacts(lock),
+              'actual_tool_artifacts': json.loads((SEED / 'tool-archives.json').read_text()),
               'source_archive_sha256': hashlib.sha256((PUBLIC / 'hermes.tar').read_bytes()).hexdigest()}
     shutil.move(home / 'cache/uv', SEED / 'uv-cache')
     for path in (home, member, SEED / 'user'):
@@ -209,6 +221,8 @@ if __name__ == '__main__':
         print(json.dumps(sorted((item.metadata['Name'], item.version) for item in importlib.metadata.distributions())))
     elif sys.argv[1:] == ['warm']:
         warm()
+    elif sys.argv[1:] == ['fetch-tools']:
+        fetch_tools()
     elif not sys.argv[1:]:
         raise SystemExit(main())
     else:

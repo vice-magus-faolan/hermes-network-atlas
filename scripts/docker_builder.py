@@ -290,7 +290,7 @@ def copy_seed_member(docker, identifier: str, budget: BoundedDirectory, name: st
     members = evidence_members(payload)
     if [member for member, _data in members] != [name]:
         raise ValueError("only exact retained-rootfs evidence may be copied")
-    if name == "inventory.json" and len(members[0][1]) > 512 * 1024:
+    if name in {"inventory.json", "apt-diagnostics.json"} and len(members[0][1]) > 512 * 1024:
         raise ValueError("bootstrap inventory bound exceeded")
     budget.write(name, members[0][1])
     return {"status": "present", "sha256": hashlib.sha256(members[0][1]).hexdigest()}
@@ -300,7 +300,7 @@ def export_seed_members(docker, data: dict, budget: BoundedDirectory, *, provena
     """Fixed member-by-member export; secondary errors cannot erase earlier files."""
     names = ("inventory.json",)
     if provenance:
-        names += ("resolved-union.lock", "verifier-resolution.json", "union-packages.json")
+        names += ("resolved-union.lock", "verifier-resolution.json", "union-packages.json", "apt-diagnostics.json")
     members = {}
     for name in names:
         try:

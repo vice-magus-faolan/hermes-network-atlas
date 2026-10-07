@@ -171,11 +171,20 @@ missing cleanup proof is not success.
 
 Primary stopped-state failure is interpreted before success-only copies. The
 exporter revalidates immutable ownership after stop and retains state/logs,
-then independently records all four inventory/provenance members as present,
+then independently records all five inventory/provenance/diagnostic members as present,
 missing (exact absent-file response only), or export error. Missing files on a
 failed setup cannot mask its exit/OOM/start error or claim success; on success
 every member is mandatory. Secondary cleanup/export/final diagnostic errors
 cannot replace the primary exception. See bootstrap-permission-contract.md.
+
+Authenticated APT download-only acquisition and actual archive hashes/control
+identities now precede no-download install and unmodified normal cache-clean hooks.
+Incremental apt-diagnostics.json retains actual config/output/exits and distinct
+index/archive counts even when success-only inventory never exists. Unchanged
+installed packages are attributed to the pinned base, not fabricated archives.
+Native tool hashes likewise precede PM's normal fetch-cache release. These are
+source repairs; actual signed provisioning and downstream/native success still
+require the corrected reviewed hosted run.
 
 The always-run export includes only bounded summary, owned bootstrap provenance,
 registry and compact native export/metadata directories. No contexts, tools,

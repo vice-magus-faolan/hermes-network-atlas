@@ -23,7 +23,7 @@ from test_docker_builder import identity, inspected
 from test_hosted_docker import diagnostics
 
 
-NAMES = ('inventory.json', 'resolved-union.lock', 'verifier-resolution.json', 'union-packages.json')
+NAMES = ('inventory.json', 'resolved-union.lock', 'verifier-resolution.json', 'union-packages.json', 'apt-diagnostics.json')
 
 
 def archive(name, payload=b'{}'):
@@ -155,29 +155,17 @@ class BootstrapRepairTests(unittest.TestCase):
             write.assert_not_called()
 
     def test_hosted_apt_permits_normal_authenticated_provisioning_not_script_bypass(self):
-        with patch.object(setup, 'container_setup_guard'), patch.object(setup.Path, 'write_text') as write, \
-                patch.object(setup.Path, 'iterdir', return_value=[Path('/fake/InRelease')]), \
-                patch.object(setup.Path, 'glob', return_value=[Path('/fake/package.deb')]), \
-                patch.object(setup.Path, 'is_file', return_value=True), patch.object(setup.Path, 'read_bytes', return_value=b'tiny fixture'), \
-                patch.object(setup, 'run', side_effect=['index log', 'package log', 'installed package identities']) as run:
+        # Detailed real production acquisition/binding seams are mandatory in
+        # AptProofTests; this inherited ID preserves the guarded setup dispatch.
+        with patch.object(setup, 'container_setup_guard'), \
+                patch.object(setup, 'provision', return_value={'success': True}) as provision:
             result = setup.apt({'debian_snapshot': '20260919T000000Z'})
-            self.assertEqual(result['installed'], 'installed package identities')
-            self.assertEqual(len(result['indexes']), 1)
-            self.assertEqual(len(result['archives']), 1)
-            source = write.call_args.args[0]
-            self.assertIn('Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg', source)
-            self.assertIn('https://snapshot.debian.org/archive/debian/20260919T000000Z/', source)
-            install = run.call_args_list[1].args[0]
-            self.assertEqual(install[-3:], ['git', 'openssh-client', 'ca-certificates'])
-            self.assertIn('--no-install-recommends', install)
-            self.assertFalse(set(install) & {'--allow-unauthenticated', '--force', '--force-not-root'})
-            self.assertEqual(run.call_args_list[2].args[0], ['dpkg-query', '-W'])
-            run.reset_mock()
-            write.reset_mock()
+            self.assertTrue(result['success'])
+            provision.assert_called_once_with('20260919T000000Z', setup.SEED, setup.CORE)
+            provision.reset_mock()
             with self.assertRaisesRegex(ValueError, 'exact Debian snapshot'):
                 setup.apt({'debian_snapshot': 'wrong'})
-            run.assert_not_called()
-            write.assert_not_called()
+            provision.assert_not_called()
 
     def test_hosted_build_success_crosschecks_process_proof_before_commit_and_owned_cleanup(self):
         # Actual controller/export/commit/readback functions; only external
@@ -257,7 +245,7 @@ class BootstrapRepairTests(unittest.TestCase):
             self.assertFalse(manifest['setup_success'])
             self.assertEqual({key: row['status'] for key, row in manifest['members'].items()}, dict.fromkeys(NAMES, 'missing'))
             self.assertFalse(any((root / name).exists() for name in NAMES))
-            self.assertEqual([argv[0] for argv in fake.calls], ['logs', 'cp', 'cp', 'cp', 'cp'])
+            self.assertEqual([argv[0] for argv in fake.calls], ['logs', 'cp', 'cp', 'cp', 'cp', 'cp'])
 
     def test_success_requires_every_inventory_and_provenance_member(self):
         for missing in NAMES:
@@ -269,7 +257,7 @@ class BootstrapRepairTests(unittest.TestCase):
                 manifest = json.loads((root / 'export-members.json').read_text())
                 self.assertTrue(manifest['setup_success'])
                 self.assertEqual(manifest['members'][missing]['status'], 'missing')
-                self.assertEqual(len(manifest['members']), 4)
+                self.assertEqual(len(manifest['members']), 5)
         with scratch_home() as directory:
             result = builder.export_bootstrap(ExportDocker(Path(directory), failed=False), Path(directory), identity(), provenance=True)
             self.assertEqual(set(result), set(NAMES))

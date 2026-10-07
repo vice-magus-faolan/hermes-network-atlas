@@ -97,6 +97,17 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_apt.AptProofTests.test_native_tool_hashes_captured_before_publication_removes_fetch_cache",
+    "test_docker_apt.AptProofTests.test_native_fetch_tools_local_guard_precedes_import_and_files",
+    "test_docker_apt.AptProofTests.test_normal_cache_cleanup_keeps_genuine_preinstall_hashes_and_base_versions",
+    "test_docker_apt.AptProofTests.test_empty_index_and_archive_refuse_with_distinct_incremental_counts",
+    "test_docker_apt.AptProofTests.test_index_archive_control_and_installed_drift_refuse_not_success",
+    "test_docker_apt.AptProofTests.test_each_command_failure_retains_stage_output_exit_and_primary",
+    "test_docker_apt.AptProofTests.test_already_installed_base_is_explicit_not_fabricated_archive_success",
+    "test_docker_apt.AptProofTests.test_malformed_nonregular_empty_or_overbound_proof_refuses",
+    "test_docker_apt.AptProofTests.test_actual_owned_command_failure_output_deadline_limit_and_resource_audit",
+    "test_docker_apt.AptProofTests.test_diagnostic_write_failure_is_secondary_to_command_failure",
+    "test_docker_apt.AptProofTests.test_failed_bootstrap_exports_diagnostics_without_success_inventory_and_compact_pack",
     "test_docker_bootstrap_repair.BootstrapRepairTests.test_hosted_build_success_crosschecks_process_proof_before_commit_and_owned_cleanup",
     "test_docker_bootstrap_repair.BootstrapRepairTests.test_standard_docker_capabilities_and_process_containment_golden_and_drift",
     "test_docker_bootstrap_repair.BootstrapRepairTests.test_real_setup_guard_requires_root_container_and_actual_status_before_effects",
@@ -183,7 +194,7 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/docker_builder.py", "scripts/docker_evidence.py", "scripts/docker_cold.py",
                   "docker/acquisition_support.py", "docker/acquisition_plan.py",
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
-                  "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py")
+                  "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py")
 
 
 def check_docker_source() -> bool:

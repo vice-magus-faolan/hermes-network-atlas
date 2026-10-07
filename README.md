@@ -41,6 +41,11 @@ and default seccomp/AppArmor. Candidate acceptance remains non-root, cap-drop AL
 read-only and network-none. No local Docker or heavyweight setup is authorized.
 Primary setup failure/logs and missing success-stage evidence are retained by
 the repaired exporter; synthetic exporter tests are not native acceptance.
+APT now captures authenticated downloaded archives before normal package cache
+cleanup, binds final installed versions to actual archives or the pinned base,
+and exports incremental config/command/count diagnostics on failure. Native tool
+archive hashes likewise precede PM cache release. Corrected hosted proof remains
+pending; no real package/native success is inferred from local fixtures.
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict

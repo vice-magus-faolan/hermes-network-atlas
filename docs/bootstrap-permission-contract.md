@@ -41,6 +41,84 @@ Gilfoyle review are still required; preliminary source review is not acceptance.
 
 ## Retained failure observation versus source-derived cause
 
+The standard-capability successor `0b295c71a285e2ff64d77686a39b1775e534381e`
+failed in GitHub run `37619683658`, job `112786500728`, at the combined
+index/archive proof guard. Its log does NOT establish which collection was
+empty, exact package state, or actual rootfs hooks. Official slim-image
+minimization source suggests post-install cache cleanup; it is a diagnosis
+lead, not observed pinned-rootfs proof. That failed run and its cleanup evidence
+remain immutable. The next candidate changes capture ordering and diagnostic
+retention, not this historical outcome.
+
+### Download-before-install APT provenance
+
+The hosted recipe now reads actual `apt-config dump` and bounded `apt.conf.d`
+bytes before source changes. It keeps all hooks and maintainer scripts intact.
+Only the existing exact Debian snapshot and packaged Signed-By keyring are used;
+alternate sourceparts are excluded, insecure repositories/unauthenticated
+packages explicitly disabled, and any update failure is fatal. Successful APT
+acquisition authenticates Release/index/archive hashes; our retained SHA256 values
+are hashes of the actual bytes, not substitute authentication.
+
+After a fully configured dpkg base inventory and signed index collection, normal
+`apt-get --download-only install` acquires the unchanged git/SSH/CA roots and
+needed dependencies. Real archive bytes and `dpkg-deb` package/architecture/version
+identities are captured before install. Empty index/archive collections, malformed
+or duplicate identities, nonregular members, cache drift and missing proof fail.
+The cache is rehashed before ordinary `--no-download install` consumes it. Normal
+DPkg cleanup may then remove archives: their genuine proof already survives.
+No cache-clean hook is disabled and no package script or authentication is bypassed.
+Index drift during install refuses. Every acquired version must match final dpkg
+state; every other installed version must match the digest-pinned base's preinstall
+state. Already-installed CA is explicitly base-backed, not given a fake archive.
+An entirely preinstalled closure with zero new archives refuses explicitly rather
+than inventing successful acquisition. The present pinned base still needs actual
+hosted observation; that zero-acquisition refusal is not a guessed runtime outcome.
+
+`apt-diagnostics.json` is atomically refreshed at each command/proof stage,
+independently of success-only inventory. It retains started/completed/failed state,
+actual child exit, bounded output/hash/byte/truncation metadata, elapsed time,
+rootfs hook bytes, distinct nullable/zero/nonzero index and archive counts, actual
+records, and base/final identities. Failure-stage export includes it even if all
+four old success-stage members are absent. All FIVE members are mandatory on
+successful hosted setup. A diagnostic write failure cannot replace the command's
+primary exception. Failed collection is not represented as an observed empty set
+unless enumeration actually completed empty.
+
+Per-command combined output is capped at 128 KiB, with at most 32 KiB head/tail
+retained and explicit truncation/full-captured-output hash. There are at most 256
+commands and a 512 KiB diagnostic record. Index and archive collection each cap
+256 regular members/256 MiB; streaming hashing avoids full archive allocations.
+Acquisition/partial/index usage is cooperatively polled during owned child execution
+and bounded by the same limits; a poll/deadline/output failure reaps only that
+process group. Polling is NOT a pre-write filesystem quota and may miss brief peaks;
+the disposable VM and unchanged controller/resource bounds remain the aggregate
+boundary. Actual failed output is retained, never synthesised from source.
+
+### Downstream pinned PM source audit
+
+The unchanged core `f42f579cf8bac4918ac9599bece71618afadd846` releases native
+`fetch-<hash>` archives on successful tool publication (`pm/install.py`,
+`_remove_downloads`). The predecessor's late `tool_artifacts()` read therefore
+cannot rely on those cache entries surviving. This is a source-derived later
+defect, NOT an observed second failure in run `37619683658`.
+
+The guarded, bounded `fetch-tools` child uses that exact PM's native
+`Store.fetch_many` under its native store lock/scratch context, authenticates the
+unchanged Python/uv pins and captures real stream-hashed archive bytes BEFORE
+ordinary native CLI install. Native install still validates/publishes its tools
+and removes downloads normally. Compact `tool-archives.json` retains the genuine
+proof for final inventory; no core changes, fake facts or repeated post-publication
+archive downloads. Tool acquisition progress has aggregate 256 MiB/deadline bounds,
+each archive is capped at 128 MiB, and the parent owned child remains bounded.
+
+Static review also confirms the pinned PM build-env accepts the existing offline
+wheelhouse/requirement arguments, member-union sync accepts explicit Members and
+project_root, runtime facts/selected-generation APIs match the recipe, and custom
+HERMES_HOME scopes the UV cache to the disposable setup home. Full PyPI binary
+authentication, complete union resolution, cache relocation, selected-generation
+readback and cold/native acceptance remain real hosted gates, not static success.
+
 The following records the earlier capless attempt; it is not a claim that the
 corrected standard-provisioning candidate has already executed on a hosted VM.
 
@@ -105,8 +183,9 @@ success-only copy or commit. Export re-inspects exact owned immutable identity
 after stopping, then writes `stopped.json` before attempting `bootstrap.log`.
 Logging remains `local/max-size=4m/max-file=1/compress=false`; bounds are unchanged.
 
-The fixed failure-stage members are `inventory.json`, `resolved-union.lock`,
-`verifier-resolution.json` and `union-packages.json`. Each is independently read
+The fixed hosted export members are `inventory.json`, `resolved-union.lock`,
+`verifier-resolution.json`, `union-packages.json` and incremental
+`apt-diagnostics.json`. Each is independently read
 through the bounded Docker archive seam. `export-members.json` distinguishes
 `present` (with actual SHA256), `missing` (only the exact Docker absent-file
 response) and `error` (permission, transport, malformed archive, wrong member or
@@ -136,10 +215,12 @@ can bootstrap tests only; missing fresh admission remains a canonical failure.
 The complete unchanged workflow must still pass the pinned validator.
 
 The conservative branch estimate for the new `export_seed_members` boundary is
-11: a fixed at-most-four-member loop deliberately isolates each export failure,
+11: a fixed at-most-five-member loop deliberately isolates each export failure,
 then separately enforces setup-success completeness. This soft warning is kept
 visible and covered by missing/error/malformed/all-present cases; no new/changed
 function exceeds 15. Original higher-warning functions are not refactored here.
+The new APT orchestration estimate is also 11; it deliberately exposes fixed
+command/proof ordering while separately tested helpers enforce bounds/identities.
 
 The three historical pre-effect regression IDs now enforce real local/non-hosted
 refusal rather than the superseded unconditional stop. Every primary-failure,

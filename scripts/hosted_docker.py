@@ -28,7 +28,8 @@ from hosted_contract import require_bootstrap_contract, validate_setup_inventory
 PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/dependencies.json',
                 'hosted_setup.py': 'docker/hosted_setup.py', 'base_setup.py': 'docker/base_setup.py',
                 'acquisition_support.py': 'docker/acquisition_support.py', 'acquisition_plan.py': 'docker/acquisition_plan.py',
-                'offline_guard.py': 'scripts/offline_guard.py', 'hosted_contract.py': 'scripts/hosted_contract.py'}
+                'offline_guard.py': 'scripts/offline_guard.py', 'hosted_contract.py': 'scripts/hosted_contract.py',
+                'hosted_apt.py': 'docker/hosted_apt.py'}
 FAILURES = ('error', 'export_error', 'cleanup_error', 'outcome_export_error', 'registry_error', 'resource_error')
 
 
