@@ -186,6 +186,17 @@ Native tool hashes likewise precede PM's normal fetch-cache release. These are
 source repairs; actual signed provisioning and downstream/native success still
 require the corrected reviewed hosted run.
 
+The later hosted run `37628525414` completed genuine APT proof and then failed
+on the actual pinned PM CLI's incompatible named `--tools-only` argv. Supported
+named `pm.cli install python uv` preserves the intended two-tool closure without
+venv sync or unrelated default tool acquisition. Full [native PM contract audit](native-pm-contract-audit.md)
+traces every subsequent PM/parser/API/guard boundary. Eight mandatory lightweight
+tests exercise actual pinned parsing/dispatch/signatures and bounded owned child
+diagnostics in normal/-O; no installer/acquisition is executed. Public command
+phase/exit/output diagnostics go to the existing bounded bootstrap log on success
+and failure, preserving primary error precedence. Real downstream/native/cold
+success remains pending exact-head hosted execution.
+
 The always-run export includes only bounded summary, owned bootstrap provenance,
 registry and compact native export/metadata directories. No contexts, tools,
 opaque uv cache, profiles or fixture homes are uploaded. A maximum 128 MiB/256

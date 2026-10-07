@@ -24,6 +24,15 @@ before PM publication and direct local fetch/APT guard refusals are covered too.
 These eleven IDs are mandatory in `scripts/verify.py`; fixtures are tiny and
 packet-denied, not real signed APT/native acceptance or a successful hosted retry.
 
+Eight mandatory `tests/test_docker_pm.py::NativePMContractTests` IDs execute the
+actual pinned parser/flag predicate on production argv, predecessor refusal,
+corrected narrow named dispatch, default-closure scope, real build-env parser/API
+binding, member encoding/all used PM signatures, actual bounded owned command
+success/failure diagnostics and primary-error precedence. Both normal and -O
+processes are required. See [native-pm-contract-audit.md](native-pm-contract-audit.md)
+for every hosted PM call and exact pinned source coordinates. The tests never
+install/acquire; signature/dispatch success is not native acceptance.
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission

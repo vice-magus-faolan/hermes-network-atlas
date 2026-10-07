@@ -46,6 +46,10 @@ cleanup, binds final installed versions to actual archives or the pinned base,
 and exports incremental config/command/count diagnostics on failure. Native tool
 archive hashes likewise precede PM cache release. Corrected hosted proof remains
 pending; no real package/native success is inferred from local fixtures.
+The subsequent observed native CLI flag refusal is repaired with supported named
+`pm.cli install python uv` (no incompatible `--tools-only`, no enlarged default
+closure). Actual pinned parser/dispatch/API regressions and bounded command-phase
+diagnostics accompany [the full native PM audit](docs/native-pm-contract-audit.md).
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict

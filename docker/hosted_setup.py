@@ -35,7 +35,27 @@ TREE = '008b644d38770b7de0835592ddaf19a708e2fa82'
 
 
 def run(argv: list[str]) -> str:
-    return bounded_run(argv, CORE, timeout=900)
+    """Retain actual bounded phase/exit/output evidence in bootstrap.log."""
+    print(json.dumps({'public_command': argv, 'state': 'started'}), flush=True)
+    audit: dict[str, object] = {'public_command': argv}
+    started = time.monotonic()
+    original = None
+    try:
+        output = bounded_run(argv, CORE, timeout=900, audit=audit)
+        audit['state'] = 'complete'
+        return output
+    except BaseException as exc:
+        original = exc
+        audit.update(state='failed', error=type(exc).__name__)
+        raise
+    finally:
+        audit['elapsed_seconds'] = time.monotonic() - started
+        try:
+            print(json.dumps(audit, sort_keys=True), flush=True)
+        except BaseException as diagnostic_error:
+            if original is None:
+                raise
+            original.add_note(f'command diagnostic failed: {type(diagnostic_error).__name__}')
 
 
 def public_json(url: str) -> dict:
@@ -175,7 +195,9 @@ def main() -> int:
     # Native PM deletes fetch-<hash> entries on successful publication. Capture
     # their genuine bytes first; never infer an archive from installed facts.
     run([sys.executable, str(PUBLIC / 'hosted_setup.py'), 'fetch-tools'])
-    run([sys.executable, '-m', 'pm.cli', 'install', 'python', 'uv', '--tools-only'])
+    # Named install already stops before venv sync. --tools-only forbids names
+    # and selects a broader default closure (including optional browser tools).
+    run([sys.executable, '-m', 'pm.cli', 'install', 'python', 'uv'])
     wheels = verifier(inputs)
     member = SEED / 'dependency-input'
     member.mkdir()

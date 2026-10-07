@@ -112,6 +112,21 @@ proof for final inventory; no core changes, fake facts or repeated post-publicat
 archive downloads. Tool acquisition progress has aggregate 256 MiB/deadline bounds,
 each archive is capped at 128 MiB, and the parent owned child remains bounded.
 
+Run `37628525414` subsequently observed successful APT proof followed by the actual
+native CLI refusal of names combined with `--tools-only`. The repair uses supported
+`pm.cli install python uv`: named installation already avoids venv sync. Removing
+the names instead would expand to unrelated required/default tools; it is not the
+same authenticated seed. The disabled legacy recipe's identical argv is corrected
+without rearming its execution gate. [native-pm-contract-audit.md](native-pm-contract-audit.md)
+records every PM call, parser/dispatch/signature tests, actual source coordinates
+and remaining hosted gates. No source/tool/image pin or PM policy changes.
+
+Native/public command started/terminal diagnostics now survive independently in
+the existing bootstrap log, including real argv/phase/exit/time/output hash/count
+and bounded head/tail output. They use the existing owned bounded child and
+preserve the primary exception even when final diagnostic writing fails. Success
+inventory and APT incremental diagnostics remain complete mandatory exports.
+
 Static review also confirms the pinned PM build-env accepts the existing offline
 wheelhouse/requirement arguments, member-union sync accepts explicit Members and
 project_root, runtime facts/selected-generation APIs match the recipe, and custom
@@ -168,7 +183,7 @@ the real hosted run, not inferred from mock fixtures or one source-derived block
 | Dpkg unpack/configure/triggers | `/var/lib/dpkg`, installed `/usr`, `/etc`, `/var` files, alternatives/groups and package-defined ownership/modes must remain genuine | Dpkg reference source performs fchown/fchmod and chown/lchown. Exact selected SSH postinst requires nonzero group ownership; incompatible with present capless contract. Full archive member ownership/maintainer closure is not inspected from payloads or claimed verified. |
 | Git / SSH / CA readiness | Fixed `git`, `openssh-client`, `ca-certificates` roots, ordinary transitive dependencies; Git reconstructs exact complete public source, SSH executes no live connection | Failed apt log selects Git 1:2.39.5-0+deb12u3 and SSH above; CA already at 20250419~deb12u1. No Git/SSH installation or final TLS/readiness proof. Existing CA statement does not prove every future trigger's compatibility. |
 | Public source | Data-filtered full archive under `/opt/seed/hermes-source`; reconstruct literal commit object/tree, no candidate editing or host Git copying | Data filter discards archive ownership metadata. Reconstruction uses ordinary owned local Git writes. Unchanged source logic, blocked before execution. |
-| Setup identity / native tool phase | Isolated `/opt/seed/user`, `/opt/seed/hermes`, `/opt/seed/tools`; native `pm.cli install python uv --tools-only` authenticates literal public lock and tool archives | Pinned PM extracts with its data filter, publishes store entries/facts and executable modes using ordinary owned files. No tool payload or PM installation was executed. No optional tools/source expansion or trust-recorded shortcut. |
+| Setup identity / native tool phase (historical recipe) | Isolated `/opt/seed/user`, `/opt/seed/hermes`, `/opt/seed/tools`; originally attempted `pm.cli install python uv --tools-only` | The later actual native flag refusal is recorded above. Corrected named installation preserves literal lock verification without a broader closure; historical source inspection was not execution proof. |
 | Verifier wheels | Binary-only PyPI dry-run; genuine report/index URL/hash/size match; finite authenticated wheels; ordinary native offline build at `/opt/verifier` | Existing validation/bounds retained, no new resolver, wheel or package payload. The base Python and PM-selected build Python are distinct prerequisites, not fake environments. |
 | Member-union prewarm | Dependency-input manifest only; real native sync/admission, resolved lock and selected interpreter package inventory | PM-owned home/install-generation/cache writes require writable ordinary state. No candidate/admission receipt is created in this phase. Actual complete union/cache sufficiency remains unproved. |
 | Reusable handoff | Retain only public core/tool facts/cache/verifier; move UV cache, remove setup home/member/user and compatibility selector; exclude admission/native selection files | Pinned PM cache/home/store APIs and recipe cleanup/readable-seed calls inspected. Root-owned data-filtered files can be normalized for non-root read/search without chown. No live reusable seed, relocation/cold-cache proof or inherited admission is asserted. |

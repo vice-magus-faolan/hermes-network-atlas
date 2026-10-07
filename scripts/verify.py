@@ -97,6 +97,14 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_pm.NativePMContractTests.test_candidate_argv_passes_actual_parser_and_flag_predicate",
+    "test_docker_pm.NativePMContractTests.test_predecessor_tools_only_names_refuse_before_dispatch",
+    "test_docker_pm.NativePMContractTests.test_named_dispatch_keeps_exact_tools_and_never_syncs_or_defaults",
+    "test_docker_pm.NativePMContractTests.test_bare_tools_only_closure_is_not_the_authenticated_seed",
+    "test_docker_pm.NativePMContractTests.test_verifier_argv_matches_actual_build_parser_and_public_api",
+    "test_docker_pm.NativePMContractTests.test_hosted_pm_api_signatures_and_member_encoding",
+    "test_docker_pm.NativePMContractTests.test_real_command_success_failure_and_bounded_output_diagnostics",
+    "test_docker_pm.NativePMContractTests.test_command_diagnostic_failure_never_replaces_primary_error",
     "test_docker_apt.AptProofTests.test_native_tool_hashes_captured_before_publication_removes_fetch_cache",
     "test_docker_apt.AptProofTests.test_native_fetch_tools_local_guard_precedes_import_and_files",
     "test_docker_apt.AptProofTests.test_normal_cache_cleanup_keeps_genuine_preinstall_hashes_and_base_versions",

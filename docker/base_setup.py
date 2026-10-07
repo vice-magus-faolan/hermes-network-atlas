@@ -72,7 +72,9 @@ def main() -> int:
                       UV_PYTHON_DOWNLOADS="never", HERMES_ENABLE_PROJECT_PLUGINS="0")
     os.environ.pop("PYTHONPATH", None)
     seed_tools(plan, acquired)
-    run([sys.executable, "-m", "pm.cli", "install", "python", "uv", "--tools-only"])
+    # Named native install does not sync a venv; --tools-only forbids names.
+    # The legacy execution gate remains closed independently of this argv repair.
+    run([sys.executable, "-m", "pm.cli", "install", "python", "uv"])
     requirements = acquired / "requirements.txt"
     requirements.write_text("\n".join(inputs["verifier_requirements"]) + "\n")
     wheels = wheelhouse(plan, acquired)
