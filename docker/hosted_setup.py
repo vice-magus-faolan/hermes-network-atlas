@@ -22,7 +22,7 @@ import urllib.request
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from hosted_contract import container_setup_guard
+from hosted_contract import container_setup_guard, require_bootstrap_contract
 from acquisition_support import bounded_run, finite_download, reconstruct_public_core
 from base_setup import readable_seed, inventory
 
@@ -95,6 +95,7 @@ def verifier(inputs: dict) -> list[dict]:
 
 
 def apt(inputs: dict) -> dict:
+    require_bootstrap_contract()  # No direct-call/cache-only bypass of the full contract.
     snapshot = inputs['debian_snapshot']
     if snapshot != '20260919T000000Z':
         raise ValueError('exact Debian snapshot input required')
@@ -116,6 +117,7 @@ def apt(inputs: dict) -> dict:
 
 def warm() -> None:
     container_setup_guard()  # BEFORE PM import, in the actual dispatcher too.
+    require_bootstrap_contract()
     sys.path.insert(0, str(CORE))
     import pm
     from pm.plugin_inputs import Members
@@ -146,6 +148,7 @@ def tool_artifacts(lock: dict) -> list[dict]:
 
 def main() -> int:
     container_setup_guard()
+    require_bootstrap_contract()  # Before filesystem, package, source, tool or PM setup.
     if sys.version_info[:3] != (3, 14, 7) or SEED.exists():
         raise ValueError('fresh pinned public setup required')
     inputs = json.loads((PUBLIC / 'dependencies.json').read_text())

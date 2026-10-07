@@ -15,6 +15,7 @@ from pathlib import Path
 import pwd
 import re
 import shutil
+import subprocess
 import sys
 import time
 
@@ -186,7 +187,7 @@ def commit_command(data: dict, identity: BootstrapIdentity, context: Path, *, ho
     identifier = validate_bootstrap(data, identity, context, hosted=hosted)
     if data["State"]["Running"] or data["State"].get("Status") != "exited":
         raise ValueError("stopped exited rootfs required before commit")
-    if data["State"].get("ExitCode") != 0 or data["State"].get("OOMKilled", False):
+    if data["State"].get("ExitCode") != 0 or data["State"].get("OOMKilled", False) or data["State"].get("Error"):
         raise ValueError("successful bootstrap required before commit")
     changes = ["USER 1000:1000", "WORKDIR /work", "CMD []", "ENTRYPOINT []", "ENV PYTHONDONTWRITEBYTECODE=1"]
     if hosted is not None:
@@ -243,28 +244,95 @@ def teardown_bootstrap(docker, identity: BootstrapIdentity) -> None:
         raise RuntimeError("owned bootstrap cleanup residue")
 
 
-def export_bootstrap(docker, root: Path, identity: BootstrapIdentity) -> dict:
-    from docker_contract import evidence_members
+def stopped_bootstrap(docker, identity: BootstrapIdentity) -> dict:
+    """Revalidate the exact owned stopped container before reading any evidence."""
     data = docker.inspect(BOOTSTRAP_NAME, name=BOOTSTRAP_NAME)
     if data is None:
         raise ValueError("bootstrap absent before evidence export")
     identifier = owned_bootstrap(data, identity)
     if data["State"]["Running"]:
         docker.run(["stop", "--time", "5", identifier], timeout=20)
-    budget = BoundedDirectory(root)
-    budget.json("stopped.json", docker.inspect(identifier, name=BOOTSTRAP_NAME))
-    budget.write("bootstrap.log", docker.run(["logs", identifier], limit=4 * 1024 ** 2))
-    payload = docker.run(["cp", f"{identifier}:/opt/seed/inventory.json", "-"], limit=1024 ** 2)
-    members = evidence_members(payload)
-    if [name for name, _data in members] != ["inventory.json"]:
-        raise ValueError("only retained-rootfs inventory may be copied")
-    budget.write("inventory.json", members[0][1])
-    return {"inventory.json": hashlib.sha256(members[0][1]).hexdigest()}
+    stopped = docker.inspect(identifier, name=BOOTSTRAP_NAME)
+    if stopped is None or owned_bootstrap(stopped, identity) != identifier or stopped["State"]["Running"]:
+        raise ValueError("stopped bootstrap immutable identity/state drift")
+    return stopped
 
 
-def finish_build(docker, root: Path, identity: BootstrapIdentity, outcome: dict) -> None:
+def require_bootstrap_success(data: dict) -> None:
+    """Promote stopped-state failure before success-only export can mask it."""
+    state = data["State"]
+    if (state.get("Running") is not False or state.get("Status") != "exited"
+            or state.get("ExitCode") != 0 or state.get("OOMKilled", False) or state.get("Error")):
+        raise RuntimeError(f'public bootstrap failed: status={state.get("Status")} '
+                           f'exit={state.get("ExitCode")} oom={state.get("OOMKilled", False)} '
+                           f'error={str(state.get("Error", ""))[:4096]}; see stopped.json/bootstrap.log')
+
+
+def copy_seed_member(docker, identifier: str, budget: BoundedDirectory, name: str) -> dict:
+    """Missing means the exact Docker absent-file response, not any copy failure."""
+    from docker_contract import evidence_members
     try:
-        outcome["export_hashes"] = export_bootstrap(docker, root, identity)
+        limit = 1024 ** 2 if name == "inventory.json" else 8 * 1024 ** 2
+        payload = docker.run(["cp", f"{identifier}:/opt/seed/{name}", "-"], limit=limit)
+    except subprocess.CalledProcessError as exc:
+        absent = f'Error response from daemon: Could not find the file /opt/seed/{name} in container {identifier}'
+        output = exc.output.decode(errors="replace") if isinstance(exc.output, bytes) else str(exc.output)
+        if exc.returncode == 1 and output.strip() == absent:
+            return {"status": "missing"}
+        raise
+    members = evidence_members(payload)
+    if [member for member, _data in members] != [name]:
+        raise ValueError("only exact retained-rootfs evidence may be copied")
+    if name == "inventory.json" and len(members[0][1]) > 512 * 1024:
+        raise ValueError("bootstrap inventory bound exceeded")
+    budget.write(name, members[0][1])
+    return {"status": "present", "sha256": hashlib.sha256(members[0][1]).hexdigest()}
+
+
+def export_seed_members(docker, data: dict, budget: BoundedDirectory, *, provenance: bool) -> dict:
+    """Fixed member-by-member export; secondary errors cannot erase earlier files."""
+    names = ("inventory.json",)
+    if provenance:
+        names += ("resolved-union.lock", "verifier-resolution.json", "union-packages.json")
+    members = {}
+    for name in names:
+        try:
+            members[name] = copy_seed_member(docker, data["Id"], budget, name)
+        except BaseException as exc:
+            members[name] = {"status": "error", "error": export_error_text(exc)}
+    try:
+        require_bootstrap_success(data)
+        success = True
+    except RuntimeError:
+        success = False
+    budget.json("export-members.json", {"setup_success": success, "native_acceptance": False, "members": members})
+    if any(row["status"] == "error" for row in members.values()):
+        raise ValueError("bootstrap evidence export failed; see export-members.json")
+    if success and any(row["status"] != "present" for row in members.values()):
+        raise ValueError("required bootstrap evidence missing on successful setup; see export-members.json")
+    return {name: row["sha256"] for name, row in members.items() if row["status"] == "present"}
+
+
+def export_error_text(exc: BaseException) -> str:
+    """Retain bounded CLI stderr/stdout as well as the secondary exception type."""
+    output = getattr(exc, "output", b"")
+    if isinstance(output, bytes):
+        output = output.decode(errors="replace")
+    return f"{type(exc).__name__}: {exc}; {str(output)[:2048]}"[:4096]
+
+
+def export_bootstrap(docker, root: Path, identity: BootstrapIdentity, *, provenance: bool = False) -> dict:
+    """Retain primary state/logs even when success-only files do not exist."""
+    data = stopped_bootstrap(docker, identity)
+    budget = BoundedDirectory(root)
+    budget.json("stopped.json", data)
+    budget.write("bootstrap.log", docker.run(["logs", data["Id"]], limit=4 * 1024 ** 2))
+    return export_seed_members(docker, data, budget, provenance=provenance)
+
+
+def finish_build(docker, root: Path, identity: BootstrapIdentity, outcome: dict, *, provenance: bool = False) -> None:
+    try:
+        outcome["export_hashes"] = export_bootstrap(docker, root, identity, provenance=provenance)
     except BaseException as exc:
         outcome["export_error"] = f"{type(exc).__name__}: {exc}"
     try:
@@ -387,6 +455,7 @@ def build_owned(docker, root: Path, source: Path, plan: dict, registry: Path, *,
         samples = {"free_minimum": budget["free_before"]}
         data = wait_bootstrap(docker, identity, context, time.monotonic() + 1800, samples)
         outcome["samples"] = dict(samples, free_after=shutil.disk_usage("/var/lib/containerd").free)
+        require_bootstrap_success(data)
         # Check retained-rootfs inventory before stopped commit. Input/cache/HOME
         # data in the mount cannot supply this proof and is not retained by commit.
         outcome["export_hashes"] = export_bootstrap(docker, evidence, identity)

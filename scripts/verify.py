@@ -97,6 +97,17 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_complete_package_contract_refuses_before_controller_effects",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_setup_and_apt_refuse_before_filesystem_acquisition_or_pm",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_actual_controller_entrypoint_contract_gate_precedes_scratch_and_daemon",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_final_diagnostic_error_is_secondary_unless_no_primary",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_failed_export_preserves_stopped_logs_and_all_missing_members",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_success_requires_every_inventory_and_provenance_member",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_permission_archive_and_output_failures_are_not_missing",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_reinspection_ownership_drift_never_reads_logs_or_members",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_stopped_failure_is_primary_before_success_only_exports_or_commit",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_primary_failure_survives_secondary_cleanup_evidence_write",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_all_stopped_failure_kinds_refuse_before_rootfs_commit",
     "test_docker_builder.BuilderContractTests.test_bootstrap_command_requires_exact_uncompressed_bounded_local_logs",
     "test_docker_builder.BuilderContractTests.test_bootstrap_inspection_refuses_missing_compressed_extra_or_expanded_logs",
     "test_docker_builder.BuilderContractTests.test_bootstrap_stopped_error_survives_log_failure_and_owned_teardown",

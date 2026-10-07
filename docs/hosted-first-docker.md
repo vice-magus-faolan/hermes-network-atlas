@@ -2,6 +2,17 @@
 
 ## Authority and current stop
 
+Current source-only repair stops at `BOOTSTRAP_CONTRACT_AUTHORITY_REQUIRED`.
+The complete [bootstrap permission audit](bootstrap-permission-contract.md)
+found a package-maintainer ownership requirement incompatible with the unchanged
+capability-dropped bootstrap. Controller/setup/direct apt entrypoints refuse
+before effects; no CLI/environment override exists. Historical attempts and
+their consumed approvals remain retained, not replayable. No new branch update,
+hosted attempt, capability grant or changed provisioning architecture is enabled.
+The staged construction below describes intended behavior, not a working recipe
+or current permission. Independent exact-source/workflow review of the repair
+is separate from a future authority decision and final feature acceptance.
+
 This is the staged hosted-first successor, not approval or a fit claim. The
 external operator-approved continuation supersedes the former requirement to
 prove guaranteed aggregate setup fit and obtain new local native admission
@@ -75,7 +86,10 @@ Apt uses the fixed Debian snapshot and the packaged Debian archive keyring;
 its acquisition UID stays root within this capability-dropped private container
 (no `_apt` UID switch requiring SETUID/SETGID grants). This is not host privilege
 or a native candidate security-policy override.
-signatures/index-package hashes stay enabled. Actual index/package hashes,
+Root acquisition does not fix a foreign-owned existing apt partial directory
+or make dpkg/SSH group-ownership operations compatible with CapDrop ALL. That
+complete contract is now blocked, not patched by a speculative cache chmod.
+Signatures/index-package hashes stay enabled. Actual index/package hashes,
 installed dpkg identities and command output are retained, not fabricated plan
 projections. Old metadata-only expansion declarations are NOT presented as fit.
 
@@ -147,6 +161,14 @@ removal and preserves evidence. Digest-pulled public upstream is explicitly left
 for VM disposal, not silently globally pruned. If the hosted service kills the
 job at its deadline before `finally` finishes, VM disposal is the last boundary;
 missing cleanup proof is not success.
+
+Primary stopped-state failure is interpreted before success-only copies. The
+exporter revalidates immutable ownership after stop and retains state/logs,
+then independently records all four inventory/provenance members as present,
+missing (exact absent-file response only), or export error. Missing files on a
+failed setup cannot mask its exit/OOM/start error or claim success; on success
+every member is mandatory. Secondary cleanup/export/final diagnostic errors
+cannot replace the primary exception. See bootstrap-permission-contract.md.
 
 The always-run export includes only bounded summary, owned bootstrap provenance,
 registry and compact native export/metadata directories. No contexts, tools,

@@ -34,8 +34,14 @@ install/enable and a three-alias fixture workflow/restart are exercised by the
 canonical verifier. Passing synthetic checks does not establish live-network
 readiness, reviewer approval, target integration or publication.
 
-The Docker harness remains code/mock-only, not exercised acceptance. Production
-build/acquisition/root setup are explicitly disabled pending authenticated
+The Docker harness remains code/mock-only, not exercised acceptance. The hosted
+bootstrap now also refuses before effects: its pinned SSH maintainer ownership
+contract is incompatible with the approved capability-dropped setup. This is an
+authority-required stop, not a cache-only fix or permission for another attempt.
+Primary setup failure/logs and missing success-stage evidence are retained by
+the repaired exporter; synthetic exporter tests are not native acceptance.
+See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
+Production build/acquisition/root setup are explicitly disabled pending authenticated
 dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
 that gate. The current artifact still needs fresh ordinary native admission;

@@ -77,6 +77,16 @@ No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,
 private exports, SSH keys, passwords, tokens, or live config to a public issue.
 
+The hosted public prerequisite recipe is currently execution-disabled before
+effects. Its snapshot-selected openssh-client maintainer script requires `_ssh`
+group ownership/setgid setup, incompatible with UID/GID 0:0 and all capabilities
+dropped. Root UID is not authority to ignore permissions. No cache chmod,
+capability grant, dpkg script bypass/statoverride or provisioning fallback is
+silently selected. See docs/bootstrap-permission-contract.md for the whole
+apt/dpkg/source/PM/handoff/acceptance audit. Further authority and execution
+remain separate decisions. Failure exports keep primary state/logs and missing
+success-only members distinct; diagnostics/cleanup cannot manufacture success.
+
 For suspected security defects, do not publish exploit details or private
 network data in an issue. Use GitHub private vulnerability reporting when the
 repository offers it; otherwise contact a maintainer privately to arrange a

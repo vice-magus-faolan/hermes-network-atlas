@@ -20,10 +20,10 @@ from docker_acceptance import Docker, clean_checkout, command, lease, require_su
 from docker_builder import (BOOTSTRAP_NAME, BootstrapIdentity, UPSTREAM, UPSTREAM_DIGEST, CORE_TREE,
                             bootstrap_command, commit_command, export_bootstrap, finish_build,
                             registry_budget, reject_existing_owned, validate_bootstrap, verify_final_image,
-                            resource_ids)
+                            resource_ids, require_bootstrap_success)
 from docker_contract import ENDPOINT, OWNER, OWNER_VALUE
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
-from hosted_contract import require_hosted
+from hosted_contract import require_hosted, require_bootstrap_contract
 
 PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/dependencies.json',
                 'hosted_setup.py': 'docker/hosted_setup.py', 'base_setup.py': 'docker/base_setup.py',
@@ -91,18 +91,9 @@ def upstream(docker: Docker) -> dict:
     return data
 
 
-def export_provenance(docker: Docker, identifier: str, evidence: Path) -> None:
-    from docker_contract import evidence_members
-    for name in ('resolved-union.lock', 'verifier-resolution.json', 'union-packages.json'):
-        archive = docker.run(['cp', f'{identifier}:/opt/seed/{name}', '-'], limit=8 * 1024 ** 2)
-        rows = evidence_members(archive)
-        if [row[0] for row in rows] != [name]:
-            raise ValueError('exact retained public provenance required')
-        BoundedDirectory(evidence).write(name, rows[0][1])
-
-
 def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry: Path) -> tuple[dict, dict]:
     require_hosted(os.environ, workspace=ROOT, commit=git_head())
+    require_bootstrap_contract()  # Before context/archive, pull or daemon effects.
     before = reject_existing_owned(docker)
     key = context(source, root / 'context')
     initial = upstream(docker)
@@ -118,8 +109,8 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         BoundedDirectory(evidence).json('created.json', data)
         docker.run(['start', identifier])
         data = wait_setup(docker, identity, root / 'context', hosted, evidence)
-        outcome['export_hashes'] = export_bootstrap(docker, evidence, identity)
-        export_provenance(docker, identifier, evidence)
+        require_bootstrap_success(data)
+        outcome['export_hashes'] = export_bootstrap(docker, evidence, identity, provenance=True)
         inventory = json.loads(regular_read(evidence / 'inventory.json', 512 * 1024))
         image = docker.run(commit_command(data, identity, root / 'context', hosted=hosted), timeout=300).decode().strip()
         outcome['returned_image'] = image
@@ -132,13 +123,13 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
     except BaseException as exc:
         outcome['error'] = f'{type(exc).__name__}: {exc}'
     finally:
-        finish_build(docker, evidence, identity, outcome)
+        finish_build(docker, evidence, identity, outcome, provenance=True)
     return outcome, initial
 
 
 def successful(outcome: dict) -> None:
     if any(key in outcome for key in FAILURES) or outcome.get('cleanup_verified') is not True:
-        raise RuntimeError('owned phase FAILED; inspect retained original/cleanup evidence')
+        raise RuntimeError('owned phase FAILED; ' + str(outcome.get('error', 'inspect retained original/cleanup evidence')))
 
 
 def cleanup_image(docker: Docker, record: dict) -> None:
@@ -152,13 +143,33 @@ def cleanup_image(docker: Docker, record: dict) -> None:
         raise RuntimeError('base cleanup residue')
 
 
+def finish_image(docker: Docker, record: dict | None, initial: dict, evidence: Path, original: BaseException | None) -> None:
+    """Never delete unverified image identity or replace primary failure with export."""
+    try:
+        if record is None:
+            raise ValueError('no verified base identity; residue needs readback, not blind removal')
+        cleanup_image(docker, record)
+        BoundedDirectory(evidence).json('base-cleanup.json', {'removed': record['image'], 'readback_absent': True,
+                                                             'upstream_retained_for_VM_disposal': initial['Id']})
+    except BaseException as exc:
+        try:
+            BoundedDirectory(evidence).json('base-cleanup-error.json', {'error': str(exc)[:4096]})
+        except BaseException as export_error:
+            exc.add_note(f'cleanup evidence export failed: {type(export_error).__name__}')
+        if original is None:
+            raise
+        original.add_note('owned image cleanup failed; evidence may be incomplete: ' + str(exc)[:4096])
+        for note in getattr(exc, '__notes__', ()):
+            original.add_note(note)
+
+
 def exercise(docker: Docker, root: Path, source: Path, diagnostics: dict, registry: Path, evidence: Path) -> None:
     outcome, initial = build(docker, root, source, diagnostics, registry)
-    BoundedDirectory(evidence).json('build.json', outcome)
     record = outcome.get('base')
     original = None
     try:
         successful(outcome)
+        BoundedDirectory(evidence).json('build.json', outcome)
         if record is None:
             raise ValueError('verified base receipt absent')
         for mode in ('smoke', 'fail', 'interrupt', 'refusal', 'hosted-accept'):
@@ -168,23 +179,27 @@ def exercise(docker: Docker, root: Path, source: Path, diagnostics: dict, regist
             successful(result)
     except BaseException as exc:
         original = exc
+        try:
+            BoundedDirectory(evidence).json('build.json', outcome)
+        except BaseException as export_error:
+            exc.add_note(f'build evidence export failed: {type(export_error).__name__}')
         raise
     finally:
-        try:
-            if record is None:
-                raise ValueError('no verified base identity; residue needs readback, not blind removal')
-            cleanup_image(docker, record)
-            BoundedDirectory(evidence).json('base-cleanup.json', {'removed': record['image'], 'readback_absent': True,
-                                                                 'upstream_retained_for_VM_disposal': initial['Id']})
-        except BaseException as exc:
-            BoundedDirectory(evidence).json('base-cleanup-error.json', {'error': str(exc)[:4096]})
-            if original is None:
-                raise
-            original.add_note('owned image cleanup failed; evidence retained')
+        finish_image(docker, record, initial, evidence, original)
 
 
 def interrupted(_signum: int, _frame: object) -> None:
     raise InterruptedError('hosted job interrupted; no retry')
+
+
+def export_after(docker: Docker, evidence: Path, original: BaseException | None) -> None:
+    """Final host diagnostics are secondary to the actual setup/acceptance error."""
+    try:
+        BoundedDirectory(evidence).json('after.json', diagnostic(docker))
+    except BaseException as exc:
+        if original is None:
+            raise
+        original.add_note(f'final diagnostic export failed: {type(exc).__name__}: {str(exc)[:4096]}')
 
 
 def main() -> int:
@@ -193,6 +208,7 @@ def main() -> int:
     parser.add_argument('--admission-mode', choices=('hosted-ci-caution',), required=True)
     args = parser.parse_args()
     diagnostics = require_hosted(os.environ, workspace=ROOT, commit=git_head())  # before ANY resource/daemon effects
+    require_bootstrap_contract()
     clean_checkout()
     scratch = Path(os.environ['TMPDIR'])
     if not scratch.is_absolute() or scratch.resolve(strict=True) != scratch:
@@ -213,10 +229,14 @@ def main() -> int:
         require_supported_builder(docker.info)
         BoundedDirectory(evidence).json('source.json', {'commit': git_head(), 'tree': git_tree(), 'diagnostics': diagnostics})
         BoundedDirectory(evidence).json('before.json', diagnostic(docker))
+        original = None
         try:
             exercise(docker, root, args.hermes_source, diagnostics, registry, evidence)
+        except BaseException as exc:
+            original = exc
+            raise
         finally:
-            BoundedDirectory(evidence).json('after.json', diagnostic(docker))
+            export_after(docker, evidence, original)
     return 0
 
 

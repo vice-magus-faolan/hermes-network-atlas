@@ -35,3 +35,16 @@ def container_setup_guard() -> None:
     if os.getuid() != 0 or not Path('/.dockerenv').is_file():
         raise ValueError('private hosted prerequisite container required')
     # /.dockerenv is also a diagnostic, not an unforgeable trust anchor.
+
+
+def require_bootstrap_contract() -> None:
+    """Fail before effects: the pinned package recipe cannot run with CapDrop ALL.
+
+    No argument/environment flag rearms this gate. A separately authorized,
+    independently reviewed contract change must resolve ordinary dpkg and
+    maintainer-script ownership requirements without silently bypassing them.
+    """
+    raise RuntimeError('BOOTSTRAP_CONTRACT_AUTHORITY_REQUIRED: pinned openssh-client '
+                       '1:9.2p1-2+deb12u10 configures ssh-agent with chgrp _ssh and chmod 2755; '
+                       'UID0/GID0 with all capabilities dropped cannot grant that group ownership. '
+                       'Apt cache permissions alone do not repair the complete package contract.')

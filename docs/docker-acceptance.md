@@ -1,5 +1,12 @@
 # Disposable Docker acceptance
 
+Current source-only bootstrap repair adds an authority-required stop to the
+hosted route as well. Its [complete permission audit](bootstrap-permission-contract.md)
+finds pinned package ownership/maintainer requirements incompatible with the
+unchanged capless UID0 setup. Refusal precedes acquisition/daemon/setup effects;
+no capability or architecture expansion, local Docker or new attempt is enabled.
+Historical staged sequencing below is not present execution authority.
+
 The approved staged successor is [hosted-first-docker.md](hosted-first-docker.md).
 It permits a separately reviewed FIRST standard-hosted diagnostic attempt without
 claiming guaranteed fit or requiring new local admission first. The builder may
@@ -93,7 +100,9 @@ stable name `network-atlas-bootstrap`, UID/GID 0:0 inside its private container,
 bridge egress only for bounded public acquisition, cap-drop ALL, no-new-privileges,
 default seccomp/AppArmor, no ports/devices/socket/host namespace/restart or added
 capabilities. CPU/memory/PID/log limits match runtime; setup deadline is 1800s.
-Apt/dpkg under those constraints is unproven. A permission/syscall failure stops
+Apt/dpkg under those constraints is unproven and the selected SSH maintainer
+group-ownership contract is incompatible; hosted execution is now refused.
+A permission/syscall failure stops
 for a narrow decision; it never relaxes capability or security flags. Its rootfs
 must be stopped and successful before commit; final USER is 1000:1000.
 
@@ -144,6 +153,12 @@ export, so a failed log driver does not erase the original start diagnostic.
 Log export and owned teardown failures remain separate from the original error;
 no unverified base image is blindly removed. Flat evidence is capped at 64
 members, 8 MiB per file and 32 MiB aggregate including tar block padding.
+The primary stopped-state error is checked before any success-only inventory
+copy. Failure-stage absent inventory/provenance is explicitly missing, not a
+replacement error or successful setup. Every member remains required on success.
+The fixed export-members manifest separates exact absent-file responses from
+permission/transport/malformed/output/write errors. Original failure survives
+secondary evidence/owned cleanup/final diagnostic failures. Bounds stay unchanged.
 Write-side bounds cover exact serialized bytes, copies, overwrite overlap,
 logs and consistent synthetic SQLite backups BEFORE writes. SQLite reserves its
 full file ceiling, aborts on growth and publishes atomically. Export errors are
