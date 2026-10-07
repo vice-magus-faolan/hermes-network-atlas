@@ -61,6 +61,13 @@ output count/hash/head-tail in bootstrap.log rather than pointing to a missing
 terminal audit. Real-child/export, tiny real-Git success, deadline/reaping and
 pre-effect budget regressions cover this repair without executing Docker.
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
+Actual hosted run `37700249768` subsequently completed public APT/native tool/
+verifier/union setup, then refused the committed base identity. The failing image
+inspect was not retained, so the mismatched field is unknown. A diagnostic-only
+successor journals the returned image and exports actual bounded image readback
+with expected/observed mismatch fields; guards and commit command are unchanged.
+It is not a guessed compatibility fix or native/full/cold/cleanup acceptance.
+See [committed-image evidence and source-hypothesis limits](docs/committed-image-readback.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable

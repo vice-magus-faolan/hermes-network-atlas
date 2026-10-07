@@ -369,18 +369,110 @@ def wait_bootstrap(docker, identity: BootstrapIdentity, context: Path, deadline:
     raise TimeoutError("bootstrap deadline exceeded")
 
 
-def verify_final_image(data: dict, identity: BootstrapIdentity) -> dict:
-    digest(data["Id"], prefixed=True)
+def image_validation(data: dict, identity: BootstrapIdentity, returned_image: str | None,
+                     upstream_layers: list[str] | None) -> dict:
+    """Compare exact safety fields; empty flags retain their existing semantics."""
     expected = dict(identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})
-    config = data["Config"]
-    if (config.get("Labels") != expected or config.get("User") != "1000:1000" or config.get("Volumes")
-            or config.get("Entrypoint") or config.get("Cmd") or config.get("ExposedPorts")
-            or config.get("WorkingDir") != "/work" or not data.get("RootFS", {}).get("Layers")):
-        raise ValueError("committed base labels/config/nonroot/rootfs drift")
+    config = data.get("Config", {})
+    if not isinstance(config, dict):
+        raise ValueError("committed base Config shape drift")
+    wanted = {"Config.Labels": expected, "Config.User": "1000:1000", "Config.WorkingDir": "/work"}
+    observed = {key: config.get(key.split('.')[1]) for key in wanted}
+    mismatches = [key for key in wanted if observed[key] != wanted[key]]
+    for key in ("Volumes", "Entrypoint", "Cmd", "ExposedPorts"):
+        field = "Config." + key
+        wanted[field], observed[field] = "empty", config.get(key)
+        if observed[field]:
+            mismatches.append(field)
+    observed["Id"] = data.get("Id")
+    wanted["Id"] = returned_image or "exact lowercase sha256 image digest"
+    if not valid_image_digest(data.get("Id")) or (returned_image is not None and data.get("Id") != returned_image):
+        mismatches.append("Id")
+    rootfs = data.get("RootFS", {})
+    layers = rootfs.get("Layers") if isinstance(rootfs, dict) else None
+    observed["RootFS.Layers"] = layers
+    wanted["RootFS.Layers"] = {"exact_upstream": upstream_layers, "one_new_layer": True} if upstream_layers is not None else "nonempty digest list"
+    if not valid_image_layers(layers, upstream_layers):
+        mismatches.append("RootFS.Layers")
+    return {"expected": wanted, "observed": observed, "mismatches": mismatches, "verified": not mismatches}
+
+
+def valid_image_digest(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", value) is not None
+
+
+def valid_image_layers(layers: object, upstream: list[str] | None) -> bool:
+    if not isinstance(layers, list) or not 1 <= len(layers) <= 17:
+        return False
+    if not all(valid_image_digest(layer) for layer in layers):
+        return False
+    return upstream is None or layers[:-1] == upstream
+
+
+def verify_final_image(data: dict, identity: BootstrapIdentity, *, returned_image: str | None = None,
+                       upstream_layers: list[str] | None = None, audit: dict | None = None) -> dict:
+    validation = image_validation(data, identity, returned_image, upstream_layers)
+    if audit is not None:
+        audit.update(validation)
+    if validation["mismatches"]:
+        raise ValueError("committed base labels/config/nonroot/rootfs drift: " + ', '.join(validation["mismatches"]))
+    expected = validation["expected"]["Config.Labels"]
     return {"image": data["Id"], "base_key": identity.base_key, "daemon": identity.daemon,
             "upstream_digest": UPSTREAM_DIGEST, "core_commit": HERMES_COMMIT, "core_tree": CORE_TREE,
             "plan_hash": identity.plan_hash, "labels": expected, "rootfs_layers": data["RootFS"]["Layers"],
             "size": data["Size"], "consumers": [], "retention": "retain-until-explicit-last-consumer-retirement"}
+
+
+def image_diagnostic_write(root: Path, name: str, value: object, errors: list,
+                           *, registry: bool = False) -> None:
+    """Diagnostic failures are secondary if actual readback/validation failed."""
+    try:
+        budget = registry_budget(root) if registry else BoundedDirectory(root)
+        budget.json(name, value)
+    except BaseException as exc:
+        errors.append(exc)
+
+
+def read_final_image(docker, image: str, identity: BootstrapIdentity, evidence: Path,
+                     registry: Path, upstream_layers: list[str]) -> dict:
+    """Journal before inspect; export actual parsed readback before validation.
+
+    No receipt or deletion authority is issued for an unverified image. New
+    diagnostic members use existing aggregate/count budgets, with a stricter
+    512 KiB readback ceiling; no child/export limit or cleanup rule is widened.
+    """
+
+    errors: list[BaseException] = []
+    journal = {"identity": identity.labels(), "evidence": str(evidence), "returned_image": image[:128],
+               "upstream_image": identity.image, "status": "commit-returned-awaiting-readback", "verified": False}
+    image_diagnostic_write(evidence, "image-commit.json", journal, errors)
+    image_diagnostic_write(registry, "bootstrap.json", journal, errors, registry=True)
+    audit = {"returned_image": image[:128], "daemon": identity.daemon, "stage": "image-inspect",
+             "provenance": "actual parsed Docker image inspect; not inferred config", "verified": False}
+    original = None
+    try:
+        digest(image, prefixed=True)
+        data = docker.json(["image", "inspect", image])
+        payload = json_bytes(data)
+        audit.update(readback_bytes=len(payload), readback_sha256=hashlib.sha256(payload).hexdigest())
+        if len(payload) > 512 * 1024:
+            raise ValueError("committed image readback diagnostic bound exceeded")
+        image_diagnostic_write(evidence, "committed-image.json", data, errors)
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+            raise ValueError("committed image inspect requires one actual object")
+        audit["stage"] = "final-image-validation"
+        return verify_final_image(data[0], identity, returned_image=image, upstream_layers=upstream_layers, audit=audit)
+    except BaseException as exc:
+        original = exc
+        audit.update(verified=False, error=export_error_text(exc))
+        raise
+    finally:
+        image_diagnostic_write(evidence, "image-validation.json", audit, errors)
+        if errors:
+            if original is None:
+                raise errors[0]
+            for exc in errors:
+                original.add_note(f'image diagnostic export failed: {type(exc).__name__}: {str(exc)[:2048]}')
 
 
 def registry_budget(root: Path) -> BoundedDirectory:
@@ -470,11 +562,8 @@ def build_owned(docker, root: Path, source: Path, plan: dict, registry: Path, *,
         if inventory.get("plan_sha256") != identity.plan_hash:
             raise ValueError("retained rootfs inventory/acquisition-plan drift")
         image_id = docker.run(commit_command(data, identity, context), timeout=300).decode().strip()
-        registry_budget(registry).json("bootstrap.json", {"identity": identity.labels(), "evidence": str(evidence),
-            "status": "commit-returned-awaiting-readback", "returned_image": image_id[:128], "upstream_image": identity.image})
-        result = verify_final_image(docker.json(["image", "inspect", image_id])[0], identity)
-        if result["rootfs_layers"][:-1] != plan["rootfs_layers"]:
-            raise ValueError("committed rootfs does not extend exact upstream layers")
+        outcome["returned_image"] = image_id[:128]
+        result = read_final_image(docker, image_id, identity, evidence, registry, plan["rootfs_layers"])
         result.update(input_hashes=plan["inputs"], dependency_inventory=inventory, evidence=str(evidence),
                       upstream_image=identity.image, acquisition_budget=budget)
         # Register immediately after immutable readback; later failure must not orphan the image.

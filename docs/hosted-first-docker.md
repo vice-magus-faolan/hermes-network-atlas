@@ -22,6 +22,15 @@ Final same-card Gilfoyle review requires actual exact-head hosted admission and
 canonical/cold/cleanup evidence, not preliminary source review or mocked results.
 Missing current-artifact native acceptance remains FAILED, not skipped or green.
 
+Run `37700249768` at `522b5116` actually completed public provisioning and failed
+the final committed-image predicate. Its unexported inspect leaves the differing
+field unknown. The next source correction is deliberately diagnostic-only:
+returned-image journaling, actual bounded readback and precise expected/observed
+mismatch export without changing commit/identity/cleanup guards. It is a meaningful
+targeted hosted correction, not a guessed successful compatibility repair. See
+[committed-image-readback.md](committed-image-readback.md) for evidence and the
+source-derived empty-command merge hypothesis, explicitly not an observed cause.
+
 A hosted bootstrap failed before public setup began because Docker's default
 `local` log compression cannot be combined with `max-file=1`. The repair sets
 `compress=false` explicitly for both bootstrap and acceptance, retaining exactly

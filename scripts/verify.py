@@ -97,6 +97,13 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_image_readback.ImageReadbackTests.test_each_safety_mismatch_names_precise_field_without_relaxation",
+    "test_docker_image_readback.ImageReadbackTests.test_empty_commit_command_merge_is_source_hypothesis_not_hosted_proof",
+    "test_docker_image_readback.ImageReadbackTests.test_actual_readback_journal_mismatch_and_compact_export_survive_refusal",
+    "test_docker_image_readback.ImageReadbackTests.test_returned_identity_and_exact_upstream_layers_must_match",
+    "test_docker_image_readback.ImageReadbackTests.test_readback_command_shape_bound_and_export_errors_never_fabricate_success",
+    "test_docker_image_readback.ImageReadbackTests.test_unverified_image_cleanup_refuses_and_preserves_primary_on_export_failure",
+    "test_docker_image_readback.ImageReadbackTests.test_hosted_failed_image_retains_proofs_and_never_registers_or_deletes_base",
     "test_docker_reconstruction.ReconstructionLogTests.test_budget_refuses_before_git_or_log_effects",
     "test_docker_reconstruction.ReconstructionLogTests.test_each_failed_git_stage_retains_real_child_evidence_in_export",
     "test_docker_reconstruction.ReconstructionLogTests.test_success_outputs_and_hosted_phases_share_existing_budget",

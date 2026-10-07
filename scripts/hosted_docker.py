@@ -19,7 +19,7 @@ from acceptance_support import HERMES_COMMIT, ROOT, git_head, git_tree
 from docker_acceptance import Docker, clean_checkout, command, lease, require_supported_builder, run_attempt
 from docker_builder import (BOOTSTRAP_NAME, BootstrapIdentity, UPSTREAM, UPSTREAM_DIGEST, CORE_TREE,
                             bootstrap_command, commit_command, export_bootstrap, finish_build,
-                            registry_budget, reject_existing_owned, validate_bootstrap, verify_final_image,
+                            registry_budget, reject_existing_owned, validate_bootstrap, read_final_image,
                             resource_ids, require_bootstrap_success)
 from docker_contract import ENDPOINT, OWNER, OWNER_VALUE
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
@@ -114,10 +114,8 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         inventory = json.loads(regular_read(evidence / 'inventory.json', 512 * 1024))
         validate_setup_inventory(inventory)
         image = docker.run(commit_command(data, identity, root / 'context', hosted=hosted), timeout=300).decode().strip()
-        outcome['returned_image'] = image
-        record = verify_final_image(docker.json(['image', 'inspect', image])[0], identity)
-        if record['rootfs_layers'][:-1] != initial['RootFS']['Layers']:
-            raise ValueError('actual base does not extend pulled public rootfs')
+        outcome['returned_image'] = image[:128]
+        record = read_final_image(docker, image, identity, evidence, registry, initial['RootFS']['Layers'])
         record.update(dependency_inventory=inventory, upstream_image=initial['Id'])
         registry_budget(registry).json('base.json', record)
         outcome['base'] = record

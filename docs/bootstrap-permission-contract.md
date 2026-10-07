@@ -41,6 +41,14 @@ Gilfoyle review are still required; preliminary source review is not acceptance.
 
 ## Retained failure observation versus source-derived cause
 
+The latest actual hosted run `37700249768` completed public provisioning before
+committed-image validation failed. The successor preserves the strict base/commit
+contract and adds bounded actual readback, field mismatches and pre-validation
+returned-image journals. Its correction is diagnostic-only because historical
+image inspect was absent; source-derived command merging is not an observed cause.
+See [committed-image-readback.md](committed-image-readback.md). No permission,
+authentication, pin, candidate containment or image-deletion rule is relaxed.
+
 The standard-capability successor `0b295c71a285e2ff64d77686a39b1775e534381e`
 failed in GitHub run `37619683658`, job `112786500728`, at the combined
 index/archive proof guard. Its log does NOT establish which collection was

@@ -55,6 +55,15 @@ exit; and deadline evidence survives owned-child reaping without affecting an
 unrelated child. Normal/-O are required. These are packet-denied source/fixture
 regressions, not acquisition, package/native acceptance or real Docker cleanup.
 
+Seven mandatory
+`tests/test_docker_image_readback.py::ImageReadbackTests` IDs cover all field
+mismatch names, unchanged empty-command merge refusal, journal-before-inspect,
+actual parsed readback and compact export, exact returned digest/upstream ancestry,
+malformed/oversized/failed readback, diagnostic-error precedence, unverified-image
+cleanup refusal and hosted-controller failed-image proof retention. These synthetic
+daemon seams do not identify run `37700249768`'s unexported mismatch. The successor
+is diagnostic-only; see [committed-image-readback.md](committed-image-readback.md).
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission
