@@ -14,13 +14,10 @@ REPOSITORY = 'vice-magus-faolan/hermes-network-atlas'
 DIAGNOSTICS = ('GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT', 'RUNNER_OS', 'RUNNER_ARCH',
                'GITHUB_REPOSITORY', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_JOB',
                'GITHUB_SHA', 'GITHUB_WORKSPACE', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')
-# Standard Docker defaults, not an expanded privilege set. The actual public
-# setup process checks these as well as the host's create/inspect predicates.
-BOOTSTRAP_CAPABILITIES = {'CHOWN': 0, 'DAC_OVERRIDE': 1, 'FOWNER': 3, 'FSETID': 4,
-                          'KILL': 5, 'SETGID': 6, 'SETUID': 7, 'SETPCAP': 8,
-                          'NET_BIND_SERVICE': 10, 'NET_RAW': 13, 'SYS_CHROOT': 18,
-                          'MKNOD': 27, 'AUDIT_WRITE': 29, 'SETFCAP': 31}
-BOOTSTRAP_CAP_MASK = sum(1 << bit for bit in BOOTSTRAP_CAPABILITIES.values())
+# Standard Docker Linux default diagnostic mask; the full named set and rationale
+# are in docs/bootstrap-permission-contract.md. This does not change capabilities.
+# Actual setup checks this mask as well as the host's create/inspect predicates.
+BOOTSTRAP_CAP_MASK = 0xa80425fb
 
 
 def require_hosted(env: Mapping[str, str], *, workspace: Path, commit: str) -> dict[str, str]:
