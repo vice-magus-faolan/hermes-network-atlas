@@ -1,22 +1,48 @@
 # Public bootstrap permission contract
 
-## Current decision: authority required, execution disabled
+## Current contract: normal hosted provisioning, strict candidate acceptance
 
-The unchanged prerequisite set cannot be declared compatible with the current
-UID/GID 0:0, `--cap-drop ALL`, `no-new-privileges=true` bootstrap. Root UID is not
-capability authority. `require_bootstrap_contract()` unconditionally refuses the
-host controller before scratch/daemon/archive/pull effects, and the public setup
-and direct apt entrypoint before filesystem/acquisition/PM effects. There is no
-argument, environment, plan or diagnostic-string override. The direct warm helper
-is also gated before PM import; it is not an alternate provisioning route.
+The active task supersedes the earlier source-only/per-attempt approval restrictions:
+use Docker on disposable GitHub-hosted Ubuntu runners, not heavyweight local
+fixtures. The public-only UID/GID 0:0 bootstrap now uses Docker's standard default
+capabilities. No cap-add/drop override, privileged mode, SYS_ADMIN, host namespaces,
+host homes/credentials/socket, seccomp/AppArmor disabling or deployment access.
+No-new-privileges, private namespaces, fixed readonly public inputs, finite
+CPU/memory/PID/deadline/log limits and authenticated pinned sources remain.
 
-A separately authorized and independently reviewed package/provisioning contract
-is required. Neither a cache-only chmod nor a new hosted attempt resolves this
-blocker. This change grants no capabilities, changes no package/source pin, skips
-no package script, creates no replacement architecture and enables no execution.
-Independent review of this source repair is not final feature/native acceptance.
+The standard set is CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL, SETGID, SETUID,
+SETPCAP, NET_BIND_SERVICE, NET_RAW, SYS_CHROOT, MKNOD, AUDIT_WRITE and SETFCAP.
+These are provisioning defaults, not grants to Atlas discovery or permission to
+send probe packets. In particular, CHOWN/DAC_OVERRIDE/FOWNER/FSETID provide normal
+package ownership/access/mode operations; SETUID/SETGID support ordinary package
+identity operations. The actual process must have exactly the standard effective,
+permitted and bounding mask, zero inherited/ambient masks, NNP=1 and seccomp=2.
+Root identity and container diagnostics are checked before apt/source/tool/PM
+effects, including direct apt and warm dispatch. Actual process diagnostics are
+retained in inventory and independently checked by the host before rootfs commit.
+Host create/inspect refuses any capability override,
+privileged/unconfined configuration, host namespace, extra mount/device or port.
 
-## Observation versus cause
+`require_bootstrap_contract()` now admits only the fixed hosted feature job with
+exact source/workspace/run diagnostics before scratch/daemon/archive/pull effects.
+Those strings and /.dockerenv are accidental-use guards, not isolation against
+malicious same-UID code. The reviewed workflow/ephemeral VM is the trust boundary.
+No package/source pin changes, authentication bypass, statoverride, skipped
+maintainer script or fake configuration. The disabled legacy metadata-plan path
+is not rearmed. Candidate acceptance remains UID/GID 1000:1000, cap-drop ALL,
+no-new-privileges, read-only, network-none and inherited packet denial.
+
+Builder hands off committed PRE_CI_SOURCE_REVIEW; Faolan owns independent source/
+workflow review, scoped non-force publication and meaningful corrected CI runs
+under standing authority. Repository concurrency serializes/coalesces runs without
+cancelling active cleanup. No local Docker, acquisition or new native fixtures.
+Actual exact-head native/canonical/cold/cleanup evidence and final same-card
+Gilfoyle review are still required; preliminary source review is not acceptance.
+
+## Retained failure observation versus source-derived cause
+
+The following records the earlier capless attempt; it is not a claim that the
+corrected standard-provisioning candidate has already executed on a hosted VM.
 
 The retained hosted stopped state shows an exited, non-OOM bootstrap with exit 1.
 Its log shows apt package downloads denied at
@@ -48,7 +74,13 @@ sets owners/groups/modes; fixing download permissions does not bypass this layer
 This is a source-derived incompatibility, not a claim that a subsequent hosted
 installation was executed and failed at that line.
 
-## Complete phase audit
+## Historical capless phase audit
+
+The original audit below remains evidence of the incompatible capless recipe.
+The current contract changes only hosted bootstrap capabilities and admission
+guards, not package/source pins, authentication, scripts, export/cleanup or
+candidate containment. Current apt/dpkg/PM/cache sufficiency must be observed in
+the real hosted run, not inferred from mock fixtures or one source-derived blocker.
 
 | Phase and fixed paths | Required behavior and containment | Audit outcome |
 | --- | --- | --- |
@@ -109,13 +141,17 @@ then separately enforces setup-success completeness. This soft warning is kept
 visible and covered by missing/error/malformed/all-present cases; no new/changed
 function exceeds 15. Original higher-warning functions are not refactored here.
 
-Stop at `BOOTSTRAP_CONTRACT_AUTHORITY_REQUIRED` with the committed repair and
-audit. The minimal operator decision is to commission an independently reviewed
-bootstrap-only provisioning contract that can honor the exact packages' ownership
-and maintainer requirements. Any capability/architecture change is separate
-approval, not an implementation default; its sufficiency cannot be inferred from
-this one known blocker. No further branch update, hosted attempt or final
-acceptance is authorized by the repair. Local Docker and force remain prohibited.
+The three historical pre-effect regression IDs now enforce real local/non-hosted
+refusal rather than the superseded unconditional stop. Every primary-failure,
+missing-member, error/ownership, cleanup and diagnostic regression remains.
+Additional mandatory tests cover the standard capability golden mask and drift,
+root/container/NNP/seccomp guard, normal authenticated apt invocation and actual
+controller/export/commit/readback ordering through tiny mocked boundaries. Missing
+or malformed exported process proof refuses before commit and still performs
+owned cleanup. These tests do not claim an actual apt installation. The pre-CI
+handoff does not require missing local admission fixtures; those mandatory local
+canonical failures stay honest until real exact-head hosted evidence resolves them.
+No automatic unchanged-source retry, local Docker or local/runtime force.
 
 ## Public source references
 
@@ -124,6 +160,7 @@ acceptance is authorized by the repair. Local Docker and force remain prohibited
 - [Dpkg 1.21.22 archive reference](https://github.com/guillemj/dpkg/blob/1.21.22/src/main/archives.c)
 - [Linux chown permission rules](https://man7.org/linux/man-pages/man2/chown.2.html)
 - [Linux capability rules](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+- [Docker default runtime capabilities](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
 - [Pinned native PM](https://github.com/NousResearch/hermes-agent/tree/f42f579cf8bac4918ac9599bece71618afadd846/pm)
 
 The apt/dpkg reference versions are source audits, not an unobserved installed

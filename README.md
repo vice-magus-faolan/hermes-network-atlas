@@ -34,15 +34,16 @@ install/enable and a three-alias fixture workflow/restart are exercised by the
 canonical verifier. Passing synthetic checks does not establish live-network
 readiness, reviewer approval, target integration or publication.
 
-The Docker harness remains code/mock-only, not exercised acceptance. The hosted
-bootstrap now also refuses before effects: its pinned SSH maintainer ownership
-contract is incompatible with the approved capability-dropped setup. This is an
-authority-required stop, not a cache-only fix or permission for another attempt.
+The corrected Docker harness awaits exact-head GitHub-hosted acceptance. The
+public-only bootstrap uses standard unprivileged Docker provisioning defaults
+for genuine apt/dpkg ownership and maintainer operations, with no-new-privileges
+and default seccomp/AppArmor. Candidate acceptance remains non-root, cap-drop ALL,
+read-only and network-none. No local Docker or heavyweight setup is authorized.
 Primary setup failure/logs and missing success-stage evidence are retained by
 the repaired exporter; synthetic exporter tests are not native acceptance.
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
-Production build/acquisition/root setup are explicitly disabled pending authenticated
-dependency closure and a reviewed aggregate storage architecture. Strict
+The legacy metadata-plan build/acquisition/root setup remains disabled pending
+authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
 that gate. The current artifact still needs fresh ordinary native admission;
 running the verifier in a predecessor interpreter is bootstrap evidence only.
@@ -63,7 +64,7 @@ external database, web app, MCP server, or background service is required.
 - [Operator installation, configuration and cumulative verification](docs/operator-guide.md)
 - [Hosted-CI CAUTION exception and unchanged local consent](docs/native-caution-confirmation.md)
 - [Disposable Docker acceptance and separate local/native/hosted gates](docs/docker-acceptance.md)
-- [Finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
+- [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)

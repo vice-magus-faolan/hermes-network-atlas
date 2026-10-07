@@ -97,6 +97,10 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_hosted_build_success_crosschecks_process_proof_before_commit_and_owned_cleanup",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_standard_docker_capabilities_and_process_containment_golden_and_drift",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_real_setup_guard_requires_root_container_and_actual_status_before_effects",
+    "test_docker_bootstrap_repair.BootstrapRepairTests.test_hosted_apt_permits_normal_authenticated_provisioning_not_script_bypass",
     "test_docker_bootstrap_repair.BootstrapRepairTests.test_complete_package_contract_refuses_before_controller_effects",
     "test_docker_bootstrap_repair.BootstrapRepairTests.test_setup_and_apt_refuse_before_filesystem_acquisition_or_pm",
     "test_docker_bootstrap_repair.BootstrapRepairTests.test_actual_controller_entrypoint_contract_gate_precedes_scratch_and_daemon",

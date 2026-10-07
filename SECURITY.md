@@ -77,15 +77,21 @@ No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,
 private exports, SSH keys, passwords, tokens, or live config to a public issue.
 
-The hosted public prerequisite recipe is currently execution-disabled before
-effects. Its snapshot-selected openssh-client maintainer script requires `_ssh`
-group ownership/setgid setup, incompatible with UID/GID 0:0 and all capabilities
-dropped. Root UID is not authority to ignore permissions. No cache chmod,
-capability grant, dpkg script bypass/statoverride or provisioning fallback is
-silently selected. See docs/bootstrap-permission-contract.md for the whole
-apt/dpkg/source/PM/handoff/acceptance audit. Further authority and execution
-remain separate decisions. Failure exports keep primary state/logs and missing
-success-only members distinct; diagnostics/cleanup cannot manufacture success.
+The hosted public prerequisite container uses UID/GID 0:0 with Docker's standard
+default capabilities, no added capabilities, no-new-privileges and default
+seccomp/AppArmor. Genuine apt/dpkg ownership and maintainer scripts are not
+bypassed. Actual effective/permitted/bounding capabilities, zero ambient/inherited
+capabilities, NNP and seccomp are checked before provisioning and recorded. This
+public-only phase has no candidate code, host homes/credentials/socket, privileged
+mode, host namespaces or deployment access. It is not the candidate acceptance
+contract: candidate code runs UID/GID 1000:1000, cap-drop ALL, read-only, network-none
+and packet-denied. Local Docker/install/acquisition/force remain prohibited in
+this delivery. See docs/bootstrap-permission-contract.md for the complete audit.
+Repository concurrency allows one active CI run with pending-run coalescing;
+reviewed corrected feature commits get fresh hosted VMs under standing delivery
+authority, not per-attempt human consent. Missing native/canonical/cleanup proof
+still fails. Failure exports keep primary state/logs and missing success-only
+members distinct; diagnostics/cleanup cannot manufacture success.
 
 For suspected security defects, do not publish exploit details or private
 network data in an issue. Use GitHub private vulnerability reporting when the

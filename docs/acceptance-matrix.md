@@ -1,17 +1,17 @@
 # Acceptance matrix
 
-For the staged first-hosted Docker continuation, see
+For the GitHub-hosted Docker delivery contract, see
 [hosted-first-docker.md](hosted-first-docker.md). Local implementation tests are
 not native admission; absent fresh current-artifact acceptance remains FAILED.
-The first hosted trigger needs exact-code/workflow plus invocation/evidence-control
-independent approval, not a claimed guaranteed-fit/local-all-green precondition.
+The pre-CI handoff needs independent exact-code/workflow review, not a claimed
+guaranteed-fit/local-all-green precondition or another per-attempt human approval.
 Final actual native/canonical/hosted/independent/publication gates are unchanged.
 
-Current bootstrap source-only repair is at `BOOTSTRAP_CONTRACT_AUTHORITY_REQUIRED`,
-not a newly approved trigger. The pinned package/maintainer contract is incompatible
-with the unchanged dropped-capability bootstrap; complete audit is in
-[bootstrap-permission-contract.md](bootstrap-permission-contract.md). Local software
-regressions and exact-code/workflow review cannot close that authority decision.
+The public bootstrap now uses standard Docker defaults for genuine package
+ownership and maintainer scripts. Candidate acceptance still drops ALL capabilities
+and runs non-root/offline. Complete audit is in
+[bootstrap-permission-contract.md](bootstrap-permission-contract.md). Local tests
+and preliminary source review do not prove actual hosted/native acceptance.
 
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
@@ -50,7 +50,7 @@ CLI child cleanup, not Docker daemon/native admission substitutes:
 | Gate | Evidence and interpretation |
 | --- | --- |
 | Contract | `tests/test_docker_acceptance.py::DockerContractTests::test_inspection_drift_rejects_wrong_labels_image_mounts_flags_network`; `tests/test_docker_acceptance.py::DockerContractTests::test_actual_counts_exit_zero_skips_missing_and_mismatch_refuse`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_active_lease_refuses_and_releases_without_suffix_retry`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_optimized_native_readback_mismatch_manifest_and_generation_refuse` |
-| Package contract and pre-effect stop | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_complete_package_contract_refuses_before_controller_effects`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_setup_and_apt_refuse_before_filesystem_acquisition_or_pm`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_actual_controller_entrypoint_contract_gate_precedes_scratch_and_daemon`; source-derived authority blocker, not a working package install |
+| Hosted provisioning / pre-effect local refusal | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_complete_package_contract_refuses_before_controller_effects`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_setup_and_apt_refuse_before_filesystem_acquisition_or_pm`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_actual_controller_entrypoint_contract_gate_precedes_scratch_and_daemon`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_standard_docker_capabilities_and_process_containment_golden_and_drift`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_real_setup_guard_requires_root_container_and_actual_status_before_effects`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_hosted_apt_permits_normal_authenticated_provisioning_not_script_bypass`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_hosted_build_success_crosschecks_process_proof_before_commit_and_owned_cleanup`; standard defaults only for public provisioning; local refusal and authentication remain, mocks are not actual package install |
 | Primary failure / missing success evidence | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_failed_export_preserves_stopped_logs_and_all_missing_members`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_success_requires_every_inventory_and_provenance_member`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_permission_archive_and_output_failures_are_not_missing`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_stopped_failure_is_primary_before_success_only_exports_or_commit`; actual production exporter with tiny synthetic regular tar bytes, not real Docker/native acceptance |
 | Secondary errors / identity | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_reinspection_ownership_drift_never_reads_logs_or_members`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_primary_failure_survives_secondary_cleanup_evidence_write`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_final_diagnostic_error_is_secondary_unless_no_primary`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_all_stopped_failure_kinds_refuse_before_rootfs_commit`; no blind image removal or primary-error replacement |
 | Bounded uncompressed logging | `tests/test_docker_builder.py::BuilderContractTests::test_bootstrap_command_requires_exact_uncompressed_bounded_local_logs`; `tests/test_docker_builder.py::BuilderContractTests::test_bootstrap_inspection_refuses_missing_compressed_extra_or_expanded_logs`; `tests/test_docker_acceptance.py::DockerContractTests::test_acceptance_command_requires_exact_uncompressed_bounded_local_logs`; `tests/test_docker_acceptance.py::DockerContractTests::test_acceptance_inspection_refuses_missing_compressed_extra_or_expanded_logs`; exact local/max-size=4m/max-file=1/compress=false, no daemon-default or limit change |

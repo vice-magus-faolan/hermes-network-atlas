@@ -14,6 +14,13 @@ REPOSITORY = 'vice-magus-faolan/hermes-network-atlas'
 DIAGNOSTICS = ('GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT', 'RUNNER_OS', 'RUNNER_ARCH',
                'GITHUB_REPOSITORY', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_JOB',
                'GITHUB_SHA', 'GITHUB_WORKSPACE', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')
+# Standard Docker defaults, not an expanded privilege set. The actual public
+# setup process checks these as well as the host's create/inspect predicates.
+BOOTSTRAP_CAPABILITIES = {'CHOWN': 0, 'DAC_OVERRIDE': 1, 'FOWNER': 3, 'FSETID': 4,
+                          'KILL': 5, 'SETGID': 6, 'SETUID': 7, 'SETPCAP': 8,
+                          'NET_BIND_SERVICE': 10, 'NET_RAW': 13, 'SYS_CHROOT': 18,
+                          'MKNOD': 27, 'AUDIT_WRITE': 29, 'SETFCAP': 31}
+BOOTSTRAP_CAP_MASK = sum(1 << bit for bit in BOOTSTRAP_CAPABILITIES.values())
 
 
 def require_hosted(env: Mapping[str, str], *, workspace: Path, commit: str) -> dict[str, str]:
@@ -29,22 +36,49 @@ def require_hosted(env: Mapping[str, str], *, workspace: Path, commit: str) -> d
     return {key: env[key] for key in DIAGNOSTICS}
 
 
-def container_setup_guard() -> None:
-    """Refuse before executable setup/PM imports, including dispatcher modes."""
-    require_hosted(os.environ, workspace=Path('/opt/inputs'), commit=os.environ.get('GITHUB_SHA', ''))
-    if os.getuid() != 0 or not Path('/.dockerenv').is_file():
-        raise ValueError('private hosted prerequisite container required')
-    # /.dockerenv is also a diagnostic, not an unforgeable trust anchor.
+def container_setup_guard() -> dict[str, str]:
+    """Require ordinary contained package provisioning before setup/PM imports.
 
-
-def require_bootstrap_contract() -> None:
-    """Fail before effects: the pinned package recipe cannot run with CapDrop ALL.
-
-    No argument/environment flag rearms this gate. A separately authorized,
-    independently reviewed contract change must resolve ordinary dpkg and
-    maintainer-script ownership requirements without silently bypassing them.
+    This is a diagnostic guard, not an unforgeable local execution permission.
+    The reviewed hosted workflow and host-side immutable inspection are required.
     """
-    raise RuntimeError('BOOTSTRAP_CONTRACT_AUTHORITY_REQUIRED: pinned openssh-client '
-                       '1:9.2p1-2+deb12u10 configures ssh-agent with chgrp _ssh and chmod 2755; '
-                       'UID0/GID0 with all capabilities dropped cannot grant that group ownership. '
-                       'Apt cache permissions alone do not repair the complete package contract.')
+    require_bootstrap_contract(workspace=Path('/opt/inputs'), commit=os.environ.get('GITHUB_SHA', ''))
+    if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (0, 0, 0, 0) or not Path('/.dockerenv').is_file():
+        raise ValueError('private hosted prerequisite container required')
+    return validate_setup_status(Path('/proc/self/status').read_text())
+
+
+def validate_setup_status(status: str) -> dict[str, str]:
+    """Check actual default capabilities and retained NNP/seccomp containment."""
+    wanted = {'CapEff': f'{BOOTSTRAP_CAP_MASK:016x}', 'CapPrm': f'{BOOTSTRAP_CAP_MASK:016x}',
+              'CapBnd': f'{BOOTSTRAP_CAP_MASK:016x}', 'CapInh': '0000000000000000',
+              'CapAmb': '0000000000000000', 'NoNewPrivs': '1', 'Seccomp': '2'}
+    observed = {}
+    for line in status.splitlines():
+        key, separator, value = line.partition(':')
+        if separator and key in wanted:
+            if key in observed:
+                raise ValueError('duplicate bootstrap process diagnostic')
+            observed[key] = value.strip()
+    if observed != wanted:
+        raise ValueError('bootstrap process capability/NNP/seccomp drift')
+    return observed
+
+
+def validate_setup_inventory(inventory: dict) -> None:
+    """Require the exported actual process diagnostics before rootfs commit."""
+    status = inventory.get('bootstrap_process')
+    if not isinstance(status, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in status.items()):
+        raise ValueError('bootstrap process inventory absent or malformed')
+    observed = validate_setup_status('\n'.join(f'{key}: {value}' for key, value in status.items()))
+    if status != observed:
+        raise ValueError('unexpected bootstrap process inventory keys')
+
+
+def require_bootstrap_contract(*, workspace: Path, commit: str) -> dict[str, str]:
+    """Admit only the fixed hosted provisioning lane; never local/root fallback.
+
+    Package ownership and maintainer scripts use Docker's standard defaults in
+    the public-only bootstrap. Candidate acceptance still drops ALL capabilities.
+    """
+    return require_hosted(os.environ, workspace=workspace, commit=commit)

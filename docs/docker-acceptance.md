@@ -1,20 +1,20 @@
 # Disposable Docker acceptance
 
-Current source-only bootstrap repair adds an authority-required stop to the
-hosted route as well. Its [complete permission audit](bootstrap-permission-contract.md)
-finds pinned package ownership/maintainer requirements incompatible with the
-unchanged capless UID0 setup. Refusal precedes acquisition/daemon/setup effects;
-no capability or architecture expansion, local Docker or new attempt is enabled.
-Historical staged sequencing below is not present execution authority.
+The active hosted contract is [hosted-first-docker.md](hosted-first-docker.md).
+Its public-only UID0 bootstrap uses standard Docker defaults for normal apt/dpkg
+ownership and maintainer scripts, with no-new-privileges and default security
+profiles. The [complete permission audit](bootstrap-permission-contract.md)
+distinguishes that provisioning phase from non-root, cap-drop ALL, network-none
+candidate acceptance. The unconditional bootstrap authority stop is removed;
+hosted-only guards, exact pins, authentication and primary-error evidence remain.
 
-The approved staged successor is [hosted-first-docker.md](hosted-first-docker.md).
-It permits a separately reviewed FIRST standard-hosted diagnostic attempt without
-claiming guaranteed fit or requiring new local admission first. The builder may
-only implement/review committed code and mocks; local build/install/admission and
-publication remain unauthorized. Legacy schema-2 build/acquire/setup below stays
-execution-disabled, including its actual prewarm dispatcher. This document's
-former all-green/fit-before-first-trigger sequencing does not control that staged
-exception; final genuine native/canonical/independent/publication gates survive.
+The builder implements/tests/docs/commits and hands off PRE_CI_SOURCE_REVIEW.
+Faolan owns independent source/workflow review, normal non-force feature push and
+meaningful corrected hosted CI attempts under standing authority. No local Docker,
+downloads, heavyweight native fixtures or builder publication. Genuine exact-head
+hosted acceptance and final same-card Gilfoyle review remain mandatory. The legacy
+schema-2 build/acquire/setup below stays disabled, including its prewarm dispatcher;
+its former local fit/consent sequencing does not govern the hosted route.
 
 This is a local, opt-in acceptance harness, not a runtime deployment or hosted
 GitHub runner. Its new Docker/native path must be exercised and independently
@@ -100,8 +100,9 @@ stable name `network-atlas-bootstrap`, UID/GID 0:0 inside its private container,
 bridge egress only for bounded public acquisition, cap-drop ALL, no-new-privileges,
 default seccomp/AppArmor, no ports/devices/socket/host namespace/restart or added
 capabilities. CPU/memory/PID/log limits match runtime; setup deadline is 1800s.
-Apt/dpkg under those constraints is unproven and the selected SSH maintainer
-group-ownership contract is incompatible; hosted execution is now refused.
+Apt/dpkg under those legacy capless constraints is incompatible with the selected
+SSH group-ownership contract. The distinct hosted bootstrap uses normal Docker
+defaults instead; this disabled legacy path is not silently rearmed.
 A permission/syscall failure stops
 for a narrow decision; it never relaxes capability or security flags. Its rootfs
 must be stopped and successful before commit; final USER is 1000:1000.

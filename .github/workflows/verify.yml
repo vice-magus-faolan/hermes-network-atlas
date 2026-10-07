@@ -6,10 +6,14 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: network-atlas-issue-6-ci
+  cancel-in-progress: false
 jobs:
   hosted-docker:
-    # Initial diagnostic feature push only. Later main/PR tests stay separate;
-    # no matrix, cache, workflow dispatch, retry or local fallback.
+    # Reviewed feature pushes only; repository-wide serialization/coalescing.
+    # A corrected commit gets a fresh hosted VM, never local fallback or a
+    # blind same-source rerun. Main/PR regressions remain separate.
     if: github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery'
     runs-on: ubuntu-24.04
     timeout-minutes: 60

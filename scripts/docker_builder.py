@@ -127,8 +127,13 @@ class BootstrapIdentity:
                 "org.network-atlas.acceptance.plan": self.plan_hash}
 
 
-def bootstrap_host_config() -> dict:
-    return {"NetworkMode": "bridge", "ReadonlyRootfs": False, "CapDrop": ["ALL"], "CapAdd": None,
+def bootstrap_host_config(*, hosted: dict | None = None) -> dict:
+    """Hosted public provisioning uses standard Docker package capabilities.
+
+    The permanently disabled legacy builder retains its original capless model.
+    No capability is added beyond defaults, and candidate acceptance is separate.
+    """
+    return {"NetworkMode": "bridge", "ReadonlyRootfs": False, "CapDrop": ["ALL"] if hosted is None else None, "CapAdd": None,
             "SecurityOpt": ["no-new-privileges=true"], "Privileged": False, "Init": True,
             "PidMode": "", "IpcMode": "private", "UTSMode": "", "UsernsMode": "", "Memory": MEMORY, "MemorySwap": MEMORY,
             "NanoCpus": 2000000000, "PidsLimit": 256, "Devices": [], "DeviceRequests": None,
@@ -140,7 +145,7 @@ def bootstrap_host_config() -> dict:
 def bootstrap_command(identity: BootstrapIdentity, context: Path, *, hosted: dict | None = None) -> list[str]:
     source_path(context)
     argv = ["create", "--name", BOOTSTRAP_NAME, "--platform", "linux/amd64", "--pull", "never",
-            "--network", "bridge", "--user", "0:0", "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true",
+            "--network", "bridge", "--user", "0:0", "--security-opt", "no-new-privileges=true",
             "--init", "--memory", str(MEMORY), "--memory-swap", str(MEMORY), "--cpus", "2", "--pids-limit", "256",
             "--ipc", "private", "--restart", "no", "--log-driver", "local", "--log-opt", "max-size=4m",
             "--log-opt", "max-file=1", "--log-opt", "compress=false", "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m,mode=0700",
@@ -148,6 +153,8 @@ def bootstrap_command(identity: BootstrapIdentity, context: Path, *, hosted: dic
             "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", ""]
     for key, value in identity.labels().items():
         argv.extend(("--label", f"{key}={value}"))
+    if hosted is None:
+        argv.extend(("--cap-drop", "ALL"))
     if hosted is not None:
         for key, value in hosted.items():
             argv.extend(("--env", f"{key}={value}"))
@@ -166,7 +173,7 @@ def owned_bootstrap(data: dict, identity: BootstrapIdentity) -> str:
 def validate_bootstrap(data: dict, identity: BootstrapIdentity, context: Path, *, hosted: dict | None = None) -> str:
     identifier = owned_bootstrap(data, identity)
     host = data["HostConfig"]
-    if any(host.get(key) != value for key, value in bootstrap_host_config().items()):
+    if any(host.get(key) != value for key, value in bootstrap_host_config(hosted=hosted).items()):
         raise ValueError("bootstrap isolation drift")
     config = data["Config"]
     script = "hosted_setup.py" if hosted is not None else "base_setup.py"

@@ -23,7 +23,7 @@ from docker_builder import (BOOTSTRAP_NAME, BootstrapIdentity, UPSTREAM, UPSTREA
                             resource_ids, require_bootstrap_success)
 from docker_contract import ENDPOINT, OWNER, OWNER_VALUE
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
-from hosted_contract import require_hosted, require_bootstrap_contract
+from hosted_contract import require_bootstrap_contract, validate_setup_inventory
 
 PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/dependencies.json',
                 'hosted_setup.py': 'docker/hosted_setup.py', 'base_setup.py': 'docker/base_setup.py',
@@ -92,8 +92,7 @@ def upstream(docker: Docker) -> dict:
 
 
 def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry: Path) -> tuple[dict, dict]:
-    require_hosted(os.environ, workspace=ROOT, commit=git_head())
-    require_bootstrap_contract()  # Before context/archive, pull or daemon effects.
+    require_bootstrap_contract(workspace=ROOT, commit=git_head())  # Before context/archive, pull or daemon effects.
     before = reject_existing_owned(docker)
     key = context(source, root / 'context')
     initial = upstream(docker)
@@ -112,6 +111,7 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         require_bootstrap_success(data)
         outcome['export_hashes'] = export_bootstrap(docker, evidence, identity, provenance=True)
         inventory = json.loads(regular_read(evidence / 'inventory.json', 512 * 1024))
+        validate_setup_inventory(inventory)
         image = docker.run(commit_command(data, identity, root / 'context', hosted=hosted), timeout=300).decode().strip()
         outcome['returned_image'] = image
         record = verify_final_image(docker.json(['image', 'inspect', image])[0], identity)
@@ -207,8 +207,7 @@ def main() -> int:
     parser.add_argument('--hermes-source', type=Path, required=True)
     parser.add_argument('--admission-mode', choices=('hosted-ci-caution',), required=True)
     args = parser.parse_args()
-    diagnostics = require_hosted(os.environ, workspace=ROOT, commit=git_head())  # before ANY resource/daemon effects
-    require_bootstrap_contract()
+    diagnostics = require_bootstrap_contract(workspace=ROOT, commit=git_head())  # before ANY resource/daemon effects
     clean_checkout()
     scratch = Path(os.environ['TMPDIR'])
     if not scratch.is_absolute() or scratch.resolve(strict=True) != scratch:

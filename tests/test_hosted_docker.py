@@ -133,7 +133,22 @@ class HostedDockerTests(unittest.TestCase):
             data = inspected(root)
             data['Config']['Cmd'][-1] = '/opt/inputs/hosted_setup.py'
             data['Config']['Env'] = [f'{key}={value}' for key, value in values.items()]
+            data['HostConfig'] = builder.bootstrap_host_config(hosted=values)
             builder.validate_bootstrap(data, identity(), root, hosted=values)
+            argv = builder.bootstrap_command(identity(), root, hosted=values)
+            self.assertNotIn('--cap-drop', argv)
+            self.assertNotIn('--cap-add', argv)
+            self.assertIn('no-new-privileges=true', argv)
+            self.assertFalse(set(argv) & {'--privileged', '--pid', '--device', '--volume', '--publish'})
+            self.assertIsNone(data['HostConfig']['CapDrop'])
+            self.assertIsNone(data['HostConfig']['CapAdd'])
+            for key, bad in (('CapDrop', ['ALL']), ('CapAdd', ['SYS_ADMIN']), ('SecurityOpt', ['seccomp=unconfined']),
+                             ('SecurityOpt', ['apparmor=unconfined']), ('Privileged', True), ('PidMode', 'host'),
+                             ('IpcMode', 'host'), ('UsernsMode', 'host'), ('UTSMode', 'host'), ('NetworkMode', 'host')):
+                changed = copy.deepcopy(data)
+                changed['HostConfig'][key] = bad
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'isolation drift'):
+                    builder.validate_bootstrap(changed, identity(), root, hosted=values)
             argv = builder.commit_command(data, identity(), root, hosted=values)
             self.assertIn('ENV GITHUB_SHA=', argv)
             self.assertIn('USER 1000:1000', argv)
@@ -211,6 +226,7 @@ class HostedDockerTests(unittest.TestCase):
         from ruamel.yaml import YAML
         value = YAML(typ='safe').load((ROOT / '.github/workflows/verify.yml').read_text())
         self.assertEqual(value['permissions'], {'contents': 'read'})
+        self.assertEqual(value['concurrency'], {'group': 'network-atlas-issue-6-ci', 'cancel-in-progress': False})
         job = value['jobs']['hosted-docker']
         self.assertEqual(job['runs-on'], 'ubuntu-24.04')
         self.assertEqual(job['timeout-minutes'], 60)

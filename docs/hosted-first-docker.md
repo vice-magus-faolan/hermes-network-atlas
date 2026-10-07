@@ -1,26 +1,25 @@
 # Hosted-first Docker continuation
 
-## Authority and current stop
+## Standing delivery authority and honest acceptance state
 
-Current source-only repair stops at `BOOTSTRAP_CONTRACT_AUTHORITY_REQUIRED`.
-The complete [bootstrap permission audit](bootstrap-permission-contract.md)
-found a package-maintainer ownership requirement incompatible with the unchanged
-capability-dropped bootstrap. Controller/setup/direct apt entrypoints refuse
-before effects; no CLI/environment override exists. Historical attempts and
-their consumed approvals remain retained, not replayable. No new branch update,
-hosted attempt, capability grant or changed provisioning architecture is enabled.
-The staged construction below describes intended behavior, not a working recipe
-or current permission. Independent exact-source/workflow review of the repair
-is separate from a future authority decision and final feature acceptance.
+The active issue-6 task authorizes conventional Docker provisioning on disposable
+GitHub-hosted Ubuntu runners, not heavyweight local fixtures or a per-step human
+approval relay. The complete [bootstrap permission audit](bootstrap-permission-contract.md)
+identified why capless root setup cannot honor normal package ownership. The
+hosted public-only bootstrap now uses standard Docker defaults; real guards
+replace the unconditional authority-required stop. This is implemented source,
+not a claim of actual exact-head hosted success before the runner executes it.
 
-This is the staged hosted-first successor, not approval or a fit claim. The
-external operator-approved continuation supersedes the former requirement to
-prove guaranteed aggregate setup fit and obtain new local native admission
-before the FIRST hosted trigger. That exception does not enable local Docker,
-download/install/admission, force, daemon/storage/profile changes or publication.
-The builder stops at a committed exact-code/workflow independent-review handoff.
-Only the delivery owner may separately authorize and perform one non-force
-feature-branch update and one initial hosted attempt. No retries are authorized.
+Builder implements/tests/docs/commits in the existing lane and provides
+PRE_CI_SOURCE_REVIEW. Faolan arranges independent exact source/workflow review,
+performs scoped non-force feature publication, diagnoses real CI and returns
+defects to the same card. Meaningful reviewed corrected commits may run under
+this standing contract without fresh human consent. No blind unchanged-source
+reruns, automatic retry loop, old one-use controller replay or duplicate graph.
+No local Docker/pulls/builds/downloads/native admission/heavy fixtures, host
+service/storage/profile changes, main merge/deployment or live targets.
+Final same-card Gilfoyle review requires actual exact-head hosted admission and
+canonical/cold/cleanup evidence, not preliminary source review or mocked results.
 Missing current-artifact native acceptance remains FAILED, not skipped or green.
 
 A hosted bootstrap failed before public setup began because Docker's default
@@ -31,9 +30,10 @@ Normal/optimized packet-denied regressions cover production argv, missing/true/
 extra options, increased size/file limits and retained stopped-state errors when
 log export fails. These tests are not proof that a successor hosted run started
 or completed. The failed attempt and its consumed trigger remain immutable; a
-new attempt requires separately recorded authority, fresh exact-source/workflow
-and one-use invocation/evidence-control review. Code repair alone is not retry
-permission or final acceptance, and never enables local Docker or native setup.
+corrected commit requires fresh exact-source/workflow review and coordinator-owned
+publication under the standing contract, not another operator approval or replay
+of a spent one-use controller. Code repair is not final acceptance and never
+enables local Docker or native setup.
 
 The old schema-2 metadata-plan build/acquire/setup path remains permanently
 execution-disabled. Its `prewarm` executable dispatcher now refuses before PM
@@ -43,9 +43,11 @@ setup recipe. Helper-only board rearm approval is not code/workflow approval.
 
 ## One supported invocation
 
-The `hosted-docker` job in `.github/workflows/verify.yml` selects the FIRST push
+The `hosted-docker` job in `.github/workflows/verify.yml` selects the initial push
 checkout of `feat/6-host-discovery` on a standard `ubuntu-24.04` x64 GitHub-hosted
-VM, 60-minute job deadline, no matrix/dispatch/retry/cache/self-hosted/slim runner.
+VM, 60-minute job deadline, no matrix/dispatch/automatic retry/cache/self-hosted/slim runner.
+Repository-wide concurrency (`network-atlas-issue-6-ci`, cancel-in-progress false)
+allows one active run and coalesces pending runs without cancelling active cleanup.
 Its checked-out full SHA/tree are recorded. Checkout and upload actions are
 commit-pinned, contents permission is read-only and checkout does not persist
 credentials. No repository secrets, PATs, deployment credentials, tunnels or
@@ -79,16 +81,21 @@ checks the unchanged exact Hermes commit/tree before native PM imports.
 
 A UID0 bootstrap container is private on the ephemeral VM. It has bridge egress
 ONLY for public prerequisites, no host PID/IPC/UTS namespace, host devices, daemon
-socket, privileges, published ports or ambient secret environment. Capability
-drop/no-new-privileges, finite CPU/memory/PID/deadline/log bounds remain. Root is
-needed for the private stopped-rootfs apt/tool setup, not candidate execution.
+socket, privileged mode, published ports or ambient secret environment. Standard
+Docker default capabilities (no cap-add/drop override) permit apt/dpkg ownership,
+modes and genuine package maintainer operations. No-new-privileges, default
+seccomp/AppArmor and finite CPU/memory/PID/deadline/log bounds remain. The actual
+effective/permitted/bounding masks must equal the standard set, inherited/ambient
+masks must be zero, NNP=1 and seccomp=2 before apt/source/tool/PM effects; inventory
+records those process diagnostics. No SYS_ADMIN or security-profile disabling.
+Root is needed for private stopped-rootfs apt/tool setup, not candidate execution.
 Apt uses the fixed Debian snapshot and the packaged Debian archive keyring;
-its acquisition UID stays root within this capability-dropped private container
-(no `_apt` UID switch requiring SETUID/SETGID grants). This is not host privilege
+its acquisition UID stays root within this standard private container.
+This is not host privilege
 or a native candidate security-policy override.
-Root acquisition does not fix a foreign-owned existing apt partial directory
-or make dpkg/SSH group-ownership operations compatible with CapDrop ALL. That
-complete contract is now blocked, not patched by a speculative cache chmod.
+Root UID alone did not repair the old capless contract. Normal Docker package
+capabilities now permit directory access/ownership and genuine dpkg/SSH group/mode
+operations; no speculative cache chmod, statoverride or skipped package script.
 Signatures/index-package hashes stay enabled. Actual index/package hashes,
 installed dpkg identities and command output are retained, not fabricated plan
 projections. Old metadata-only expansion declarations are NOT presented as fit.
