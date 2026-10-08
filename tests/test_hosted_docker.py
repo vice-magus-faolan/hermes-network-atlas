@@ -230,7 +230,7 @@ class HostedDockerTests(unittest.TestCase):
         job = value['jobs']['hosted-docker']
         self.assertEqual(job['runs-on'], 'ubuntu-24.04')
         self.assertEqual(job['timeout-minutes'], 60)
-        self.assertEqual(job['if'], "github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery'")
+        self.assertEqual(job['if'], "github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery' && needs.feature-phase.outputs.phase == 'acceptance'")
         self.assertEqual(value['jobs']['offline-verification']['if'], "github.event_name != 'push' || github.ref != 'refs/heads/feat/6-host-discovery'")
         self.assertNotIn('strategy', job)
         self.assertNotIn('runner.', str(job.get('env', {})))

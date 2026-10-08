@@ -1,0 +1,99 @@
+{
+  "candidate": "2049396385def5af70e87bf5f67b994835b96d1a",
+  "complete": true,
+  "components": {
+    "apt-diagnostics.json": {
+      "bytes": 77754,
+      "files": 1
+    },
+    "core-source-manifest.json": {
+      "bytes": 2200281,
+      "files": 1
+    },
+    "git-preparation.json": {
+      "bytes": 2873,
+      "files": 1
+    },
+    "hermes-source": {
+      "bytes": 201212061,
+      "files": 16871
+    },
+    "hermes-source/.git": {
+      "bytes": 84408010,
+      "files": 24
+    },
+    "resolved-union.lock": {
+      "bytes": 1237621,
+      "files": 1
+    },
+    "retained-inventory.json": {
+      "bytes": 2063,
+      "files": 1
+    },
+    "tool-archives.json": {
+      "bytes": 492,
+      "files": 1
+    },
+    "tools": {
+      "bytes": 460791838,
+      "files": 3664
+    },
+    "union-diagnostics.json": {
+      "bytes": 9924,
+      "files": 1
+    },
+    "union-packages.json": {
+      "bytes": 1642,
+      "files": 1
+    },
+    "uv-6ae3d93da20511c1.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-cache": {
+      "bytes": 346538195,
+      "files": 7541
+    },
+    "uv-d6cfeac6187ed2ac.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-setuptools-2ce54205f335ae97.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-setuptools-3c4550fee542808c.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-setuptools-5fb4aef5a072ed00.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-setuptools-983e6f6b43728f62.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-setuptools-d6cfeac6187ed2ac.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "uv-setuptools-f82d57788b821e27.lock": {
+      "bytes": 0,
+      "files": 1
+    },
+    "verifier-resolution.json": {
+      "bytes": 91373,
+      "files": 1
+    }
+  },
+  "diagnosis_sha256": "c112dafe6354f0093a64d602326b705c6f925f32d0e7127c50d75c379e367ac1",
+  "final_approval": false,
+  "full_canonical": false,
+  "native_acceptance": false,
+  "projection_only": true,
+  "run": 37831615760,
+  "schema": 1,
+  "seed_bytes": 1096574127,
+  "seed_files": 28117
+}

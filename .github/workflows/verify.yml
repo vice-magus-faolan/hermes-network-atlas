@@ -10,11 +10,58 @@ concurrency:
   group: network-atlas-issue-6-ci
   cancel-in-progress: false
 jobs:
+  feature-phase:
+    # Checked source contract, never a commit-message or ambient skip. Main/PR
+    # retain the existing canonical path. Invalid/mixed measurement source fails.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      phase: ${{ steps.phase.outputs.phase }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: phase
+        name: Validate exact bounded source-only phase
+        run: python3 scripts/measurement_route.py
+  packing-measurement:
+    # Feasibility check is distinct from native/canonical acceptance. No Docker,
+    # dependency setup or core execution; only two serial fixed native Git stores.
+    needs: feature-phase
+    if: needs.feature-phase.outputs.phase == 'measurement'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Exact complete public source, never executed
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: vice-magus-faolan/hermes-agent
+          ref: 5645275e50d66dca04c9565634f9b5207a38aef5
+          path: .hermes-runtime-source
+          persist-credentials: false
+      - name: Two bounded source packing measurements only
+        run: python3 scripts/packing_measurement.py
+      - name: Retain compact measurement proof, never acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: packing-measurement-only-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/packing-measurement-evidence.tar
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
   hosted-docker:
     # Reviewed feature pushes only; repository-wide serialization/coalescing.
     # A corrected commit gets a fresh hosted VM, never local fallback or a
     # blind same-source rerun. Main/PR regressions remain separate.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery'
+    needs: feature-phase
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery' && needs.feature-phase.outputs.phase == 'acceptance'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

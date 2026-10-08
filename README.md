@@ -158,6 +158,17 @@ while that exact owned command is active, counts and reports incomplete samples,
 and retains strict final source/object/component accounting and unchanged limits.
 Tiny barrier-controlled real-child RED/GREEN is not corrected hosted acceptance;
 retained fit/native/full/cold/cleanup and final review remain pending.
+Actual hosted run `37831615760` resolved that observer race and completed full
+object/source-preserving compaction, then strict final accounting measured the
+seed 22,832,303 bytes over the unchanged 1 GiB ceiling. A tiny tuned comparison
+does not establish full-core savings or impossibility. The current successor is
+MEASUREMENT ONLY: exact source/ref/allowlist/hash validation routes a reviewed
+feature push exclusively to two fixed bounded hosted native Git variants, never
+the known failing acceptance pipeline. Production packing/cache/PM/pins/limits
+remain unchanged. Immutable non-Git counters plus explicit reserve yield only a
+projection; all measurement reports keep native/canonical/final acceptance false.
+The host Git/zlib runtime differs from the producer and is recorded, not promoted
+to runtime equivalence. See [hosted packing measurement](docs/hosted-packing-measurement.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable

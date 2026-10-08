@@ -193,7 +193,7 @@ class OfflineConsumerTests(unittest.TestCase):
         self.assertEqual(deps['hermes_commit'], CORE_COMMIT)
         self.assertEqual((deps['python'], deps['uv'], deps['debian_snapshot']), ('3.14.7', '0.12.3', '20260919T000000Z'))
         workflow = YAML(typ='safe').load((ROOT/'.github/workflows/verify.yml').read_text())
-        for job in workflow['jobs'].values():
+        for job in (value for name, value in workflow['jobs'].items() if name != 'feature-phase'):
             steps = [step for step in job['steps'] if step.get('with', {}).get('path') == '.hermes-runtime-source']
             self.assertEqual(len(steps), 1)
             self.assertEqual(steps[0]['with']['repository'], 'vice-magus-faolan/hermes-agent')

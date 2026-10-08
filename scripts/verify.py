@@ -97,6 +97,16 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_measurement.MeasurementTests.test_feature_phase_gates_measurement_separately_from_native_acceptance",
+    "test_docker_measurement.MeasurementTests.test_real_git_exact_marker_routes_and_normal_main_pr_without_message_skip",
+    "test_docker_measurement.MeasurementTests.test_malformed_hash_symlink_dirty_parent_and_mixed_product_refuse",
+    "test_docker_measurement.MeasurementTests.test_hosted_local_guard_refuses_before_any_full_source_or_work_effect",
+    "test_docker_measurement.MeasurementTests.test_real_tiny_two_fixed_variants_preserve_all_source_objects_shallow_and_dispose",
+    "test_docker_measurement.MeasurementTests.test_pack_boundary_keeps_unreachable_objects_and_detects_source_drift",
+    "test_docker_measurement.MeasurementTests.test_failure_stops_variants_retains_primary_audit_and_real_disposal",
+    "test_docker_measurement.MeasurementTests.test_projection_requires_completed_identical_full_measurements_and_explicit_reserve",
+    "test_docker_measurement.MeasurementTests.test_resource_output_evidence_bounds_and_cleanup_scope_refuse",
+    "test_docker_measurement.MeasurementTests.test_actual_measurement_child_bounds_terminal_failure_and_source_guard",
     "test_docker_retention_observer.ObserverTests.test_real_runner_enumerate_stat_prune_race_preserves_objects",
     "test_docker_retention_observer.ObserverTests.test_full_compaction_race_keeps_strict_final_source_objects_and_budget",
     "test_docker_retention_observer.ObserverTests.test_missing_tolerance_only_prune_loose_leaves_and_empty_fanouts",
@@ -315,7 +325,8 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
                   "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py",
-                  "scripts/native_union_diagnostics.py", "docker/hosted_git.py", "docker/hosted_retention.py")
+                  "scripts/native_union_diagnostics.py", "docker/hosted_git.py", "docker/hosted_retention.py",
+                  "scripts/measurement_route.py", "scripts/packing_measurement.py")
 
 
 def check_docker_source() -> bool:

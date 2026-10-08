@@ -102,6 +102,24 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Ten additive mandatory `tests/test_docker_measurement.py::MeasurementTests` IDs
+cover real predecessor feature-routing RED, mutually exclusive measurement/native
+jobs, unchanged main/PR/ordinary feature controls, actual tiny Git marker/hash/
+parent/whole-diff validation and mixed/malformed/dirty/link refusal, pre-effect
+local guard, two fixed genuine serial native variants preserving complete source/
+objects/shallow/unreachable data with owned disposal, actual failure/audit/cleanup
+precedence, projection equality/refusal/reserve/nonacceptance and resource/export
+bounds. Normal/-O required. Two minimal inherited expectation seams change: the
+hosted job condition adds validated acceptance output with original event/ref
+predicates, and the core-checkout loop excludes only the source-routing gate;
+all actual core consumers keep every original pin assertion. All inherited IDs,
+remaining body assertions and historical JSON
+bytes remain. No full core fixture/acquisition/native admission runs locally.
+Full source measurement is hosted only after exact independent source/workflow
+review. A sufficient projection or successful measurement is never native/full
+canonical/final approval. Production packing/cache/tools/pins/budgets are unchanged.
+See [hosted packing measurement](hosted-packing-measurement.md).
+
 Eight additive mandatory `tests/test_docker_retention_observer.py::ObserverTests`
 IDs exercise the actual live observer/owned child enumerate-stat race with a
 deterministic barrier and genuine Git, full tiny source/object/shallow preservation
