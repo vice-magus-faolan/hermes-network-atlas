@@ -102,6 +102,18 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Eight additive mandatory `tests/test_docker_retention_observer.py::ObserverTests`
+IDs exercise the actual live observer/owned child enumerate-stat race with a
+deterministic barrier and genuine Git, full tiny source/object/shallow preservation
+and unchanged lowered retention budget, exact loose-leaf/empty-fanout ENOENT scope,
+strict final failure/proof refusal, permission/read/link/special/ancestor/escape
+refusals, entry/time/transient byte bounds and postfailure/non-prune tolerance reset.
+Normal/-O required. Every prune-phase sample is explicitly incomplete, not a final
+total; final before/after/object/source/seed/verifier accounting remains strict.
+All 450 inherited IDs/bodies/assertions, 264 required IDs, 50 test paths and six
+historical JSONs are preserved. The authenticated real hosted observer failure is
+not object loss, overflow or corrected acceptance. See [producer retention](producer-retention.md).
+
 Thirteen additive mandatory `tests/test_docker_retention.py::RetentionTests` IDs
 cover actual producer ordering, real tiny shallow packing with every reachable/
 unreachable object and original absent parents preserved, full source/modes/links,

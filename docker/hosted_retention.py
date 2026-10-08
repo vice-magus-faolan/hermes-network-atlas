@@ -56,28 +56,79 @@ def component(root: Path, path: Path) -> str:
     return 'hermes-source/.git' if relative[:2] == ('hermes-source', '.git') else relative[0]
 
 
-def measure(root: Path, row: dict) -> None:
+def measure(root: Path, row: dict, *, pruning: bool = False) -> None:
     """Complete stat-only accounting or explicit bounded prefix; never skip sources.
 
     Match the inherited regular non-symlink file semantics, including hardlink
     path bytes. Bound visited entries, component names and wall time separately.
+    ONLY active owned prune sampling may report disappearing loose objects or
+    their empty fanout directories. Such a sample is never complete accounting.
     """
     row.update(files=0, bytes=0, entries=0, complete=False, components={})
+    if pruning:
+        if root.name != '.git':
+            raise ValueError('prune observation requires the core Git root')
+        row['missing_loose_entries'] = 0
     if root.is_symlink() or not root.is_dir():
         raise ValueError('nonsymlink retained root required')
     deadline = time.monotonic() + 10
-    for directory, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
+    def onerror(error):
+        if not pruning or not isinstance(error, FileNotFoundError):
+            walk_error(error)
+        visit(row, deadline)
+        missing_loose(root, Path(error.filename), row)
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=onerror):
         for name in sorted(dirs + files):
             path = Path(directory) / name
-            info = path.lstat()
-            row['entries'] += 1
-            if row['entries'] > 100000 or time.monotonic() >= deadline:
-                raise ValueError('retention accounting entry/read deadline bound')
+            visit(row, deadline)
+            info = member_stat(root, path, row, pruning)
+            if info is None:
+                continue
             if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)):
                 raise ValueError('retention special file refused')
             if stat.S_ISREG(info.st_mode):
                 account_file(row, component(root, path), info.st_size)
-    row['complete'] = True
+    row['complete'] = not pruning
+
+
+def visit(row: dict, deadline: float) -> None:
+    """Count even disappearing entries against the unchanged read/entry bounds."""
+    row['entries'] += 1
+    if row['entries'] > 100000 or time.monotonic() >= deadline:
+        raise ValueError('retention accounting entry/read deadline bound')
+
+
+def member_stat(root: Path, path: Path, row: dict, pruning: bool):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        if not pruning:
+            raise
+        missing_loose(root, path, row)
+        return None
+    if pruning and stat.S_ISLNK(info.st_mode):
+        raise ValueError('prune observation Git symlink refused')
+    return info
+
+
+def missing_loose(root: Path, path: Path, row: dict) -> None:
+    """No ENOENT suppression outside Git's redundant-loose prune namespace."""
+    relative = path.relative_to(root).as_posix()
+    if not re.fullmatch(r'objects/[0-9a-f]{2}(?:/[0-9a-f]{38})?', relative):
+        raise FileNotFoundError('missing non-loose Git observation member', str(path))
+    # Do not mistake an escaped/missing object-store ancestor for a removed leaf.
+    for parent in (root, root / 'objects'):
+        if not stat.S_ISDIR(parent.lstat().st_mode):
+            raise ValueError('nonsymlink Git observation ancestor required')
+    if path.parent != root / 'objects':
+        try:
+            info = path.parent.lstat()
+        except FileNotFoundError:
+            pass  # prune-packed also removes empty fanout directories
+        else:
+            if not stat.S_ISDIR(info.st_mode):
+                raise ValueError('nonsymlink loose fanout required')
+    row['missing_loose_entries'] += 1
 
 
 def walk_error(error: OSError) -> None:
@@ -127,24 +178,38 @@ def object_rows(output: str) -> dict:
     return {'count': len(rows), 'sha256': hashlib.sha256(payload).hexdigest()}
 
 
-def runner(core: Path):
+def runner(core: Path, observation: dict | None = None):
     """Keep inherited child audit/reaping plus a shared 120-second pack deadline."""
     deadline = time.monotonic() + 120
     next_sample = 0.0
+    pruning = False
+    observation = {} if observation is None else observation
+    observation.update(samples=0, incomplete_samples=0, missing_loose_entries=0,
+                       peak_observed_bytes=0, last={})
     def poll():
         nonlocal next_sample
         if time.monotonic() >= deadline:
             raise TimeoutError('core retention aggregate deadline')
         if time.monotonic() >= next_sample:
             row = {}
-            measure(core / '.git', row)
+            observation['last'] = row
+            measure(core / '.git', row, pruning=pruning)
+            observation['samples'] += 1
+            observation['incomplete_samples'] += int(not row['complete'])
+            observation['missing_loose_entries'] += row.get('missing_loose_entries', 0)
+            observation['peak_observed_bytes'] = max(observation['peak_observed_bytes'], row['bytes'])
             if row['bytes'] > 2 * 1024 ** 3:
                 raise ValueError('core retention transient object byte bound')
             next_sample = time.monotonic() + 1
     def run(argv, cwd, **kwargs):
+        nonlocal pruning
         poll()
         kwargs.update(timeout=min(60, max(0, deadline - time.monotonic())), limit=4 * 1024 ** 2, poll=poll)
-        result = bounded_run(argv, cwd, **kwargs)
+        pruning = argv == ['git', 'prune-packed']
+        try:
+            result = bounded_run(argv, cwd, **kwargs)
+        finally:
+            pruning = False
         poll()
         return result
     return lambda argv: audited_run(argv, core, runner=run)
@@ -157,7 +222,7 @@ def pack_objects(core: Path, commit: str, tree: str, report: dict) -> None:
     Batch-all-objects covers reachable AND unreachable objects; those not packed
     by refs remain loose. No expiry, gc, -d, shallow rewrite or parent synthesis.
     """
-    run = runner(core)
+    run = runner(core, report.setdefault('observation', {}))
     run(['git', 'fsck', '--full', '--no-reflogs', '--no-dangling'])
     if run(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}']).splitlines() != [commit, tree]:
         raise ValueError('literal reconstructed commit/tree differs')

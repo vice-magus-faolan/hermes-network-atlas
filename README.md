@@ -150,6 +150,14 @@ every actual object and complete source; no uv cache edits or retention increase
 Bounded component totals/failure proof survive independently of success inventory.
 Real corrected retained fit/native/full/cold/cleanup remains pending. See
 [owned Git packing and retention accounting](docs/producer-retention.md).
+Actual hosted run `37823927095` passed repack, verify-pack and both pre-prune
+fscks, then the live observer raced legitimate loose-object removal during
+`prune-packed`. This was not demonstrated object loss or retained-budget overflow.
+The successor tolerates only disappearing loose objects/empty fanout directories
+while that exact owned command is active, counts and reports incomplete samples,
+and retains strict final source/object/component accounting and unchanged limits.
+Tiny barrier-controlled real-child RED/GREEN is not corrected hosted acceptance;
+retained fit/native/full/cold/cleanup and final review remain pending.
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable

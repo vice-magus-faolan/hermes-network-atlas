@@ -97,6 +97,14 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_retention_observer.ObserverTests.test_real_runner_enumerate_stat_prune_race_preserves_objects",
+    "test_docker_retention_observer.ObserverTests.test_full_compaction_race_keeps_strict_final_source_objects_and_budget",
+    "test_docker_retention_observer.ObserverTests.test_missing_tolerance_only_prune_loose_leaves_and_empty_fanouts",
+    "test_docker_retention_observer.ObserverTests.test_quiescent_missing_permission_and_partial_final_proofs_refuse",
+    "test_docker_retention_observer.ObserverTests.test_links_special_missing_ancestors_and_escape_are_not_tolerated",
+    "test_docker_retention_observer.ObserverTests.test_missing_entries_still_consume_entry_time_and_transient_byte_bounds",
+    "test_docker_retention_observer.ObserverTests.test_nonprune_command_and_postfailure_sampler_never_gain_tolerance",
+    "test_docker_retention_observer.ObserverTests.test_final_stat_race_refuses_compaction_success_and_retains_failure",
     "test_docker_retention.RetentionTests.test_real_same_budget_red_then_pack_green_with_no_source_or_cache_exclusions",
     "test_docker_retention.RetentionTests.test_real_owned_runner_output_deadline_and_unrelated_child_survives",
     "test_docker_retention.RetentionTests.test_pack_or_object_drift_failure_prevents_pruning_success_and_retains_stage",
