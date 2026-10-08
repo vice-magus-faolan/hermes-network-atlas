@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Hosted fixed-tool diagnostics, not admission or a permission repair.
+"""Hosted fixed-tool execution evidence, not native admission.
 
 Read only the authenticated PM lock and fixture tool facts. Never call PM's
 installed_package: its selection path can heal executable bits. No acquisition,
@@ -211,6 +211,101 @@ def persist(report: dict, export: Path) -> None:
     BoundedDirectory(export).write('tool-execution.json', payload)
 
 
+def require_filesystem(row: dict, point: str, *, readonly: bool, noexec: bool, tmpfs: bool = False) -> None:
+    """Kernel observations must agree with statvfs, not intended HostConfig."""
+    mount = row.get('mount', {})
+    options = set(mount.get('options', []))
+    flags = row.get('statvfs_flags')
+    if type(flags) is not int or 'error' in row:
+        raise ValueError('effective filesystem evidence absent: ' + point)
+    expected = {'readonly': readonly, 'noexec': noexec}
+    actual = {'readonly': bool(flags & os.ST_RDONLY), 'noexec': bool(flags & os.ST_NOEXEC)}
+    if actual != expected or any(row.get(key) is not value for key, value in expected.items()):
+        raise ValueError('effective filesystem flags drift: ' + point)
+    if ('ro' in options) != readonly or ('rw' in options) == readonly or ('noexec' in options) != noexec:
+        raise ValueError('effective mountinfo flags drift: ' + point)
+    if mount.get('mountpoint') != point:
+        raise ValueError('effective mountpoint drift: ' + point)
+    if tmpfs:
+        require_tmpfs(row, point)
+
+
+def require_tmpfs(row: dict, point: str) -> None:
+    mount, flags = row['mount'], row['statvfs_flags']
+    if (mount.get('filesystem') != 'tmpfs' or not {'nosuid', 'nodev'} <= set(mount['options'])
+            or not flags & os.ST_NOSUID or not flags & os.ST_NODEV or row.get('nosuid') is not True):
+        raise ValueError('effective private tmpfs protection drift: ' + point)
+
+
+def require_tool(row: dict, name: str) -> None:
+    """A contained current native tool must actually answer its fixed version probe."""
+    requested, resolved = row.get('requested_path', ''), row.get('resolved_path', '')
+    for path in (requested, resolved):
+        if not path.startswith('/work/fixture/tools/') or '..' in Path(path).parts:
+            raise ValueError('effective tool containment drift: ' + name)
+    if 'error' in row or row.get('target') != 'linux-x64' or row.get('elf') is not True:
+        raise ValueError('effective native tool evidence absent: ' + name)
+    filesystem = row.get('filesystem', {})
+    if filesystem.get('path') != resolved:
+        raise ValueError('effective tool filesystem path drift: ' + name)
+    require_filesystem(filesystem, '/work', readonly=False, noexec=False, tmpfs=True)
+    require_version(row, name)
+
+
+def require_version(row: dict, name: str) -> None:
+    result = row.get('probe', {})
+    requested = row['requested_path']
+    if result.get('argv') != [requested, '--version'] or result.get('exit_code') != 0 or 'error' in result:
+        raise ValueError('effective native version probe failed: ' + name)
+    if result.get('output_complete') is not True or not 0 < result.get('output_captured_bytes', 0) <= 64 * 1024:
+        raise ValueError('effective native version output absent: ' + name)
+    version = row.get('version', '')
+    prefix = 'uv ' + version if name == 'uv' else 'Python ' + version.split('+', 1)[0]
+    text = result.get('output_head', '')
+    if not version or not text.startswith(prefix) or not text[len(prefix):len(prefix) + 1].isspace():
+        raise ValueError('effective native version identity drift: ' + name)
+
+
+def require_execution(report: dict) -> None:
+    """Reject incomplete kernel/probe proof before enable/canonical acceptance.
+
+    This checks observations collected in this process after authenticated native
+    selection, not a caller-provided receipt or proof of native installation.
+    """
+    if any(report.get(key) != 1000 for key in ('uid', 'euid', 'gid', 'egid')):
+        raise ValueError('effective execution UID/GID drift')
+    filesystems = report.get('filesystems', [])
+    rows = {row.get('path'): row for row in filesystems}
+    if set(rows) != {'/', '/work', '/tmp', '/opt', '/candidate'} or len(rows) != len(filesystems):
+        raise ValueError('effective filesystem evidence incomplete')
+    for point in ('/', '/candidate'):
+        require_filesystem(rows[point], point, readonly=True, noexec=False)
+    # /opt must be on the already checked read-only root, not an execution fallback.
+    require_filesystem(rows['/opt'], '/', readonly=True, noexec=False)
+    require_filesystem(rows['/work'], '/work', readonly=False, noexec=False, tmpfs=True)
+    require_filesystem(rows['/tmp'], '/tmp', readonly=False, noexec=True, tmpfs=True)
+    tools = report.get('tools', {})
+    if set(tools) != {'uv', 'python'}:
+        raise ValueError('effective native tool evidence incomplete')
+    for name, row in tools.items():
+        require_tool(row, name)
+
+
+def check_execution(report: dict, export: Path) -> None:
+    """Persist the failed predicate too; installer failure still takes precedence."""
+    try:
+        require_execution(report)
+    except ValueError as exc:
+        report['execution_contract'] = {'verified': False, 'error': str(exc)}
+        try:
+            persist(report, export)
+        except Exception as secondary:
+            exc.add_note('execution contract export failed: ' + type(secondary).__name__)
+        raise
+    report['execution_contract'] = {'verified': True, 'native_acceptance': False}
+    persist(report, export)
+
+
 def collect(source: Path, tools: Path, env: dict, export: Path) -> dict:
     """Incremental actual metadata before probes; probe denial never becomes success."""
     groups = os.getgroups()
@@ -222,7 +317,7 @@ def collect(source: Path, tools: Path, env: dict, export: Path) -> dict:
     with Path('/proc/self/mountinfo').open('rb') as stream:
         payload = stream.read(MOUNT_LIMIT + 1)
     rows = mount_rows(payload)
-    report['filesystems'] = [filesystem_record(Path(path), rows) for path in ('/work', '/tmp', '/opt', '/candidate')]
+    report['filesystems'] = [filesystem_record(Path(path), rows) for path in ('/', '/work', '/tmp', '/opt', '/candidate')]
     persist(report, export)
     for name in ('uv', 'python'):
         row = report['tools'][name] = {}
@@ -251,7 +346,8 @@ def main() -> int:
     require_hosted(os.environ, workspace=ROOT, commit=git_head())
     verify_core(source)  # complete authenticated core before any native import
     sys.path.insert(0, str(source))
-    collect(source, tools, dict(os.environ), EXPORT)
+    report = collect(source, tools, dict(os.environ), EXPORT)
+    check_execution(report, EXPORT)
     return 0
 
 

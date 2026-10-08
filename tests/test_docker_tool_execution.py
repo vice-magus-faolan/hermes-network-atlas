@@ -253,7 +253,7 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertEqual(calls[0][0], ['/opt/verifier/bin/python', str(ROOT / 'scripts/native_tool_execution.py')])
         self.assertIn('PermissionError', caught.exception.__notes__[0])
         from docker_contract import TMPFS
-        self.assertEqual(TMPFS, {'/work': 'rw,nosuid,nodev,size=2g,uid=1000,gid=1000,mode=0700',
+        self.assertEqual(TMPFS, {'/work': 'rw,nosuid,nodev,exec,size=2g,uid=1000,gid=1000,mode=0700',
                                 '/tmp': 'rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=0700'})
         # Effect-free ordinary invocation refuses before native imports/collection.
         with patch.object(sys, 'argv', ['probe', 'arbitrary']), patch.object(probe, 'collect') as collect:

@@ -109,6 +109,13 @@ retains bounded actual native tool/ancestor/hash/loader/kernel-mount evidence an
 fixed version-attempt errno before installation, without changing permissions or
 isolation. Actual corrected native/full/cold acceptance remains pending. See
 [native-tool execution evidence](docs/native-tool-execution.md).
+Actual hosted run `37724779987` now proves `/work` tmpfs noexec and both contained
+native version attempts EACCES despite searchable mode0755/UID1000 tool paths.
+The narrow correction adds explicit exec only to that private 2g `/work` tmpfs;
+nosuid/nodev/UID/GID/mode bounds and `/tmp` noexec remain unchanged. Actual kernel
+flags and both contained current-version results must pass before enable or any
+acceptance claim; installer failure still takes precedence. This source correction
+is not actual corrected hosted/native/full/cold acceptance, which remains pending.
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable

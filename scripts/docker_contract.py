@@ -16,7 +16,9 @@ NAME = "network-atlas-acceptance"
 ENDPOINT = "unix:///var/run/docker.sock"
 MEMORY = 3 * 1024 ** 3
 EVIDENCE_LIMIT = 32 * 1024 ** 2
-TMPFS = {"/work": "rw,nosuid,nodev,size=2g,uid=1000,gid=1000,mode=0700",
+# Native PM binaries and fresh generations execute only in this private tmpfs.
+# Docker otherwise prepends noexec; /tmp deliberately remains non-executable.
+TMPFS = {"/work": "rw,nosuid,nodev,exec,size=2g,uid=1000,gid=1000,mode=0700",
          "/tmp": "rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=0700"}
 MODES = ("smoke", "fail", "interrupt", "refusal", "accept", "hosted-accept")
 

@@ -97,6 +97,14 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_work_execution.WorkExecutionTests.test_all_modes_create_exec_only_work_and_exact_isolation",
+    "test_docker_work_execution.WorkExecutionTests.test_exact_inspect_rejects_options_resource_uid_and_mount_drift",
+    "test_docker_work_execution.WorkExecutionTests.test_actual_hosted_noexec_and_eacces_remain_refused",
+    "test_docker_work_execution.WorkExecutionTests.test_effective_kernel_protection_flags_and_coverage_refuse",
+    "test_docker_work_execution.WorkExecutionTests.test_native_probe_version_containment_and_denial_never_pass",
+    "test_docker_work_execution.WorkExecutionTests.test_contract_persistence_failure_refuses_and_preserves_primary",
+    "test_docker_work_execution.WorkExecutionTests.test_real_entrypoint_checks_collected_report_before_exit",
+    "test_docker_work_execution.WorkExecutionTests.test_installer_runs_but_failed_execution_blocks_enable_and_acceptance",
     "test_docker_tool_execution.ToolExecutionTests.test_actual_pinned_selection_uses_binary_definition_without_healing_or_acquisition",
     "test_docker_tool_execution.ToolExecutionTests.test_selection_version_target_artifact_entry_and_store_drift_refuse",
     "test_docker_tool_execution.ToolExecutionTests.test_real_contained_elf_and_symlink_metadata_hash_and_permission_errno",

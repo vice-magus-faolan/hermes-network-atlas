@@ -102,6 +102,19 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Eight additive mandatory `tests/test_docker_work_execution.py::WorkExecutionTests`
+IDs cover exec only on the exact private `/work` create/inspect contract across
+all modes; option/resource/UID/mount/source/export mutations; authenticated actual
+run `37724779987` noexec/EACCES refusal; synthetic effective kernel flags/protection/
+coverage, fixed current-version/containment/denial checks; incremental contract
+export and primary error; actual entrypoint wiring; and install failure/success
+with diagnostic failure refusing enable/canonical. Normal/-O are required. All
+inherited IDs and bodies remain except the precisely authorized `/work` literal
+gaining `exec,` at `tests/test_docker_tool_execution.py:256`; the rest of that body
+is unchanged, with exact before/after hashes and diff retained. The actual failed
+report is immutable; synthetic prospective reports are not corrected hosted/native
+acceptance. See [native tool execution evidence](native-tool-execution.md).
+
 Eight additional mandatory `tests/test_docker_tool_execution.py::ToolExecutionTests`
 IDs cover actual pinned selection without PM healing/acquisition, current identity
 drift, real tiny contained ELF/link/hash/mode/EACCES, escape/loop/missing/FIFO/size/

@@ -156,6 +156,14 @@ Canaries are cleanup evidence, NOT admission. Each acceptance container has
 UID1000, read-only base/candidate, all capabilities dropped, no-new-privileges,
 private PID/IPC/UTS, finite work/tmp tmpfs, no devices/socket/ports/secrets and
 Docker `network=none`. Native acceptance installs inherited syscall packet denial
+at startup. The private 2g `/work` tmpfs explicitly permits exec for contained
+native tools and fresh selected generations, retaining nosuid/nodev/UID/GID1000/
+mode0700; `/tmp` remains noexec. Actual run `37724779987` proved that omitting exec
+let Docker's effective noexec obstruct both native tools. Corrected acceptance
+requires actual consistent kernel mountinfo/statvfs and successful contained
+current-version probes, not intended options alone. See
+[native-tool-execution.md](native-tool-execution.md); actual corrected acceptance
+remains pending. Native acceptance keeps syscall packet denial
 BEFORE fresh fixture PM/install/enable resolution and keeps it through all tests.
 The readonly candidate snapshot root has public search permission and one exact
 validated process-local Git exception. The empty hosted incoming leaf alone gets

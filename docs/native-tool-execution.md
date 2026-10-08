@@ -17,16 +17,61 @@ EACCES alone does not establish noexec, mode, UID, loader or LSM denial.
 
 Moby v28.0.4 `daemon/oci_linux.go`, `withMounts`, starts tmpfs options with
 `noexec,nosuid,nodev,rprivate`, appends the supplied data and calls
-`mount.MergeTmpfsOptions`. The issue-6 `/work` data omits both exec and noexec;
+`mount.MergeTmpfsOptions`. The historical issue-6 `/work` data omitted exec and noexec;
 `/tmp` explicitly specifies noexec. This establishes a credible normal-source
 mechanism, not actual historical kernel flags or a successful permission repair.
 Docker HostConfig is intended input, not a substitute for kernel readback.
 
-This successor is DIAGNOSTICS ONLY. The `/work` and `/tmp` option strings and
+The run87 successor was DIAGNOSTICS ONLY. The `/work` and `/tmp` option strings and
 all isolation predicates remain byte-identical. It does not silently change
 mounts, chmod/chown tools, invoke PM's healing selector, add capabilities, remount,
 substitute /opt tools or broaden executable mounts. A later compatibility repair
 must use actual evidence and preserve fixture-contained native execution.
+
+## Observed noexec and narrow execution correction
+
+Actual hosted run `37724779987` on `ae9bbe3132142a1a77b60b8ea3f0a9f9a2029399`
+retained the incremental report. Kernel mountinfo for `/work` shows tmpfs
+`rw,nosuid,nodev,noexec,relatime`; statvfs flags are 4110, including ST_NOEXEC.
+Both current contained tools have regular ELF bytes, mode0755, UID/GID1000 and
+searchable ancestors, but both fixed version attempts returned PermissionError13.
+The unchanged genuine installer then returned the same uv EACCES without plugin
+publication. `/work` noexec is now an observed sufficient obstruction, not an
+inference from HostConfig. It does not prove that every other blocker is absent.
+The earlier run `37720941089`'s missing kernel evidence remains UNKNOWN.
+
+The original actual report is retained byte-for-byte at
+`tests/fixtures/run37724779987-tool-execution.json`, SHA-256
+`eb660986a0be44f1a0275d033601ca9b235c7724713cd97c7e2360eac8af23df`.
+Redacted displayed identifiers remain literal; no historical version is repaired
+or normalized. This is failed-run evidence, not a fabricated corrected receipt.
+
+The authorized correction explicitly adds `exec` ONLY to the initial `/work`
+tmpfs create option:
+
+    rw,nosuid,nodev,exec,size=2g,uid=1000,gid=1000,mode=0700
+
+The exact same mapping is required by strict inspected HostConfig equality.
+`/tmp` remains `rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=0700`.
+Root/candidate are still read-only, capability drop ALL/NNP/network-none/UID1000
+and all resource, source, export, provenance and cleanup contracts remain.
+No remount, root helper, capability addition, tool chmod, alternate executable,
+global executable mount or external selected-generation shortcut is introduced.
+This permits the already-required native tools and fresh generation ONLY within
+the same private bounded fixture; it is not host execution authority.
+
+After actual collection, the diagnostic entrypoint now requires consistent kernel
+mountinfo AND statvfs: read-only root/candidate and /opt on root, writable executable
+`/work` tmpfs with nosuid/nodev, and writable non-executable `/tmp` tmpfs with
+nosuid/nodev. Both resolved tools must remain on that `/work` mount and actually
+return exit0, complete bounded nonempty output matching the native locked uv or
+Python version from their exact contained fixed `--version` argv. Intended
+HostConfig, zero diagnostic exit alone, a denied probe or a successful alternate
+tool is not proof. A bounded `execution_contract` predicate result is persisted
+alongside actual evidence; it always remains distinct from native acceptance.
+Its failure still does not suppress the real installer or replace installer
+failure. If install succeeds despite a failed/missing diagnostic predicate, enable
+and canonical acceptance are refused by the existing error-precedence boundary.
 
 ## Native path and producer audit
 
@@ -105,9 +150,24 @@ selection drift, tiny real contained ELF/link/hash/mode/EACCES, escapes/loops/
 missing/FIFO/size/loader bounds, kernel mount projection versus intended input,
 incremental pre-exec export/aggregate retention, real failed/output/deadline
 children with unrelated-child survival, and primary installer failure despite
-secondary diagnostics with unchanged mount/isolation contract. Tiny copied public
+secondary diagnostics with the then-unchanged mount/isolation contract. Tiny copied public
 ELF/version outputs are labeled seams, never reported as uv/Python versions.
-Normal and optimized processes are required. No inherited test bodies are edited.
+Normal and optimized processes are required. For this execution correction, the
+sole inherited test-body exception is the `/work` expected literal in
+`test_hosted_installer_primary_survives_diagnostic_failure_without_isolation_changes`:
+it gains `exec,` and nothing else. The full TMPFS equality, `/tmp` noexec, test ID
+and every other inherited body remain; before/after body hashes and the exact
+single-literal diff are retained in the pre-CI handoff.
+
+Eight additional mandatory `tests/test_docker_work_execution.py::WorkExecutionTests`
+IDs exercise every mode's precise exec-only create argv, strict inspect mutation
+refusal, the authentic failed hosted report, synthetic kernel/flag/protection/
+coverage refusal, contained current-version/errno/output checks, bounded predicate
+export and primary-error precedence, real entrypoint wiring, and install-success
+or failure with enable/canonical refusal. The literal predecessor create contract
+fails the new exec expectation (RED); corrected source passes (GREEN). Synthetic
+kernel/version models are labeled models, never actual corrected runtime proof.
+All inherited canonical/required/focused IDs remain additive and mandatory.
 
 The unchanged predecessor's installer seam retains a real EACCES child but lacks
 the tool/kernel report (RED); the successor retains both (GREEN). This proves the
