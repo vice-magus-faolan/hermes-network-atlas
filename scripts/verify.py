@@ -97,6 +97,12 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_core_identity.CoreIdentityTests.test_real_pinned_named_install_publishes_source_local_launchers",
+    "test_docker_core_identity.CoreIdentityTests.test_producer_rebuilds_entire_source_before_readability_and_rejects_bad_archive",
+    "test_docker_core_identity.CoreIdentityTests.test_mutation_addition_removal_mode_and_symlink_drift_refuse",
+    "test_docker_core_identity.CoreIdentityTests.test_consumer_exports_actual_manifest_before_seed_and_copy_refusal",
+    "test_docker_core_identity.CoreIdentityTests.test_bounds_special_types_and_primary_error_survive_export_failure",
+    "test_docker_core_identity.CoreIdentityTests.test_actual_public_archive_manifest_matches_unchanged_pin_without_extraction",
     "test_docker_startup.StartupTests.test_real_git_different_owner_refusal_then_exact_snapshot_identity",
     "test_docker_startup.StartupTests.test_exact_path_metadata_symlink_scope_and_no_ambient_authority",
     "test_docker_startup.StartupTests.test_commit_tree_dirty_blob_and_git_escape_drift_refuse",
@@ -241,7 +247,7 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "docker/acquisition_support.py", "docker/acquisition_plan.py",
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
-                  "scripts/docker_snapshot.py")
+                  "scripts/docker_snapshot.py", "scripts/core_identity.py")
 
 
 def check_docker_source() -> bool:

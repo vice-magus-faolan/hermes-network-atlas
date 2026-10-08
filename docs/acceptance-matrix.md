@@ -102,6 +102,18 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Six additional mandatory `tests/test_docker_core_identity.py::CoreIdentityTests`
+IDs exercise actual pinned named dispatch/project-local launcher writes with
+acquisition and external PATH exposure replaced, full producer reconstruction
+from a tiny real Git archive before replacing owned PM work material, complete
+mutation/addition/removal/executable/symlink drift, seed/copied-core manifests
+retained before refusal, source/member/manifest/special-type bounds and original
+error precedence, and streamed exact public archive digest without extraction.
+Normal/-O are required; all inherited bodies/fixtures remain unchanged. The
+normal-path source mechanism is proved, but run `37716278161`'s unexported exact
+member drift is unknown. These are not native install/admission or corrected
+hosted/full/cold/all-mode cleanup. See [complete core identity](complete-core-identity.md).
+
 Seven additional mandatory `tests/test_docker_startup.py::StartupTests` IDs cover
 real tiny Git reconstruction and different-owner refusal/success, exact literal
 path/record/config and commit/tree/blob/dirty/symlink/escape refusal, sanitized

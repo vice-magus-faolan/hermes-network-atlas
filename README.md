@@ -92,6 +92,16 @@ sticky 01777 on that empty leaf under unchanged private 0700 ancestors repairs
 the POSIX layout, with files 0600 and bounded Docker archive readback. No historical
 write PermissionError or corrected hosted/native success is inferred. See
 [snapshot startup/layout contract](docs/snapshot-startup-contract.md).
+Hosted run `37716278161` now passes startup, cross-UID exports and reached-mode
+cleanup, but refuses complete-core identity before native scanner import. Its
+historical member delta is unknown. The actual pinned named-Python dispatch
+publishes project-local `.hermes/bin`; tiny real publication tests reproduce that
+pollution. The hosted producer now reconstructs the entire authenticated public
+source after PM setup, rechecks executable semantics after readability, and the
+consumer exports full actual seed/copy manifests before refusing any drift.
+Pins, complete-tree equality, scanner exclusions and isolation remain unchanged.
+This is source/fixture evidence, not corrected hosted/native acceptance. See
+[complete-core identity contract](docs/complete-core-identity.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -115,6 +125,7 @@ external database, web app, MCP server, or background service is required.
 - [Hosted-CI CAUTION exception and unchanged local consent](docs/native-caution-confirmation.md)
 - [Disposable Docker acceptance and separate local/native/hosted gates](docs/docker-acceptance.md)
 - [Fixed snapshot Git trust, cross-UID export and early failure evidence](docs/snapshot-startup-contract.md)
+- [Complete authenticated public core across PM setup and contained copying](docs/complete-core-identity.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

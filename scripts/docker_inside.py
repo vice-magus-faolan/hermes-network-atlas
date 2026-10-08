@@ -57,8 +57,10 @@ def prepare() -> tuple[Path, dict[str, str]]:
         raise ValueError("fresh fixed container layout required")
     FIXTURE.mkdir(mode=0o700)
     (FIXTURE / "synthetic-atlas-home").touch()
+    expected = authenticate_source(SEED / 'hermes-source', 'consumer-seed')
     for name in ("hermes-source", "tools", "uv-cache"):
         shutil.copytree(SEED / name, FIXTURE / name, symlinks=True)
+    authenticate_source(FIXTURE / 'hermes-source', 'consumer-copy', expected=expected)
     shutil.copytree(ROOT, FIXTURE / "candidate", symlinks=True)
     home = FIXTURE / "hermes"
     home.mkdir()
@@ -72,6 +74,36 @@ def prepare() -> tuple[Path, dict[str, str]]:
     write_json("before.json", usage(WORK))
     BoundedDirectory(EXPORT).copy(SEED / "inventory.json", "base-inventory.json")
     return FIXTURE / "hermes-source", env
+
+
+def authenticate_source(source: Path, phase: str, *, expected: dict | None = None) -> dict:
+    """Export complete hash manifests before refusal; never normalize source."""
+    from core_identity import source_manifest, identity_report, require_identity
+    from docker_evidence import regular_read
+    if phase not in {'consumer-seed', 'consumer-copy'}:
+        raise ValueError('fixed core diagnostic phase required')
+    if expected is None:
+        expected = json.loads(regular_read(SEED / 'core-source-manifest.json', 4 * 1024 ** 2))
+    if not isinstance(expected, dict):
+        raise ValueError('complete expected core manifest required')
+    actual = source_manifest(source)
+    report = identity_report(actual, expected, phase)
+    original = None
+    try:
+        require_identity(expected)
+        require_identity(actual)
+    except BaseException as exc:
+        original = exc
+        raise
+    finally:
+        try:
+            BoundedDirectory(EXPORT).json(phase + '-identity.json', report)
+            BoundedDirectory(EXPORT).json(phase + '-manifest.json', actual)
+        except BaseException as exc:
+            if original is None:
+                raise
+            original.add_note(f'core identity export failed: {type(exc).__name__}')
+    return expected
 
 
 def execute(argv: list[str], env: dict, name: str, *, interactive: bool = False, timeout: int = 900) -> tuple[int, str]:

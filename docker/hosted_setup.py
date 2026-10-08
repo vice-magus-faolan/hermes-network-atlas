@@ -26,7 +26,7 @@ from hosted_contract import container_setup_guard
 from acquisition_support import (bounded_run, finite_download, reconstruct_public_core, audited_run,
                                  CommandLog, COMMAND_LOG, COMMAND_LOG_LIMIT, COMMAND_COUNT_LIMIT,
                                  TERMINAL_ROW_LIMIT, COMMAND_ARGV_LIMIT)
-from base_setup import readable_seed, inventory, check_default_command
+from base_setup import readable_seed, inventory, check_default_command, publish_source
 from hosted_apt import provision
 
 PUBLIC = Path('/opt/inputs')
@@ -201,17 +201,17 @@ def main() -> int:
     for path in (home, member, SEED / 'user'):
         if path.exists():
             shutil.rmtree(path)
-    compatibility = CORE / '.venv'
-    if compatibility.is_symlink():
-        compatibility.unlink()
-    elif compatibility.exists():
-        raise ValueError('unexpected reusable native environment directory')
+    # PM's real named Python install publishes project-local launchers. Rebuild
+    # source at the producer, not by deleting/masking leaves at scan consumers.
+    record['core_identity'] = publish_source(PUBLIC / 'hermes.tar', PUBLIC / 'hermes.commit', HERMES, TREE)
     # Native PM tools contain genuine tool manifests/facts; source-scoped union
     # generations/facts/receipts are NOT reused by the acceptance consumer.
     if any(path.name in {'selected.json', 'admission.json', 'native-enabled.json'} for path in SEED.rglob('*')):
         raise ValueError('native candidate/selection state in reusable base')
     readable_seed(SEED)
     readable_seed(Path('/opt/verifier'))
+    from core_identity import source_manifest, require_identity
+    require_identity(source_manifest(CORE))  # complete final source before image success
     check_default_command()
     record['seed_usage'] = inventory(SEED)
     record['verifier_usage'] = inventory(Path('/opt/verifier'))

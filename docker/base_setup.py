@@ -179,6 +179,49 @@ def readable_seed(root: Path) -> None:
         path.chmod(mode)
 
 
+def source_layout(archive: Path, commit: Path) -> tuple[Path, Path]:
+    """Literal producer-owned roots only, before replacement/extraction effects."""
+    from hosted_contract import container_setup_guard
+    container_setup_guard()
+    if CORE != Path('/opt/seed/hermes-source') or archive != Path('/opt/inputs/hermes.tar') or commit != Path('/opt/inputs/hermes.commit'):
+        raise ValueError('fixed producer source/input layout required')
+    return CORE, SEED
+
+
+def publish_source(archive: Path, commit: Path, expected_commit: str, expected_tree: str) -> dict:
+    """Replace only this producer's PM work tree with freshly authenticated source.
+
+    Named native Python installation publishes .hermes/bin in its project root,
+    independently of HERMES_HOME. Never remove selected leaves at the consumer or
+    repin runtime material: reconstruct the entire original public archive and
+    validate its tree/commit/full manifest BEFORE replacing the builder-owned root.
+    """
+    from core_identity import source_manifest, identity_report, require_identity, canonical
+    from acquisition_support import COMMAND_LOG
+    core, seed = source_layout(archive, commit)
+    fresh = seed / 'authenticated-core'
+    fresh.mkdir(mode=0o700)  # exclusive; no reuse or guessed residue cleanup
+    with tarfile.open(archive) as bundle:
+        bundle.extractall(fresh, filter='data')
+    reconstruct_public_core(fresh, commit, expected_commit, expected_tree)
+    expected = source_manifest(fresh)
+    require_identity(expected)
+    report = identity_report(source_manifest(core), expected, 'producer-after-pm')
+    COMMAND_LOG.emit({'core_identity': report})
+    # This is the exclusively created root owned by this bootstrap, not a runtime
+    # store or arbitrary path. Full fresh authentication already succeeded.
+    shutil.rmtree(core)
+    fresh.rename(core)
+    readable_seed(core)
+    published = source_manifest(core)
+    final = identity_report(published, expected, 'producer-after-readability')
+    COMMAND_LOG.emit({'core_identity': final})
+    require_identity(published)
+    payload = canonical(published)
+    (seed / 'core-source-manifest.json').write_bytes(payload)
+    return {'before': report, 'published': final, 'manifest_sha256': hashlib.sha256(payload).hexdigest()}
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["prewarm"]:
         require_execution_ready()

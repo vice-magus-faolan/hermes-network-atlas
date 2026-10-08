@@ -21,6 +21,7 @@ import sys
 import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, file_hash, git_head, git_tree
+from core_identity import source_manifest, require_identity
 
 NAMESPACE = "network-atlas-native-caution-v1"
 PROMPT = b"Install anyway? Only continue if you trust the source. [y/N]:"
@@ -47,17 +48,7 @@ def marker(request: dict) -> bytes:
 
 def verify_core(source: Path) -> None:
     """Authenticate the complete public core snapshot before importing its code."""
-    manifest = {}
-    for path in sorted(source.rglob("*")):
-        relative = path.relative_to(source)
-        if any(part in {".git", "__pycache__"} for part in relative.parts):
-            continue
-        if path.is_symlink():
-            manifest[relative.as_posix()] = ["symlink", os.readlink(path)]
-        elif path.is_file():
-            manifest[relative.as_posix()] = ["file", bool(path.stat().st_mode & 0o111), file_hash(path)]
-    if hashlib.sha256(canonical(manifest)).hexdigest() != CORE_SOURCE_DIGEST:
-        raise ValueError("pinned complete Hermes source identity mismatch")
+    require_identity(source_manifest(source), expected_digest=CORE_SOURCE_DIGEST)
 
 
 def scan_request(source: Path, candidate: Path, origin_commit: str, scope: str) -> dict:
