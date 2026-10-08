@@ -116,6 +116,14 @@ nosuid/nodev/UID/GID/mode bounds and `/tmp` noexec remain unchanged. Actual kern
 flags and both contained current-version results must pass before enable or any
 acceptance claim; installer failure still takes precedence. This source correction
 is not actual corrected hosted/native/full/cold acceptance, which remains pending.
+Subsequent actual run `37729012087` passes the corrected kernel/tool predicates
+and completes genuine native install, but fresh enable fails resolving the pinned
+kittentts URL under network:none. Exact cache/key/freshness deficiency is unknown.
+The diagnostics-only successor retains bounded actual producer/consumer source,
+lock and cache readbacks, native resolver debug output, and enable logs/audit even
+on failure, without changing pins, selection, resolver or isolation. It does not
+claim cache closure or native-enabled/full/cold acceptance. See
+[member-union cache evidence and limits](docs/native-union-cache-diagnostics.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -141,6 +149,7 @@ external database, web app, MCP server, or background service is required.
 - [Fixed snapshot Git trust, cross-UID export and early failure evidence](docs/snapshot-startup-contract.md)
 - [Complete authenticated public core across PM setup and contained copying](docs/complete-core-identity.md)
 - [Bounded actual selected native-tool and kernel execution diagnostics](docs/native-tool-execution.md)
+- [Bounded actual member-union source/cache and failure-log diagnostics](docs/native-union-cache-diagnostics.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

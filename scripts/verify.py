@@ -97,6 +97,17 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_near_cap_enable_output_deadline_and_owned_cleanup_are_bounded",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_independent_producer_file_export_bounds_and_guard_precede_reads",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_pinned_member_workspace_quarantine_moves_cutoff_without_source_edit",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_real_failed_enable_retains_primary_log_in_export",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_real_enable_success_failure_audit_and_no_duplicate_output",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_cache_metadata_hashes_bounds_symlinks_and_no_mutation",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_actual_source_lock_settings_and_member_declaration_are_read_only",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_real_pinned_pm_argv_environment_and_api_offline_contract",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_diagnostic_export_error_never_replaces_actual_enable_failure",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_producer_before_after_readback_survives_warm_failure",
+    "test_docker_union_diagnostics.UnionDiagnosticsTests.test_diagnostic_bounds_fail_closed_without_fabricating_cache_evidence",
     "test_docker_work_execution.WorkExecutionTests.test_all_modes_create_exec_only_work_and_exact_isolation",
     "test_docker_work_execution.WorkExecutionTests.test_exact_inspect_rejects_options_resource_uid_and_mount_drift",
     "test_docker_work_execution.WorkExecutionTests.test_actual_hosted_noexec_and_eacces_remain_refused",
@@ -263,7 +274,8 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "docker/acquisition_support.py", "docker/acquisition_plan.py",
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
-                  "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py")
+                  "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py",
+                  "scripts/native_union_diagnostics.py")
 
 
 def check_docker_source() -> bool:

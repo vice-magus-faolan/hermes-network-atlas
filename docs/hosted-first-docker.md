@@ -22,6 +22,18 @@ Final same-card Gilfoyle review requires actual exact-head hosted admission and
 canonical/cold/cleanup evidence, not preliminary source review or mocked results.
 Missing current-artifact native acceptance remains FAILED, not skipped or green.
 
+Actual run `37729012087` passes the narrow `/work` execution correction and genuine
+native install, then fails fresh member-union enable resolving the pinned kittentts
+URL under network:none. Exact cache-entry/key/freshness deficiency remains unknown;
+warm exit0 and outer UV_OFFLINE do not prove native cache-only resolution. The
+permitted diagnostics-only successor exports actual bounded producer/source/lock/
+cache readbacks and native enable debug/log/exit/hash evidence on failure. It does
+not acquire optional heavyweight closures, patch sources, reuse native selections,
+relax isolation or claim repaired enable. See [the exact evidence contract and
+pinned production trace](native-union-cache-diagnostics.md). Final actual acceptance
+and independent review remain pending; ordinary reviewed hosted continuation is
+coordinator-owned, not a new operator approval relay.
+
 Run `37700249768` at `522b5116` completed public provisioning but its unexported
 committed-image mismatch remains unknown. Diagnostic successor run `37704198046`
 at `3ac37933` retained actual image/stopped readback: only `Config.Cmd` failed,

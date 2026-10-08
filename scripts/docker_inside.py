@@ -173,10 +173,11 @@ def scan_and_install(source: Path, env: dict, mode: str) -> int:
 def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) -> int:
     """Genuine hosted-only admission, then ordinary native dependency consent."""
     from hosted_contract import require_hosted
-    from prepare_acceptance import enable
     diagnostics = require_hosted(os.environ, workspace=ROOT, commit=git_head())
     env.update(diagnostics)
-    env['UV_OFFLINE'] = '1'  # real native cache-only resolution, no online fallback
+    # Pinned PM strips UV_OFFLINE. Actual Docker network:none + inherited
+    # syscall denial enforce isolation; never claim this env flag enforces it.
+    env['UV_OFFLINE'] = '1'
     install = [*base, "install", str(candidate), git_head(), "--admission-mode", "hosted-ci-caution",
                "--origin-commit", git_head()]
     diagnostic_error = tool_diagnostics(env)
@@ -189,14 +190,56 @@ def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) ->
     if diagnostic_error:
         raise RuntimeError(diagnostic_error)
     # Narrow supported PM prompt only, not blanket yes or scan confirmation.
-    enable([*base, "enable"], FIXTURE, env)
-    BoundedDirectory(EXPORT).copy(FIXTURE / "enable.log", "enable.log")
+    hosted_enable([*base, "enable"], source, env)
     receipt = json.loads((FIXTURE / "native-enabled.json").read_text())
     receipt.update(candidate_commit=git_head(), candidate_tree=git_tree(), fixture_commit=git_head(),
                    setup_network="Docker network none plus inherited syscall denial", environment=env,
                    admission_mode="hosted-ci-caution")
     (FIXTURE / "admission.json").write_text(json.dumps(receipt, sort_keys=True, indent=2))
     return canonical(receipt, source)
+
+
+def union_diagnostics(source: Path, env: dict, phase: str) -> str | None:
+    """Read actual public inputs/cache, never patch or fabricate PM selection."""
+    from native_union_diagnostics import snapshot, emit
+    try:
+        report = snapshot(source, Path(env['UV_CACHE_DIR']), member=FIXTURE / 'hermes/plugins/network-atlas')
+        report['union_phase'] = phase
+        emit(report, lambda value: write_json(phase + '.json', value))
+        return None
+    except Exception as exc:
+        try:
+            write_json(phase + '.json', {'union_phase': phase, 'error': type(exc).__name__,
+                                        'message': str(exc)[:512], 'native_acceptance': False})
+        except Exception:
+            pass  # Returned secondary failure still refuses success; no fake evidence.
+        return f'union diagnostics failed: {type(exc).__name__}'
+
+
+def hosted_enable(argv: list[str], source: Path, env: dict) -> None:
+    """Keep primary native errors and export evidence even when enable raises."""
+    from prepare_acceptance import enable
+    before_error = union_diagnostics(source, env, 'before-enable')
+    # Supported pinned PM verbose streaming exposes real resolver/cache decisions.
+    # Neither setting changes resolution, acquisition authority or selection.
+    child_env = dict(env, HERMES_VERBOSE='1', RUST_LOG='uv=debug')
+    original = None
+    try:
+        enable(argv, FIXTURE, child_env)
+    except BaseException as exc:
+        original = exc
+        raise
+    finally:
+        errors = [error for error in (before_error, union_diagnostics(source, env, 'after-enable')) if error]
+        for name in ('enable.log', 'enable-command.json'):
+            try:
+                BoundedDirectory(EXPORT).copy(FIXTURE / name, name)
+            except Exception as exc:
+                errors.append(f'enable evidence export failed: {type(exc).__name__}')
+        if errors:
+            if original is None:
+                raise RuntimeError('; '.join(errors))
+            original.add_note('; '.join(errors))
 
 
 def tool_diagnostics(env: dict) -> str | None:

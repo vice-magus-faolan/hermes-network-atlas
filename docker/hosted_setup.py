@@ -111,7 +111,20 @@ def warm() -> None:
     sys.path.insert(0, str(CORE))
     import pm
     from pm.plugin_inputs import Members
-    pm.sync_venv(explicit=True, plugins=Members([SEED / 'dependency-input']), project_root=CORE)
+    before_error = warm_diagnostics('before-warm')
+    original = None
+    try:
+        pm.sync_venv(explicit=True, plugins=Members([SEED / 'dependency-input']), project_root=CORE)
+    except BaseException as exc:
+        original = exc
+        raise
+    finally:
+        after_error = warm_diagnostics('after-warm-failure' if original else 'after-warm')
+        errors = [error for error in (before_error, after_error) if error]
+        if errors:
+            if original is None:
+                raise RuntimeError('; '.join(errors))
+            original.add_note('; '.join(errors))
     from pm.environments import runtime_facts_path, selected_venv
     facts = json.loads(runtime_facts_path(CORE).read_text())
     lock = Path(facts['packages']['venv']['resolved_lock'])
@@ -121,6 +134,43 @@ def warm() -> None:
     executable = selected_venv(CORE) / 'bin/python'
     packages = run([str(executable), str(PUBLIC / 'hosted_setup.py'), 'inventory'])
     (SEED / 'union-packages.json').write_text(packages)
+
+
+def source_warm_diagnostics(phase: str) -> None:
+    """Bounded actual readback survives in existing audited bootstrap output."""
+    from native_union_diagnostics import snapshot, emit, retain_producer
+    from pm.environments import runtime_facts_path
+    facts_path = runtime_facts_path(CORE)
+    workspace = None
+    if facts_path.exists():
+        facts = json.loads(facts_path.read_text())
+        resolved = facts.get('packages', {}).get('venv', {}).get('resolved_lock')
+        if resolved:
+            lock = Path(resolved).resolve()
+            if not lock.is_relative_to(SEED):
+                raise ValueError('actual selected workspace escapes public seed')
+            workspace = lock.parent
+    report = snapshot(CORE, SEED / 'hermes/cache/uv', member=SEED / 'dependency-input', workspace=workspace)
+    report['union_phase'] = phase
+    emit(report, lambda value: retain_producer(SEED, phase, value))
+    print(json.dumps(report, sort_keys=True), flush=True)
+
+
+def warm_diagnostics(phase: str) -> str | None:
+    """Diagnostics cannot replace a genuine resolver error or invent closure."""
+    try:
+        source_warm_diagnostics(phase)
+        return None
+    except Exception as exc:
+        from native_union_diagnostics import retain_producer
+        failure = {'union_phase': phase, 'error': type(exc).__name__, 'message': str(exc)[:512],
+                   'native_acceptance': False, 'diagnostics_only': True}
+        try:
+            retain_producer(SEED, phase, failure)
+        except Exception:
+            pass
+        print(json.dumps(failure, sort_keys=True), flush=True)
+        return f'union warm diagnostic failed: {type(exc).__name__}'
 
 
 def tool_artifacts(lock: dict) -> list[dict]:
@@ -174,7 +224,8 @@ def main() -> int:
     (home / 'config.yaml').write_text('{"plugins":{"enabled":[],"disabled":[]}}')
     os.environ.update(HOME=str(SEED / 'user'), HERMES_HOME=str(home), TMPDIR=str(SEED),
                       HERMES_RUNTIME_DIR=str(SEED / 'tools'), UV_PYTHON_DOWNLOADS='never',
-                      HERMES_MANAGED='false', HERMES_ENABLE_PROJECT_PLUGINS='0')
+                      HERMES_MANAGED='false', HERMES_ENABLE_PROJECT_PLUGINS='0',
+                      HERMES_VERBOSE='1', RUST_LOG='uv=debug')
     # Native PM deletes fetch-<hash> entries on successful publication. Capture
     # their genuine bytes first; never infer an archive from installed facts.
     run([sys.executable, str(PUBLIC / 'hosted_setup.py'), 'fetch-tools'])
@@ -196,6 +247,7 @@ def main() -> int:
               'union_packages': json.loads((SEED / 'union-packages.json').read_text()),
               'tools': {name: lock['packages'][name] for name in ('python', 'uv')},
               'actual_tool_artifacts': json.loads((SEED / 'tool-archives.json').read_text()),
+              'union_diagnostics_sha256': hashlib.sha256((SEED / 'union-diagnostics.json').read_bytes()).hexdigest(),
               'source_archive_sha256': hashlib.sha256((PUBLIC / 'hermes.tar').read_bytes()).hexdigest()}
     shutil.move(home / 'cache/uv', SEED / 'uv-cache')
     for path in (home, member, SEED / 'user'):

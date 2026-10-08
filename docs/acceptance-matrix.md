@@ -102,6 +102,19 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Eleven additive mandatory `tests/test_docker_union_diagnostics.py::UnionDiagnosticsTests`
+IDs cover real failed-enable export RED/GREEN, actual PTY audit/primary identity,
+near-cap output and deadline/owned reaping, cache metadata/opaque hashes/symlink/
+count/report/malformed refusals, read-only source/lock/member projection, actual
+pinned PM argv/sanitizers/API and tiny workspace quarantine, producer failure
+persistence and independent ownership-guarded/bounded export, plus primary-error
+precedence. Normal/-O are required; all inherited test bodies/fixtures/IDs remain.
+This is an explicitly diagnostics-only successor: actual run `37729012087` completed
+native install but not enable, and its exact cache freshness/key deficiency remains
+unknown. Intercepted pinned-engine calls and tiny fixtures are not resolution or
+corrected hosted/native/full/cold acceptance. See
+[member-union cache diagnostics](native-union-cache-diagnostics.md).
+
 Eight additive mandatory `tests/test_docker_work_execution.py::WorkExecutionTests`
 IDs cover exec only on the exact private `/work` create/inspect contract across
 all modes; option/resource/UID/mount/source/export mutations; authenticated actual

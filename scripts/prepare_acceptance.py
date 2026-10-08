@@ -9,6 +9,8 @@ resolver, enabled selection or admission mocks. Run again for a changed candidat
 from __future__ import annotations
 
 import argparse
+import errno
+import hashlib
 import io
 import json
 import os
@@ -47,40 +49,82 @@ def run(command: list[str], root: Path, env: dict, timeout: int = 600) -> str:
 
 
 def enable(command: list[str], root: Path, env: dict) -> None:
-    """Supply authorized dependency consent, never force/accept scan warnings."""
+    """Supply only the native PM prompt; retain bounded evidence on failure."""
+    if len(command) > 64 or len(json.dumps(command).encode()) > 8192:
+        raise ValueError('native enable argv bound')
     master, slave = pty.openpty()
-    process = subprocess.Popen(command, cwd=root, env=env, stdin=slave, stdout=slave, stderr=slave,
-                               start_new_session=True)
-    os.close(slave)
-    output = bytearray()
-    answered = False
-    deadline = time.monotonic() + 900
     try:
-        while time.monotonic() < deadline:
-            if select.select([master], [], [], 0.1)[0]:
-                try:
-                    data = os.read(master, 65536)
-                except OSError:
-                    break
-                output.extend(data)
-                if len(output) > 4 * 1024 * 1024:
-                    raise RuntimeError("native setup exceeded log bound")
-                if b"Prepare these with Hermes through PM now? [y/N]:" in output and not answered:
-                    os.write(master, b"y\n")
-                    answered = True
-            if process.poll() is not None:
-                break
-        (root / "enable.log").write_bytes(output)
-        if process.wait(timeout=5) != 0:
-            raise RuntimeError(output.decode(errors="replace"))
+        process = subprocess.Popen(command, cwd=root, env=env, stdin=slave, stdout=slave, stderr=slave,
+                                   start_new_session=True)
+    except BaseException:
+        os.close(master)
+        raise
     finally:
-        if process.returncode is None:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        os.close(slave)
+    output = bytearray()
+    audit = {'argv': command, 'state': 'started', 'output_complete': False}
+    started = time.monotonic()
+    original = None
+    try:
+        audit['answered'] = enable_output(master, output, started + 900)
+        audit.update(output_complete=True, exit_code=process.wait(timeout=5), state='complete')
+        if audit['exit_code'] != 0:
+            audit['state'] = 'failed'
+            raise RuntimeError(f"native enable failed: exit={audit['exit_code']}; see enable.log/enable-command.json")
+    except BaseException as exc:
+        original = exc
+        audit.update(state='failed', error=type(exc).__name__)
+        raise
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         process.wait()
         os.close(master)
+        audit.update(exit_code=process.returncode, elapsed_seconds=time.monotonic() - started,
+                     output_bytes=len(output), output_sha256=hashlib.sha256(output).hexdigest())
+        try:
+            enable_evidence(root, output, audit)
+        except BaseException as exc:
+            if original is None:
+                raise
+            original.add_note(f'native enable evidence failed: {type(exc).__name__}')
+
+
+def enable_output(master: int, output: bytearray, deadline: float) -> bool:
+    """Drain to actual PTY EOF, not the first observed child exit."""
+    answered = False
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('native enable deadline')
+        if not select.select([master], [], [], min(0.1, remaining))[0]:
+            continue
+        try:
+            data = os.read(master, 65536)
+        except OSError as exc:
+            if exc.errno != errno.EIO:
+                raise
+            return answered
+        if not data:
+            return answered
+        space = 4 * 1024 ** 2 - len(output)
+        output.extend(data[:space])
+        if len(data) > space:
+            raise RuntimeError('native setup exceeded log bound')
+        if b'Prepare these with Hermes through PM now? [y/N]:' in output and not answered:
+            os.write(master, b'y\n')
+            answered = True
+
+
+def enable_evidence(root: Path, output: bytearray, audit: dict) -> None:
+    """Private actual output and command audit, never repeated in traceback."""
+    for name, payload in (('enable.log', bytes(output)),
+                          ('enable-command.json', json.dumps(audit, sort_keys=True).encode())):
+        fd = os.open(root / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(payload)
 
 
 def snapshot(source: Path, root: Path) -> Path:

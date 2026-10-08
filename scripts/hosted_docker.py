@@ -20,7 +20,8 @@ from docker_acceptance import Docker, clean_checkout, command, lease, require_su
 from docker_builder import (BOOTSTRAP_NAME, BootstrapIdentity, UPSTREAM, UPSTREAM_DIGEST, CORE_TREE,
                             bootstrap_command, commit_command, export_bootstrap, finish_build,
                             registry_budget, reject_existing_owned, validate_bootstrap, read_final_image,
-                            resource_ids, require_bootstrap_success, require_base_command)
+                            resource_ids, require_bootstrap_success, require_base_command,
+                            stopped_bootstrap, copy_seed_member, export_error_text)
 from docker_contract import ENDPOINT, OWNER, OWNER_VALUE
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
 from hosted_contract import require_bootstrap_contract, validate_setup_inventory
@@ -29,7 +30,9 @@ PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/
                 'hosted_setup.py': 'docker/hosted_setup.py', 'base_setup.py': 'docker/base_setup.py',
                 'acquisition_support.py': 'docker/acquisition_support.py', 'acquisition_plan.py': 'docker/acquisition_plan.py',
                 'offline_guard.py': 'scripts/offline_guard.py', 'hosted_contract.py': 'scripts/hosted_contract.py',
-                'hosted_apt.py': 'docker/hosted_apt.py', 'core_identity.py': 'scripts/core_identity.py'}
+                'hosted_apt.py': 'docker/hosted_apt.py', 'core_identity.py': 'scripts/core_identity.py',
+                'native_union_diagnostics.py': 'scripts/native_union_diagnostics.py',
+                'docker_evidence.py': 'scripts/docker_evidence.py'}
 FAILURES = ('error', 'export_error', 'cleanup_error', 'outcome_export_error', 'registry_error', 'resource_error')
 
 
@@ -122,8 +125,24 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
     except BaseException as exc:
         outcome['error'] = f'{type(exc).__name__}: {exc}'
     finally:
+        export_union_diagnostics(docker, evidence, identity, root / 'context', hosted, outcome)
         finish_build(docker, evidence, identity, outcome, provenance=True)
     return outcome, initial
+
+
+def export_union_diagnostics(docker, evidence: Path, identity, public: Path, hosted: dict, outcome: dict) -> None:
+    """Independent failed-stage export; exact stopped ownership before reading."""
+    try:
+        data = stopped_bootstrap(docker, identity)
+        validate_bootstrap(data, identity, public, hosted=hosted)
+        budget = BoundedDirectory(evidence)
+        row = copy_seed_member(docker, data['Id'], budget, 'union-diagnostics.json')
+        budget.json('union-diagnostics-export.json', row)
+        outcome['union_diagnostics'] = row
+        if data['State']['ExitCode'] == 0 and row['status'] != 'present':
+            raise ValueError('required union diagnostics absent after successful setup')
+    except BaseException as exc:
+        outcome.setdefault('export_error', export_error_text(exc))
 
 
 def successful(outcome: dict) -> None:

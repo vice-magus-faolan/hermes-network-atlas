@@ -1,5 +1,11 @@
 # Pinned native PM contract audit
 
+For the subsequent actually observed fresh member-union enable/cache refusal,
+see [native-union-cache-diagnostics.md](native-union-cache-diagnostics.md): exact
+pinned generation/quarantine/argv/environment trace, executed contract seams,
+UV_OFFLINE stripping, bounded real resolver diagnostics and preserved unknowns.
+The latest successor is diagnostics-only, not native-enabled acceptance.
+
 ## Observed defect and narrow repair
 
 GitHub run `37628525414`, attempt 1, job `112816449150`, checked out
