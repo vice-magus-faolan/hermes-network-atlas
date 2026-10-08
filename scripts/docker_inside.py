@@ -179,9 +179,15 @@ def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) ->
     env['UV_OFFLINE'] = '1'  # real native cache-only resolution, no online fallback
     install = [*base, "install", str(candidate), git_head(), "--admission-mode", "hosted-ci-caution",
                "--origin-commit", git_head()]
+    diagnostic_error = tool_diagnostics(env)
     code, _text = execute(install, env, "install.log")
     if code:
-        raise RuntimeError("real hosted native admission failed")
+        error = RuntimeError("real hosted native admission failed")
+        if diagnostic_error:
+            error.add_note(diagnostic_error)
+        raise error
+    if diagnostic_error:
+        raise RuntimeError(diagnostic_error)
     # Narrow supported PM prompt only, not blanket yes or scan confirmation.
     enable([*base, "enable"], FIXTURE, env)
     BoundedDirectory(EXPORT).copy(FIXTURE / "enable.log", "enable.log")
@@ -191,6 +197,20 @@ def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) ->
                    admission_mode="hosted-ci-caution")
     (FIXTURE / "admission.json").write_text(json.dumps(receipt, sort_keys=True, indent=2))
     return canonical(receipt, source)
+
+
+def tool_diagnostics(env: dict) -> str | None:
+    """A secondary diagnostic error must never prevent the genuine installer.
+
+    Called only after full scan/DANGEROUS refusal and hosted scope validation.
+    Fixed --version probes do not install, heal mode bits or grant permission.
+    """
+    argv = ["/opt/verifier/bin/python", str(ROOT / "scripts" / "native_tool_execution.py")]
+    try:
+        code, _text = execute(argv, env, "tool-probe.log", timeout=30)
+        return f"tool diagnostic collection failed: exit={code}" if code else None
+    except Exception as exc:
+        return f"tool diagnostic collection failed: {type(exc).__name__}"
 
 
 def canonical(receipt: dict, source: Path) -> int:

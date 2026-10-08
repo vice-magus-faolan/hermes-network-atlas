@@ -102,6 +102,18 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Eight additional mandatory `tests/test_docker_tool_execution.py::ToolExecutionTests`
+IDs cover actual pinned selection without PM healing/acquisition, current identity
+drift, real tiny contained ELF/link/hash/mode/EACCES, escape/loop/missing/FIFO/size/
+loader refusals, actual kernel mountinfo/statvfs versus intended HostConfig,
+incremental pre-probe report and generic bounded exporter retention, real failed/
+output/deadline owned children, and installer-primary/diagnostic-secondary behavior.
+Normal/-O are required; all inherited tests/fixtures remain unchanged. The exact
+historical permission cause in run `37720941089` remains UNKNOWN; this successor
+changes diagnostics only, not mount/permission/PM/admission/isolation contracts.
+These tiny production seams are not corrected hosted/native/full/cold acceptance.
+See [native tool execution evidence](native-tool-execution.md).
+
 Six additional mandatory `tests/test_docker_core_identity.py::CoreIdentityTests`
 IDs exercise actual pinned named dispatch/project-local launcher writes with
 acquisition and external PATH exposure replaced, full producer reconstruction

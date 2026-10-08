@@ -102,6 +102,13 @@ consumer exports full actual seed/copy manifests before refusing any drift.
 Pins, complete-tree equality, scanner exclusions and isolation remain unchanged.
 This is source/fixture evidence, not corrected hosted/native acceptance. See
 [complete-core identity contract](docs/complete-core-identity.md).
+Actual hosted run `37720941089` now passes complete source identity and full native
+CAUTION scanning, but genuine installation reports EACCES executing fixture uv.
+The precise historical permission cause is unknown. The diagnostics-only successor
+retains bounded actual native tool/ancestor/hash/loader/kernel-mount evidence and
+fixed version-attempt errno before installation, without changing permissions or
+isolation. Actual corrected native/full/cold acceptance remains pending. See
+[native-tool execution evidence](docs/native-tool-execution.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -126,6 +133,7 @@ external database, web app, MCP server, or background service is required.
 - [Disposable Docker acceptance and separate local/native/hosted gates](docs/docker-acceptance.md)
 - [Fixed snapshot Git trust, cross-UID export and early failure evidence](docs/snapshot-startup-contract.md)
 - [Complete authenticated public core across PM setup and contained copying](docs/complete-core-identity.md)
+- [Bounded actual selected native-tool and kernel execution diagnostics](docs/native-tool-execution.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

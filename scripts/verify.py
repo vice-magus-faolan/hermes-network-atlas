@@ -97,6 +97,14 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_tool_execution.ToolExecutionTests.test_actual_pinned_selection_uses_binary_definition_without_healing_or_acquisition",
+    "test_docker_tool_execution.ToolExecutionTests.test_selection_version_target_artifact_entry_and_store_drift_refuse",
+    "test_docker_tool_execution.ToolExecutionTests.test_real_contained_elf_and_symlink_metadata_hash_and_permission_errno",
+    "test_docker_tool_execution.ToolExecutionTests.test_escape_loop_missing_special_and_oversized_paths_never_execute",
+    "test_docker_tool_execution.ToolExecutionTests.test_effective_mount_projection_and_statvfs_not_hostconfig",
+    "test_docker_tool_execution.ToolExecutionTests.test_incremental_report_precedes_probe_and_export_refuses_bounds",
+    "test_docker_tool_execution.ToolExecutionTests.test_real_probe_failure_output_deadline_and_owned_child_cleanup",
+    "test_docker_tool_execution.ToolExecutionTests.test_hosted_installer_primary_survives_diagnostic_failure_without_isolation_changes",
     "test_docker_core_identity.CoreIdentityTests.test_real_pinned_named_install_publishes_source_local_launchers",
     "test_docker_core_identity.CoreIdentityTests.test_producer_rebuilds_entire_source_before_readability_and_rejects_bad_archive",
     "test_docker_core_identity.CoreIdentityTests.test_mutation_addition_removal_mode_and_symlink_drift_refuse",
@@ -247,7 +255,7 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "docker/acquisition_support.py", "docker/acquisition_plan.py",
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
-                  "scripts/docker_snapshot.py", "scripts/core_identity.py")
+                  "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py")
 
 
 def check_docker_source() -> bool:
