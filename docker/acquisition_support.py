@@ -41,10 +41,10 @@ class PublicRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def bounded_run(argv: list[str], cwd: Path, *, timeout: float = 900, limit: int = 4 * 1024 ** 2,
-                audit: dict | None = None, poll=None) -> str:
+                audit: dict | None = None, poll=None, env: dict | None = None) -> str:
     """Bound setup output before retaining it; reap only the owned process group."""
     child = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, start_new_session=True)
+                             stderr=subprocess.STDOUT, start_new_session=True, env=env)
     selector = selectors.DefaultSelector()
     output = bytearray()
     deadline = time.monotonic() + timeout

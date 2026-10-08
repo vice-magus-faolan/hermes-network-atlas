@@ -97,6 +97,16 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_git_preparation.GitPreparationTests.test_producer_prepares_before_fresh_native_warm",
+    "test_docker_git_preparation.GitPreparationTests.test_exact_actual_core_requirement_lock_and_drift_refuse",
+    "test_docker_git_preparation.GitPreparationTests.test_pinned_uv_cli_contract_and_no_optional_dependency_acquisition",
+    "test_docker_git_preparation.GitPreparationTests.test_meaningful_online_then_independent_offline_replay_and_owned_disposal",
+    "test_docker_git_preparation.GitPreparationTests.test_actual_pep610_missing_malformed_commit_and_extra_distribution_refuse",
+    "test_docker_git_preparation.GitPreparationTests.test_real_tiny_git_commit_readback_hash_and_absent_object_refusal",
+    "test_docker_git_preparation.GitPreparationTests.test_direct_local_guard_missing_tools_and_existing_owned_directory_precede_effects",
+    "test_docker_git_preparation.GitPreparationTests.test_resources_real_owned_child_output_deadline_and_primary_error",
+    "test_docker_git_preparation.GitPreparationTests.test_failed_preparation_never_reaches_native_warm_or_hides_primary",
+    "test_docker_git_preparation.GitPreparationTests.test_independent_export_requires_complete_proof_and_ownership_before_reads",
     "test_docker_offline.OfflineConsumerTests.test_atlas_enable_flag_reaches_actual_native_keyword_contract",
     "test_docker_offline.OfflineConsumerTests.test_default_online_enable_ignores_ambient_policy",
     "test_docker_offline.OfflineConsumerTests.test_offline_flag_refuses_other_actions_before_mode_or_filesystem",
@@ -284,7 +294,7 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
                   "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py",
-                  "scripts/native_union_diagnostics.py")
+                  "scripts/native_union_diagnostics.py", "docker/hosted_git.py")
 
 
 def check_docker_source() -> bool:

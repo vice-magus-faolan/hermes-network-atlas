@@ -102,6 +102,20 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Ten additive mandatory `tests/test_docker_git_preparation.py::GitPreparationTests`
+IDs cover actual producer command ordering RED/GREEN; exact original declaration/
+lock drift refusal; actual pinned uv help/parser and nonrealizing PM selection;
+substituted narrow online/independent offline commands and owned target disposal;
+actual-file PEP 610 name/version/source/commit/malformed/additional-distribution
+refusals; tiny real Git object hashing/missing/forged-object refusal; direct local,
+missing-tool and preexisting-root pre-effect refusal; actual owned-child deadline/
+output/reaping/resource caps and primary-error precedence; failed preparation
+preventing warm; and independently guarded/bounded complete provenance export.
+Normal/-O are required. All inherited IDs/assertions/fixtures remain; two old
+controller methods add only documented new-boundary decorators, with unchanged
+bodies. Local installs are substituted, not genuine Misaki/native acceptance.
+See [producer-only Git preparation and limits](producer-git-preparation.md).
+
 Nine additive mandatory `tests/test_docker_offline.py::OfflineConsumerTests` IDs
 exercise literal predecessor parser/caller RED and successor explicit offline
 enable GREEN, effect-free non-enable flag refusal, unchanged online default,

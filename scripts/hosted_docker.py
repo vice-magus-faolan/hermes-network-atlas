@@ -32,6 +32,7 @@ PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/
                 'offline_guard.py': 'scripts/offline_guard.py', 'hosted_contract.py': 'scripts/hosted_contract.py',
                 'hosted_apt.py': 'docker/hosted_apt.py', 'core_identity.py': 'scripts/core_identity.py',
                 'native_union_diagnostics.py': 'scripts/native_union_diagnostics.py',
+                'hosted_git.py': 'docker/hosted_git.py',
                 'docker_evidence.py': 'scripts/docker_evidence.py'}
 FAILURES = ('error', 'export_error', 'cleanup_error', 'outcome_export_error', 'registry_error', 'resource_error')
 
@@ -114,6 +115,9 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         data = wait_setup(docker, identity, root / 'context', hosted, evidence)
         require_bootstrap_success(data)
         outcome['export_hashes'] = export_bootstrap(docker, evidence, identity, provenance=True)
+        export_git_preparation(docker, evidence, identity, root / 'context', hosted, outcome)
+        if 'export_error' in outcome:
+            raise ValueError('Git preparation provenance export refused before image commit')
         inventory = json.loads(regular_read(evidence / 'inventory.json', 512 * 1024))
         validate_setup_inventory(inventory)
         image = docker.run(commit_command(data, identity, root / 'context', hosted=hosted), timeout=300).decode().strip()
@@ -125,6 +129,7 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
     except BaseException as exc:
         outcome['error'] = f'{type(exc).__name__}: {exc}'
     finally:
+        export_git_preparation(docker, evidence, identity, root / 'context', hosted, outcome)
         export_union_diagnostics(docker, evidence, identity, root / 'context', hosted, outcome)
         finish_build(docker, evidence, identity, outcome, provenance=True)
     return outcome, initial
@@ -141,6 +146,25 @@ def export_union_diagnostics(docker, evidence: Path, identity, public: Path, hos
         outcome['union_diagnostics'] = row
         if data['State']['ExitCode'] == 0 and row['status'] != 'present':
             raise ValueError('required union diagnostics absent after successful setup')
+    except BaseException as exc:
+        outcome.setdefault('export_error', export_error_text(exc))
+
+
+def export_git_preparation(docker, evidence: Path, identity, public: Path, hosted: dict, outcome: dict) -> None:
+    """Incremental Git proof exports independently, including failed preparation."""
+    try:
+        data = stopped_bootstrap(docker, identity)
+        validate_bootstrap(data, identity, public, hosted=hosted)
+        budget = BoundedDirectory(evidence)
+        row = copy_seed_member(docker, data['Id'], budget, 'git-preparation.json')
+        budget.json('git-preparation-export.json', row)
+        outcome['git_preparation'] = row
+        if data['State']['ExitCode'] == 0:
+            if row['status'] != 'present':
+                raise ValueError('required Git preparation absent after successful setup')
+            proof = json.loads(regular_read(evidence / 'git-preparation.json', 32 * 1024))
+            from hosted_git import require_complete
+            require_complete(proof)
     except BaseException as exc:
         outcome.setdefault('export_error', export_error_text(exc))
 

@@ -132,6 +132,16 @@ explicit native offline dependency policy only during network-none enable. The
 default online setup, native fresh union/selection, scanning and consent remain.
 This is not demonstrated cache closure or corrected hosted/native acceptance.
 See [authenticated offline consumer and remaining gates](docs/native-offline-consumer.md).
+Actual hosted run `37806326519` reached explicit offline uv but refused the pinned
+Misaki Git fetch after genuine native install. Online static metadata success did
+not establish source closure; the precise historical cache deficiency is unknown.
+The narrow producer successor prepares only that immutable Git requirement with
+supported pinned uv no-deps installation into disposable targets, requires an
+independent empty-target offline replay and real origin/Git-object readback, then
+disposes both targets before seed publication. No extras/selected state transfer,
+opaque cache edits, consumer networking or core/tool pin changes are introduced.
+Actual corrected full union/native/canonical/cold acceptance remains pending. See
+[producer Git preparation and evidence limits](docs/producer-git-preparation.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -159,6 +169,7 @@ external database, web app, MCP server, or background service is required.
 - [Bounded actual selected native-tool and kernel execution diagnostics](docs/native-tool-execution.md)
 - [Bounded actual member-union source/cache and failure-log diagnostics](docs/native-union-cache-diagnostics.md)
 - [Authenticated core prerequisite and explicit network-none offline enable](docs/native-offline-consumer.md)
+- [Narrow immutable Git-source preparation, offline replay and disposal](docs/producer-git-preparation.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

@@ -167,6 +167,7 @@ class BootstrapRepairTests(unittest.TestCase):
                 setup.apt({'debian_snapshot': 'wrong'})
             provision.assert_not_called()
 
+    @patch('hosted_docker.export_git_preparation', new=lambda *args: None)
     def test_hosted_build_success_crosschecks_process_proof_before_commit_and_owned_cleanup(self):
         # Actual controller/export/commit/readback functions; only external
         # daemon/acquisition/waiting are synthetic. Not an actual container run.

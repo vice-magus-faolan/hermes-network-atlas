@@ -237,6 +237,7 @@ def main() -> int:
     member.mkdir()
     (member / 'plugin.yaml').write_text(json.dumps({'name': 'dependency-input', 'version': '1.0.0',
                                                  'python_dependencies': inputs['plugin_python_dependencies']}))
+    run(['/opt/verifier/bin/python', str(PUBLIC / 'hosted_setup.py'), 'prepare-git'])
     run(['/opt/verifier/bin/python', str(PUBLIC / 'hosted_setup.py'), 'warm'])
     lock = json.loads((CORE / 'pm/lock.json').read_text())
     if lock['packages']['uv']['version'] != inputs['uv']:
@@ -248,6 +249,7 @@ def main() -> int:
               'tools': {name: lock['packages'][name] for name in ('python', 'uv')},
               'actual_tool_artifacts': json.loads((SEED / 'tool-archives.json').read_text()),
               'union_diagnostics_sha256': hashlib.sha256((SEED / 'union-diagnostics.json').read_bytes()).hexdigest(),
+              'git_preparation': json.loads((SEED / 'git-preparation.json').read_text()),
               'source_archive_sha256': hashlib.sha256((PUBLIC / 'hermes.tar').read_bytes()).hexdigest()}
     shutil.move(home / 'cache/uv', SEED / 'uv-cache')
     for path in (home, member, SEED / 'user'):
@@ -281,6 +283,11 @@ if __name__ == '__main__':
         warm()
     elif sys.argv[1:] == ['fetch-tools']:
         fetch_tools()
+    elif sys.argv[1:] == ['prepare-git']:
+        container_setup_guard()
+        sys.path.insert(0, str(CORE))
+        from hosted_git import prepare
+        prepare(CORE, SEED)
     elif not sys.argv[1:]:
         raise SystemExit(main())
     else:
