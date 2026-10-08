@@ -102,6 +102,19 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Thirteen additive mandatory `tests/test_docker_retention.py::RetentionTests` IDs
+cover actual producer ordering, real tiny shallow packing with every reachable/
+unreachable object and original absent parents preserved, full source/modes/links,
+effect-free local/layout/ambient/alternate refusals, corrupt/changed object and
+source refusal, actual-file same-budget RED then real-pack GREEN, component byte/
+file totals and unchanged limits, bounded malformed/special/deadline reporting,
+real owned-child failure/output/deadline and unrelated survival, primary-error
+precedence, and independently ownership-first bounded export. Normal/-O required.
+All 437 inherited IDs/method bodies/assertions and 49 tests-tree paths remain;
+only two old minimal daemon seams gain documented new-export-boundary decorators.
+These synthetic budgets and real tiny Git objects are not the actual hosted seed
+or native acceptance. See [producer retention](producer-retention.md).
+
 Ten additive mandatory `tests/test_docker_git_preparation.py::GitPreparationTests`
 IDs cover actual producer command ordering RED/GREEN; exact original declaration/
 lock drift refusal; actual pinned uv help/parser and nonrealizing PM selection;

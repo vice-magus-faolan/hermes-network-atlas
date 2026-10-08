@@ -97,6 +97,19 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_retention.RetentionTests.test_real_same_budget_red_then_pack_green_with_no_source_or_cache_exclusions",
+    "test_docker_retention.RetentionTests.test_real_owned_runner_output_deadline_and_unrelated_child_survives",
+    "test_docker_retention.RetentionTests.test_pack_or_object_drift_failure_prevents_pruning_success_and_retains_stage",
+    "test_docker_retention.RetentionTests.test_export_actual_report_size_type_and_forged_success_refuse",
+    "test_docker_retention.RetentionTests.test_accounting_special_files_deadline_and_report_size_refuse_without_success",
+    "test_docker_retention.RetentionTests.test_actual_producer_reduces_before_unchanged_inventory_guard",
+    "test_docker_retention.RetentionTests.test_real_git_pack_retains_every_object_missing_parent_source_modes_and_links",
+    "test_docker_retention.RetentionTests.test_local_wrong_layout_ambient_git_and_alternate_object_store_refuse_before_effects",
+    "test_docker_retention.RetentionTests.test_corrupt_objects_or_manifest_drift_refuse_without_success",
+    "test_docker_retention.RetentionTests.test_bounded_component_totals_and_current_guard_keep_failure_evidence",
+    "test_docker_retention.RetentionTests.test_success_requires_complete_compaction_report_and_current_limits",
+    "test_docker_retention.RetentionTests.test_failed_child_primary_survives_diagnostic_failure_and_no_pruning",
+    "test_docker_retention.RetentionTests.test_independent_export_ownership_size_and_primary_error",
     "test_docker_git_preparation.GitPreparationTests.test_producer_prepares_before_fresh_native_warm",
     "test_docker_git_preparation.GitPreparationTests.test_exact_actual_core_requirement_lock_and_drift_refuse",
     "test_docker_git_preparation.GitPreparationTests.test_pinned_uv_cli_contract_and_no_optional_dependency_acquisition",
@@ -294,7 +307,7 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
                   "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py",
-                  "scripts/native_union_diagnostics.py", "docker/hosted_git.py")
+                  "scripts/native_union_diagnostics.py", "docker/hosted_git.py", "docker/hosted_retention.py")
 
 
 def check_docker_source() -> bool:

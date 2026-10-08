@@ -28,6 +28,7 @@ from acquisition_support import (bounded_run, finite_download, reconstruct_publi
                                  TERMINAL_ROW_LIMIT, COMMAND_ARGV_LIMIT)
 from base_setup import readable_seed, inventory, check_default_command, publish_source
 from hosted_apt import provision
+from hosted_retention import compact_core, retained_inventory
 
 PUBLIC = Path('/opt/inputs')
 SEED = Path('/opt/seed')
@@ -258,6 +259,7 @@ def main() -> int:
     # PM's real named Python install publishes project-local launchers. Rebuild
     # source at the producer, not by deleting/masking leaves at scan consumers.
     record['core_identity'] = publish_source(PUBLIC / 'hermes.tar', PUBLIC / 'hermes.commit', HERMES, TREE)
+    compaction = compact_core(CORE, SEED, HERMES, TREE)
     # Native PM tools contain genuine tool manifests/facts; source-scoped union
     # generations/facts/receipts are NOT reused by the acceptance consumer.
     if any(path.name in {'selected.json', 'admission.json', 'native-enabled.json'} for path in SEED.rglob('*')):
@@ -267,11 +269,14 @@ def main() -> int:
     from core_identity import source_manifest, require_identity
     require_identity(source_manifest(CORE))  # complete final source before image success
     check_default_command()
+    record['retained_inventory'] = retained_inventory(SEED, Path('/opt/verifier'), compaction)
     record['seed_usage'] = inventory(SEED)
     record['verifier_usage'] = inventory(Path('/opt/verifier'))
     payload = json.dumps(record, sort_keys=True, indent=2).encode()
     if len(payload) > 512 * 1024:
         raise ValueError('public inventory export bound')
+    if record['seed_usage']['bytes'] + len(payload) > 1024 ** 3 or record['seed_usage']['files'] + 1 > 100000:
+        raise ValueError('public retained inventory bound including final inventory')
     (SEED / 'inventory.json').write_bytes(payload)
     return 0
 

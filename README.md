@@ -142,6 +142,14 @@ disposes both targets before seed publication. No extras/selected state transfer
 opaque cache edits, consumer networking or core/tool pin changes are introduced.
 Actual corrected full union/native/canonical/cold acceptance remains pending. See
 [producer Git preparation and evidence limits](docs/producer-git-preparation.md).
+Actual hosted run `37815273128` passed that genuine source preparation/offline
+replay, disposal, online warm and complete core identity, then refused the retained
+seed limit before image commit. Exact failed totals/clause remain unknown. The
+producer-only successor packs the owned shallow CORE Git snapshot, preserving
+every actual object and complete source; no uv cache edits or retention increase.
+Bounded component totals/failure proof survive independently of success inventory.
+Real corrected retained fit/native/full/cold/cleanup remains pending. See
+[owned Git packing and retention accounting](docs/producer-retention.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -170,6 +178,7 @@ external database, web app, MCP server, or background service is required.
 - [Bounded actual member-union source/cache and failure-log diagnostics](docs/native-union-cache-diagnostics.md)
 - [Authenticated core prerequisite and explicit network-none offline enable](docs/native-offline-consumer.md)
 - [Narrow immutable Git-source preparation, offline replay and disposal](docs/producer-git-preparation.md)
+- [Owned shallow-core packing, complete object preservation and retained accounting](docs/producer-retention.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

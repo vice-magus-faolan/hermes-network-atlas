@@ -33,6 +33,7 @@ PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/
                 'hosted_apt.py': 'docker/hosted_apt.py', 'core_identity.py': 'scripts/core_identity.py',
                 'native_union_diagnostics.py': 'scripts/native_union_diagnostics.py',
                 'hosted_git.py': 'docker/hosted_git.py',
+                'hosted_retention.py': 'docker/hosted_retention.py',
                 'docker_evidence.py': 'scripts/docker_evidence.py'}
 FAILURES = ('error', 'export_error', 'cleanup_error', 'outcome_export_error', 'registry_error', 'resource_error')
 
@@ -116,6 +117,7 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         require_bootstrap_success(data)
         outcome['export_hashes'] = export_bootstrap(docker, evidence, identity, provenance=True)
         export_git_preparation(docker, evidence, identity, root / 'context', hosted, outcome)
+        export_retention(docker, evidence, identity, root / 'context', hosted, outcome)
         if 'export_error' in outcome:
             raise ValueError('Git preparation provenance export refused before image commit')
         inventory = json.loads(regular_read(evidence / 'inventory.json', 512 * 1024))
@@ -130,6 +132,7 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         outcome['error'] = f'{type(exc).__name__}: {exc}'
     finally:
         export_git_preparation(docker, evidence, identity, root / 'context', hosted, outcome)
+        export_retention(docker, evidence, identity, root / 'context', hosted, outcome)
         export_union_diagnostics(docker, evidence, identity, root / 'context', hosted, outcome)
         finish_build(docker, evidence, identity, outcome, provenance=True)
     return outcome, initial
@@ -165,6 +168,29 @@ def export_git_preparation(docker, evidence: Path, identity, public: Path, hoste
             proof = json.loads(regular_read(evidence / 'git-preparation.json', 32 * 1024))
             from hosted_git import require_complete
             require_complete(proof)
+    except BaseException as exc:
+        outcome.setdefault('export_error', export_error_text(exc))
+
+
+def export_retention(docker, evidence: Path, identity, public: Path, hosted: dict, outcome: dict) -> None:
+    """Export exact bounded accounting independently before commit/on failure."""
+    try:
+        data = stopped_bootstrap(docker, identity)
+        validate_bootstrap(data, identity, public, hosted=hosted)
+        budget = BoundedDirectory(evidence)
+        row = copy_seed_member(docker, data['Id'], budget, 'retained-inventory.json')
+        budget.json('retained-inventory-export.json', row)
+        outcome['retained_inventory'] = row
+        if data['State']['ExitCode'] == 0:
+            if row['status'] != 'present':
+                raise ValueError('required retained inventory absent after successful setup')
+            from hosted_retention import require_complete
+            from core_identity import CORE_SOURCE_DIGEST
+            proof = json.loads(regular_read(evidence / 'retained-inventory.json', 32 * 1024))
+            require_complete(proof)
+            compact = proof['compaction']
+            if (compact['commit'], compact['tree'], compact['source_digest']) != (HERMES_COMMIT, CORE_TREE, CORE_SOURCE_DIGEST):
+                raise ValueError('retained compaction source identity differs from pinned core')
     except BaseException as exc:
         outcome.setdefault('export_error', export_error_text(exc))
 

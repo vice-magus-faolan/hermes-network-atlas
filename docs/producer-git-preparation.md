@@ -114,6 +114,14 @@ mandatory and cannot be skipped by the real controller.
 
 ## Delivery gate
 
+Subsequent actual hosted run `37815273128` passed the genuine narrow preparation,
+independent offline replay, PEP 610/Git objects and target disposal. Online native
+warm and final complete source identity passed too. Its new first failure was
+retained seed inventory, before image commit or consumers; this does not establish
+full fresh offline native enable or exact failed retained totals. The meaningful
+producer-only compaction/accounting successor is documented in
+[producer-retention.md](producer-retention.md); the original uv cache is untouched.
+
 This is PRE_CI_SOURCE_REVIEW only. Full tracked native default-scope scanning,
 pinned whole-workflow actionlint, preserved canonical IDs and packet-denied
 normal/-O checks accompany the committed successor. Missing local admission

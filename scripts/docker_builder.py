@@ -293,7 +293,7 @@ def copy_seed_member(docker, identifier: str, budget: BoundedDirectory, name: st
         raise ValueError("only exact retained-rootfs evidence may be copied")
     if name in {"inventory.json", "apt-diagnostics.json"} and len(members[0][1]) > 512 * 1024:
         raise ValueError("bootstrap inventory bound exceeded")
-    if name in {'union-diagnostics.json', 'git-preparation.json'} and len(members[0][1]) > 32 * 1024:
+    if name in {'union-diagnostics.json', 'git-preparation.json', 'retained-inventory.json'} and len(members[0][1]) > 32 * 1024:
         raise ValueError('union diagnostic aggregate bound exceeded')
     budget.write(name, members[0][1])
     return {"status": "present", "sha256": hashlib.sha256(members[0][1]).hexdigest()}
