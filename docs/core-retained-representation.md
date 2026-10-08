@@ -1,5 +1,8 @@
 # Versioned retained CORE and complete consumer materialization
 
+SUPERSEDED active representation requirement. Historical source/fixtures and
+numeric validators are unchanged; see [disposable-validation.md](disposable-validation.md).
+
 ## Decision and evidence boundary
 
 The coordinator explicitly selects `atlas-core-git-only-v1` for the hosted public

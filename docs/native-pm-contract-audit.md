@@ -1,5 +1,7 @@
 # Pinned native PM contract audit
 
+SUPERSEDED retained-harness audit; see [disposable-validation.md](disposable-validation.md).
+
 For the subsequent actually observed fresh member-union enable/cache refusal,
 see [native-union-cache-diagnostics.md](native-union-cache-diagnostics.md): exact
 pinned generation/quarantine/argv/environment trace, executed contract seams,

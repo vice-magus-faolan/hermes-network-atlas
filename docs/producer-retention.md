@@ -1,5 +1,8 @@
 # Owned producer Git packing and retained accounting
 
+SUPERSEDED active retention requirement. Legacy numeric validators are unchanged;
+see [disposable-validation.md](disposable-validation.md).
+
 This documents the original compaction and observer repairs. The explicitly
 approved current successor retains the complete Git store without its duplicate
 expanded worktree, then requires exact full consumer materialization. Numeric

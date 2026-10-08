@@ -34,38 +34,33 @@ class MeasurementTests(unittest.TestCase):
         return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.STDOUT, timeout=20).decode().strip()
 
     def test_feature_phase_gates_measurement_separately_from_native_acceptance(self):
+        # Product-first correction retires ACTIVE measurement routing. Historical
+        # marker/packing/refusal tests below still exercise the unchanged helpers.
         from ruamel.yaml import YAML
         value = YAML(typ='safe').load((ROOT / '.github/workflows/verify.yml').read_text())
         jobs = value['jobs']
-        self.assertIn('feature-phase', jobs, 'predecessor feature push unconditionally reruns known failed acceptance')
-        self.assertEqual(jobs['hosted-docker']['needs'], 'feature-phase')
-        self.assertIn("needs.feature-phase.outputs.phase == 'acceptance'", jobs['hosted-docker']['if'])
-        self.assertEqual(jobs['packing-measurement']['needs'], 'feature-phase')
-        self.assertEqual(jobs['packing-measurement']['if'], "needs.feature-phase.outputs.phase == 'measurement'")
-        self.assertEqual(jobs['offline-verification']['if'], "github.event_name != 'push' || github.ref != 'refs/heads/feat/6-host-discovery'")
+        self.assertEqual(set(jobs), {'offline-verification'})
+        self.assertNotIn('if', jobs['offline-verification'])
+        self.assertNotIn('needs', jobs['offline-verification'])
         self.assertEqual(value['concurrency'], {'group': 'network-atlas-issue-6-ci', 'cancel-in-progress': False})
         self.assertEqual(value['permissions'], {'contents': 'read'})
-        for name in ('feature-phase', 'packing-measurement'):
+        for name in jobs:
             job = jobs[name]
             self.assertEqual(job['runs-on'], 'ubuntu-24.04')
-            self.assertLessEqual(job['timeout-minutes'], 30)
+            self.assertEqual(job['timeout-minutes'], 60)
             for step in job['steps']:
                 if 'uses' in step:
                     self.assertRegex(step['uses'], r'@[0-9a-f]{40}$')
                     if step['uses'].startswith('actions/checkout@'):
                         self.assertIs(step['with']['persist-credentials'], False)
-        text = json.dumps(jobs['packing-measurement'])
-        for forbidden in ('hosted_docker.py', 'prepare_acceptance.py', 'secrets.', 'docker ', 'pip ', 'sudo '):
+        text = json.dumps(jobs)
+        for forbidden in ('hosted_docker.py', 'measurement_route.py', 'packing_measurement.py', 'secrets.', 'sudo '):
             self.assertNotIn(forbidden, text)
         self.assertNotIn('workflow_dispatch', value['on'])
-        gate_checkouts = [step for step in jobs['feature-phase']['steps'] if 'uses' in step]
-        self.assertEqual(len(gate_checkouts), 1)
-        self.assertNotIn('repository', gate_checkouts[0]['with'])
-        self.assertNotIn('path', gate_checkouts[0]['with'])
-        upload = jobs['packing-measurement']['steps'][-1]
+        upload = jobs['offline-verification']['steps'][-1]
         self.assertEqual(upload['if'], 'always()')
         self.assertEqual(upload['with']['if-no-files-found'], 'error')
-        self.assertIn('packing-measurement', upload['with']['name'])
+        self.assertIn('native-validation', upload['with']['name'])
 
     def repository(self, root):
         repo = root / 'repo'

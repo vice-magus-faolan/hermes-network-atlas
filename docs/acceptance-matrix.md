@@ -1,5 +1,26 @@
 # Acceptance matrix
 
+## Current product-first delivery contract
+
+The active path is [disposable-validation.md](disposable-validation.md): ONE
+conventional hosted Docker image, ONE ONLINE native install AND enable, then
+full packet-denied canonical and cold/restart checks using that very selection
+in its candidate-owned volume. All feature/main/PR events use this path.
+H01–H12 below remain the complete public issue #6 acceptance checklist; A01–A14
+and every product safety regression remain required. Native/full-canonical/cold
+proof on the final exact artifact is pending actual hosted execution and review.
+
+The retained-producer/measurement/controller sections below are SUPERSEDED
+historical contracts, not active delivery requirements. Their tests, fixtures,
+limits and failures remain preserved, not weakened or reclassified as success.
+Only four directly affected workflow methods changed, as explicitly indexed in
+disposable-validation.md; new disposable validation IDs are additive/mandatory.
+No local full-core fixture/native admission/Docker is required or authorized for
+the preliminary exact-SHA source/workflow review. Missing admission still fails
+the full canonical verifier; source-only review is not final feature delivery.
+
+## Historical harness contracts (superseded)
+
 For the GitHub-hosted Docker delivery contract, see
 [hosted-first-docker.md](hosted-first-docker.md). Local implementation tests are
 not native admission; absent fresh current-artifact acceptance remains FAILED.

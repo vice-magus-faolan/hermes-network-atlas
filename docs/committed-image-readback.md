@@ -1,5 +1,7 @@
 # Committed-image failure readback
 
+SUPERSEDED historical controller; see [disposable-validation.md](disposable-validation.md).
+
 ## Observed failure and limits
 
 GitHub push run `37700249768`, attempt 1, job `113061710647`, exercised exact

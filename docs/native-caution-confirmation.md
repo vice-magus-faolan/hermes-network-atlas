@@ -10,7 +10,7 @@ approve local/runtime force, persistent replacement, deployment, live collection
 publication of unreviewed bytes or main integration.
 
 Current acceptance Hermes is pinned to 5645275e50d66dca04c9565634f9b5207a38aef5
-from the authenticated public fork; see [source-only offline prerequisite](native-offline-consumer.md).
+from the authenticated public fork; see [disposable validation](disposable-validation.md).
 Its unchanged
 `plugin-guard-v8` scanner scans the entire committed plugin tree, including source,
 docs, tests and harnesses, under ordinary native exclusions. SAFE proceeds without
@@ -27,19 +27,19 @@ subset archive, scanned-source rewrite or policy override is supplied.
 
 ## Hosted workflow and evidence
 
-The approved [hosted-first continuation](hosted-first-docker.md) adds one INITIAL
-feature-push `hosted-docker` job on a standard `ubuntu-24.04` x64 VM, 60 minutes,
-with actual network-none/capability-dropped nonroot Docker native acceptance.
-Its explicit diagnostics require push/feature/exact source/job/workspace/attempt1;
-the container workspace is the real `/candidate` read-only bind. Environment
-strings are not host-isolation proof. Main/PR regression contexts below remain
-separate. First hosted authorization/invocation belongs to the delivery owner,
-not this code builder, and no prior local-native/all-green requirement is invented
-for the approved first-attempt exception. Final actual acceptance still must pass.
+The approved [disposable validation](disposable-validation.md) uses one
+`offline-verification` job for all feature/main/PR events on `ubuntu-24.04` x64,
+60 minutes. Native install AND enable happen ONLINE in the non-root capless setup
+container; canonical and cold runtime use that very selection with network:none.
+The complete candidate/core come from public image inputs, not host bind mounts.
+No retained producer, second offline install, measurement or host-native fallback
+is active. Invocation belongs to the delivery owner, not this code builder;
+preliminary exact-SHA source review does not require unavailable local native
+admission. Actual final hosted acceptance still must pass.
 
 `.github/workflows/verify.yml` tests pushes to `main` and `feat/6-host-discovery`
 and pull requests targeting `main`, with pinned actions and a fresh
-`ubuntu-latest` hosted runner, top-level `contents: read` and checkout with
+`ubuntu-24.04` hosted runner, top-level `contents: read` and checkout with
 `persist-credentials: false`. It supplies no repository/environment secrets,
 deployment credentials, PATs, tunnel or privileged candidate execution. Actual
 hosted job identity/isolation and workflow permissions are the protected boundary;
@@ -73,7 +73,8 @@ and full canonical result after pushing the independently reviewed branch. Hoste
 execution cannot be proven by this repository's local synthetic tests. Do not
 require an actual hosted run before the publication owner can push an independently
 reviewed branch; do require it before publication completion. Final cumulative
-independent review and fixture archive/restore-tested retirement remain gates.
+independent review and scoped disposable cleanup remain gates. Historical retained
+fixtures/evidence are preserved; no archive/restore retirement controller is active.
 
 ## Local/runtime route remains unchanged
 
@@ -97,7 +98,7 @@ No external signing service or controller is deployed by the hosted exception.
 
 ## Executed regression contract and limitations
 
-`REQUIRED_CI_ADMISSION_TESTS` mandates all ten tests in
+`REQUIRED_CI_ADMISSION_TESTS` mandates all eleven tests in
 `tests/test_ci_admission.py`: explicit mode/context; fresh contained nonreplacement
 fixture; real full native CAUTION scan and supported force-policy selection; real
 DANGEROUS scan refusal even with force; SAFE/no-force and candidate/core drift;

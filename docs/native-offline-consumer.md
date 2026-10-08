@@ -1,5 +1,9 @@
 # Authenticated native offline consumer
 
+SUPERSEDED fresh-offline-install contract. Active CI installs AND enables online,
+then tests that very native selection offline; see
+[disposable-validation.md](disposable-validation.md). Historical failures stay failed.
+
 ## Source-only prerequisite, not native acceptance
 
 The current acceptance core is the narrowly reviewed public fork artifact from

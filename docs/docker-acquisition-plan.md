@@ -1,5 +1,7 @@
 # Finite Docker acquisition and peak plan
 
+SUPERSEDED historical harness contract; see [disposable-validation.md](disposable-validation.md).
+
 This remains the DISABLED legacy metadata-plan path. See the approved staged
 [hosted-first successor](hosted-first-docker.md) for its distinct private PUBLIC
 prerequisite resolution/real native PM and network-none acceptance architecture.

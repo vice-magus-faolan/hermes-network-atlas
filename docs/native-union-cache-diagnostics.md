@@ -1,5 +1,7 @@
 # Native member-union cache diagnosis
 
+SUPERSEDED retained-cache diagnostics; see [disposable-validation.md](disposable-validation.md).
+
 ## Current authenticated offline successor
 
 Actual subsequent run `37734182194` exported stale kittentts direct-URL HTTP

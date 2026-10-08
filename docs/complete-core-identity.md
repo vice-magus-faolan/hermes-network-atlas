@@ -1,5 +1,8 @@
 # Complete public core identity across hosted provisioning
 
+SUPERSEDED producer-layout audit. Full core authentication remains active through
+the existing native setup; see [disposable-validation.md](disposable-validation.md).
+
 ## Observed failure and source-derived repair
 
 Hosted run `37716278161` at `3fa9734ba7b396aa6d05935182c9123d70605387`

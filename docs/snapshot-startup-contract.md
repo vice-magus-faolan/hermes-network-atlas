@@ -1,5 +1,7 @@
 # Fixed snapshot Git trust and early failure evidence
 
+SUPERSEDED retained-harness layout; see [disposable-validation.md](disposable-validation.md).
+
 ## Observed hosted failure versus adjacent source defect
 
 Actual hosted run `37712086262`, attempt 1, job `113100062402`, at

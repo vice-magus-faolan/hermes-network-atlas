@@ -53,6 +53,13 @@ exact-byte consent; local/runtime force is prohibited. Synthetic policy tests
 cannot close native admission, independent approval or actual hosted CI. The
 publisher verifies real exact-head hosted acceptance after reviewed branch push.
 
+The product-first issue #6 correction retires the retained-producer repair chain.
+All CI events now use [disposable-validation.md](disposable-validation.md): one
+online native install/enable and its candidate-owned volume for offline canonical
+and cold runtime. Native SAME-CARD Gilfoyle preliminary exact-SHA source review
+does not require unavailable local admission; Faolan owns the actual hosted result
+and later final evidence/PR handoff. Source review is not feature completion.
+
 ## Gates
 
 Seed every card behind an inert construction gate before any can run. Verify

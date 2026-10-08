@@ -1,5 +1,7 @@
 # Hosted exact-core Git packing measurement — not acceptance
 
+SUPERSEDED measurement routing; see [disposable-validation.md](disposable-validation.md).
+
 This phase is a prerequisite measurement under the existing coordinator-owned
 hosted continuation. It changes no production packing, cache, PM, tool/core/image
 pins, source exclusions, retention limits or consumer isolation. Faolan first

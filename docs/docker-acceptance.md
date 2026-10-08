@@ -1,5 +1,10 @@
 # Disposable Docker acceptance
 
+SUPERSEDED retained-harness contract. Active CI uses
+[disposable-validation.md](disposable-validation.md), with one online install/enable
+and candidate-owned native state for offline tests. Historical failed runs stay
+failed and legacy validator ceilings are unchanged. The remainder is historical.
+
 The active hosted contract is [hosted-first-docker.md](hosted-first-docker.md).
 Its public-only UID0 bootstrap uses standard Docker defaults for normal apt/dpkg
 ownership and maintainer scripts, with no-new-privileges and default security

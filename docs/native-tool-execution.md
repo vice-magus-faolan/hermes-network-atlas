@@ -1,5 +1,7 @@
 # Hosted native-tool execution evidence
 
+SUPERSEDED retained-harness diagnostics; see [disposable-validation.md](disposable-validation.md).
+
 ## Observed boundary and limits
 
 Actual GitHub run `37720941089` on `5dd9fda7787283906449981815f1d20ba051f889`

@@ -97,6 +97,14 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_disposable_validation.DisposableValidationTests.test_all_events_use_one_conventional_path_without_retained_controller",
+    "test_disposable_validation.DisposableValidationTests.test_online_once_then_network_none_verify_and_cold_same_owned_volume",
+    "test_disposable_validation.DisposableValidationTests.test_local_entrypoint_refuses_before_setup_or_state_effects",
+    "test_disposable_validation.DisposableValidationTests.test_verify_runs_full_canonical_and_receipt_refuses_stale_selection",
+    "test_disposable_validation.DisposableValidationTests.test_cold_requires_prior_candidate_success_and_uses_selected_python_without_install",
+    "test_disposable_validation.DisposableValidationTests.test_native_diagnostics_keep_primary_error_and_fresh_setup_cannot_reuse",
+    "test_disposable_validation.DisposableValidationTests.test_owned_real_child_failure_and_deadline_are_not_success",
+    "test_disposable_validation.DisposableValidationTests.test_cleanup_is_always_scoped_and_artifacts_never_include_volume_or_core",
     "test_docker_representation.RepresentationTests.test_controller_readbacks_require_actual_source_objects_accounting_and_export",
     "test_docker_representation.RepresentationTests.test_producer_retirement_failure_preserves_git_source_and_primary_diagnostic",
     "test_docker_representation.RepresentationTests.test_producer_consumer_and_controller_use_actual_versioned_path_before_native",
@@ -340,7 +348,8 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
                   "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py",
                   "scripts/native_union_diagnostics.py", "docker/hosted_git.py", "docker/hosted_retention.py",
-                  "scripts/measurement_route.py", "scripts/packing_measurement.py", "scripts/core_representation.py")
+                  "scripts/measurement_route.py", "scripts/packing_measurement.py", "scripts/core_representation.py",
+                  "scripts/disposable_validation.py")
 
 
 def check_docker_source() -> bool:

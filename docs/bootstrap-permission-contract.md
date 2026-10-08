@@ -1,5 +1,7 @@
 # Public bootstrap permission contract
 
+SUPERSEDED retained-harness audit; see [disposable-validation.md](disposable-validation.md).
+
 ## Current contract: normal hosted provisioning, strict candidate acceptance
 
 The active task supersedes the earlier source-only/per-attempt approval restrictions:

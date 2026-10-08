@@ -1,5 +1,9 @@
 # Hosted-first Docker continuation
 
+SUPERSEDED historical harness contract. Active CI uses
+[disposable-validation.md](disposable-validation.md), not this retained producer.
+Historical failures/limits remain unchanged and are not acceptance evidence.
+
 ## Standing delivery authority and honest acceptance state
 
 The active issue-6 task authorizes conventional Docker provisioning on disposable

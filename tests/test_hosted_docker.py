@@ -227,11 +227,11 @@ class HostedDockerTests(unittest.TestCase):
         value = YAML(typ='safe').load((ROOT / '.github/workflows/verify.yml').read_text())
         self.assertEqual(value['permissions'], {'contents': 'read'})
         self.assertEqual(value['concurrency'], {'group': 'network-atlas-issue-6-ci', 'cancel-in-progress': False})
-        job = value['jobs']['hosted-docker']
+        job = value['jobs']['offline-verification']
         self.assertEqual(job['runs-on'], 'ubuntu-24.04')
         self.assertEqual(job['timeout-minutes'], 60)
-        self.assertEqual(job['if'], "github.event_name == 'push' && github.ref == 'refs/heads/feat/6-host-discovery' && needs.feature-phase.outputs.phase == 'acceptance'")
-        self.assertEqual(value['jobs']['offline-verification']['if'], "github.event_name != 'push' || github.ref != 'refs/heads/feat/6-host-discovery'")
+        self.assertEqual(set(value['jobs']), {'offline-verification'})
+        self.assertNotIn('if', job, 'every approved event must use the disposable path')
         self.assertNotIn('strategy', job)
         self.assertNotIn('runner.', str(job.get('env', {})))
         # The actual compiler also validates the complete positive/negative
@@ -243,7 +243,7 @@ class HostedDockerTests(unittest.TestCase):
                 raise ValueError('runner context outside supported step scope')
         scope(value)
         invalid = copy.deepcopy(value)
-        invalid['jobs']['hosted-docker']['env'] = {'TMPDIR': '${{ runner.temp }}/invalid'}
+        invalid['jobs']['offline-verification']['env'] = {'TMPDIR': '${{ runner.temp }}/invalid'}
         with self.assertRaises(ValueError):
             scope(invalid)
         for step in job['steps']:

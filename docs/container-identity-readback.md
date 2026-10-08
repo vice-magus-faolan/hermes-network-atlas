@@ -1,5 +1,7 @@
 # Acceptance container identity and before-refusal readback
 
+SUPERSEDED historical controller; see [disposable-validation.md](disposable-validation.md).
+
 ## Observed evidence versus source-derived cause
 
 Actual GitHub-hosted run `37707667589`, attempt 1, at

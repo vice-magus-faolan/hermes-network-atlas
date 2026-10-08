@@ -1,5 +1,7 @@
 # Producer-only immutable Misaki Git preparation
 
+SUPERSEDED retained-producer preparation; see [disposable-validation.md](disposable-validation.md).
+
 ## Observed failure and limits
 
 Hosted run `37806326519`, exact Atlas `5397c8bcea475bdd3512400f7c9992e02dc5f212`,
