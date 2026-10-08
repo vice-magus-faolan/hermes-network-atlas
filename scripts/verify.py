@@ -97,6 +97,13 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_startup.StartupTests.test_real_git_different_owner_refusal_then_exact_snapshot_identity",
+    "test_docker_startup.StartupTests.test_exact_path_metadata_symlink_scope_and_no_ambient_authority",
+    "test_docker_startup.StartupTests.test_commit_tree_dirty_blob_and_git_escape_drift_refuse",
+    "test_docker_startup.StartupTests.test_sanitized_native_child_git_trust_is_exact_and_other_repos_refuse",
+    "test_docker_startup.StartupTests.test_private_runner_layout_allows_container_listing_and_bounded_write",
+    "test_docker_startup.StartupTests.test_early_git_started_and_hosted_refusals_export_without_identity_claims",
+    "test_docker_startup.StartupTests.test_all_mode_argv_isolation_and_identity_export_guards_unchanged",
     "test_docker_container_readback.ContainerReadbackTests.test_predecessor_rejects_modeled_inheritance_from_actual_verified_base",
     "test_docker_container_readback.ContainerReadbackTests.test_exact_composition_base_drift_and_all_modes_preserve_isolation",
     "test_docker_container_readback.ContainerReadbackTests.test_initial_raw_readback_precedes_each_identity_and_isolation_refusal",
@@ -233,7 +240,8 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/docker_builder.py", "scripts/docker_evidence.py", "scripts/docker_cold.py",
                   "docker/acquisition_support.py", "docker/acquisition_plan.py",
                   "scripts/test_result_report.py", "scripts/check_docker.py", "scripts/hosted_contract.py",
-                  "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py")
+                  "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
+                  "scripts/docker_snapshot.py")
 
 
 def check_docker_source() -> bool:

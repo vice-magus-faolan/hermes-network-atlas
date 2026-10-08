@@ -183,6 +183,14 @@ def snapshot(source: Path, commit: str, destination: Path) -> None:
     (destination / ".git" / "shallow").write_text(commit + "\n")
     if command(["git", "-C", str(destination), "status", "--porcelain=v1", "--untracked-files=all"]):
         raise ValueError("archived candidate not clean")
+    # Independent controller identity, outside the candidate's committed tree.
+    # Only this verified reconstruction is mounted read-only at /candidate.
+    from docker_snapshot import CONFIG, RECORD
+    (destination / '.git' / 'config').write_bytes(CONFIG)
+    path = destination / '.git' / RECORD
+    with path.open('xb') as stream:
+        stream.write(json_bytes({'commit': commit, 'tree': expected}))
+    path.chmod(0o444)
 
 
 def base_context(source: Path, destination: Path, plan: dict) -> str:
@@ -512,7 +520,7 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Pat
         # is not visible through the container bind. No broad host permission edit.
         candidate.chmod(0o755)
         if hosted_export:
-            (attempt / "incoming").chmod(0o733)
+            prepare_hosted_export(root, attempt)
         returned = docker.run(create_command(identity, candidate, mode, attempt / "incoming", hosted=hosted)).decode().strip()
         identity = replace(identity, container_id=returned)
         outcome['container_id'] = returned
@@ -545,6 +553,32 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Pat
     finally:
         finish_attempt(docker, root, attempt, identity, outcome, registry)
     return outcome
+
+
+def prepare_hosted_export(root: Path, attempt: Path) -> None:
+    """Permit UID1000 listing/write ONLY on an empty ephemeral export mount.
+
+    All host ancestors stay private0700/owned. Docker exposes only this leaf;
+    sticky mode prevents cross-owner replacement. Files remain container0600
+    and the controller reads via the existing bounded Docker archive API.
+    """
+    if not root.is_absolute() or root.resolve(strict=True) != root or attempt.parent != root / 'evidence':
+        raise ValueError('fixed owned attempt layout required')
+    for path in (root, attempt.parent, attempt):
+        require_private_directory(path)
+    incoming = attempt / 'incoming'
+    require_private_directory(incoming)
+    if any(incoming.iterdir()):
+        raise ValueError('empty one-use incoming directory required')
+    incoming.chmod(0o1777)
+    if incoming.stat().st_mode & 0o7777 != 0o1777:
+        raise ValueError('ephemeral export mode readback drift')
+
+
+def require_private_directory(path: Path) -> None:
+    info = path.lstat()
+    if path.is_symlink() or not path.is_dir() or info.st_uid != os.geteuid() or info.st_mode & 0o7777 != 0o700:
+        raise ValueError('private owned controller directory required')
 
 
 def main() -> int:

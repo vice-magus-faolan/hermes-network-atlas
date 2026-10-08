@@ -45,6 +45,15 @@ cleanup paths, with exact returned-ID/field/label checks and independent durable
 consumer retention. No arbitrary extras, blind cleanup, isolation/pin/budget
 changes or actual successor acceptance claim are allowed.
 
+Actual run `37712086262` verified that full container composition/returned ID and
+isolation, started smoke, then Git refused runner-owned `/candidate` before early
+evidence. Reached bootstrap/smoke/base cleanup readbacks succeeded, not native or
+all-mode acceptance. The [snapshot startup/layout repair](snapshot-startup-contract.md)
+binds one exact process-local Git exception to controller-verified public commit/
+tree/bytes, retains failures inside the evidence boundary, and repairs the adjacent
+cross-UID leaf listing requirement. Historical write PermissionError was not observed;
+corrected actual hosted/native/canonical/cold/all-mode cleanup is still pending.
+
 A hosted bootstrap failed before public setup began because Docker's default
 `local` log compression cannot be combined with `max-file=1`. The repair sets
 `compress=false` explicitly for both bootstrap and acceptance, retaining exactly
@@ -148,10 +157,14 @@ UID1000, read-only base/candidate, all capabilities dropped, no-new-privileges,
 private PID/IPC/UTS, finite work/tmp tmpfs, no devices/socket/ports/secrets and
 Docker `network=none`. Native acceptance installs inherited syscall packet denial
 BEFORE fresh fixture PM/install/enable resolution and keeps it through all tests.
-The readonly candidate snapshot root has public search permission. The narrow
-owned export directory grants container writing only; Docker's bounded archive
-API reads exact owned exports when the hosted runner UID differs, without sudo,
-host chown or permission changes to unrelated directories.
+The readonly candidate snapshot root has public search permission and one exact
+validated process-local Git exception. The empty hosted incoming leaf alone gets
+sticky 01777 so UID1000 can list/write through the mount; all owned host controller/
+evidence/attempt ancestors remain private0700 and every evidence file remains0600.
+Other host UIDs cannot traverse those parents. Docker's bounded archive API reads
+exact owned exports when the hosted runner UID differs, without sudo, host chown,
+parent/global permission changes or a relaxed identity/isolation guard. Local
+export remains0700. See snapshot-startup-contract.md for the trust limits.
 
 Fresh isolated HOME/HERMES_HOME/TMPDIR, complete public core and complete clean
 candidate snapshots precede native scan/install/enable. Explicit hosted-only

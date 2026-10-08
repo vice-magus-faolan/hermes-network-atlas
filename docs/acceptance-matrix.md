@@ -102,6 +102,19 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Seven additional mandatory `tests/test_docker_startup.py::StartupTests` IDs cover
+real tiny Git reconstruction and different-owner refusal/success, exact literal
+path/record/config and commit/tree/blob/dirty/symlink/escape refusal, sanitized
+native child trust for only the fixed snapshot with other repos still refused,
+private hosted layout/owner/mode/nonempty/symlink refusals and actual bounded
+writes, early real Git exit128 plus secondary-export precedence without unproven
+identity claims, and all six unchanged isolation argv. Normal/-O are required.
+Git's owner test seam and POSIX cross-UID mode analysis are not actual container
+UID/native/hosted proof. All inherited test bodies/fixtures remain unchanged.
+See [snapshot startup/layout contract](snapshot-startup-contract.md) for actual
+run `37712086262`, the narrow process-local trust and ephemeral export leaf, and
+the remaining actual hosted/native/full-canonical/cold/all-mode-cleanup gates.
+
 Each named test is discovered by the canonical verifier. The matrix/reference
 contract is checked by `tests/test_documentation.py::DocumentationTests`.
 

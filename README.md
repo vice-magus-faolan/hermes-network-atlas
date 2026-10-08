@@ -82,6 +82,16 @@ precise field/label diagnostics and independent consumer retention on failures.
 No extra-label subset, cleanup bypass or isolation change is permitted. See
 [container identity evidence and limits](docs/container-identity-readback.md).
 Corrected actual hosted/native/cold/full-canonical/complete-cleanup remains pending.
+Actual hosted run `37712086262` cleared exact labels/ID/isolation and cleaned reached
+containers/base, but Git refused runner-owned `/candidate` before early evidence.
+The successor uses one exact process-local snapshot Git exception backed by the
+controller's verified commit/tree and complete blob checks, forwards it only to
+isolated children, and captures startup failures without unproven identity claims.
+The adjacent 0733 export leaf could not be listed by a different UID; hosted-only
+sticky 01777 on that empty leaf under unchanged private 0700 ancestors repairs
+the POSIX layout, with files 0600 and bounded Docker archive readback. No historical
+write PermissionError or corrected hosted/native success is inferred. See
+[snapshot startup/layout contract](docs/snapshot-startup-contract.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -104,6 +114,7 @@ external database, web app, MCP server, or background service is required.
 - [Operator installation, configuration and cumulative verification](docs/operator-guide.md)
 - [Hosted-CI CAUTION exception and unchanged local consent](docs/native-caution-confirmation.md)
 - [Disposable Docker acceptance and separate local/native/hosted gates](docs/docker-acceptance.md)
+- [Fixed snapshot Git trust, cross-UID export and early failure evidence](docs/snapshot-startup-contract.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

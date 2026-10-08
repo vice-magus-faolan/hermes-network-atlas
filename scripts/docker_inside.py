@@ -187,17 +187,10 @@ def canonical(receipt: dict, source: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("mode", choices=MODES)
-    mode = parser.parse_args().mode
-    if mode == "hosted-accept":
-        from hosted_contract import require_hosted
-        from offline_guard import deny_network
-        require_hosted(os.environ, workspace=ROOT, commit=git_head())
-        deny_network()  # inherited by real native PM/resolver as well as tests
-    if mode == "accept" and (not sys.stdin.isatty() or not sys.stdout.isatty()):
-        raise ValueError("ordinary foreground consent required before state creation")
-    write_json("started.json", {"mode": mode, "native_acceptance": False, "commit": git_head(), "tree": git_tree()})
     original = None
     try:
+        mode = parser.parse_args().mode
+        startup(mode)
         if mode == "fail":
             write_json("result.json", {"native_acceptance": False, "intentional_failure": True})
             return 21
@@ -229,6 +222,22 @@ def main() -> int:
             if original is None:
                 raise
             original.add_note(f"native evidence export failed: {type(export_error).__name__}")
+
+
+def startup(mode: str) -> None:
+    """Identity and pre-layout refusals are inside main's evidence/error boundary."""
+    if ROOT == Path('/candidate'):
+        from docker_snapshot import validate_snapshot
+        validate_snapshot(ROOT)
+    commit, tree = git_head(), git_tree()
+    if mode == 'hosted-accept':
+        from hosted_contract import require_hosted
+        from offline_guard import deny_network
+        require_hosted(os.environ, workspace=ROOT, commit=commit)
+        deny_network()  # inherited by real native PM/resolver as well as tests
+    if mode == 'accept' and (not sys.stdin.isatty() or not sys.stdout.isatty()):
+        raise ValueError('ordinary foreground consent required before state creation')
+    write_json('started.json', {'mode': mode, 'native_acceptance': False, 'commit': commit, 'tree': tree})
 
 
 def interrupted(_signum: int, _frame: object) -> None:
