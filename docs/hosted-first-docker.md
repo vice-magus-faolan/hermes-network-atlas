@@ -33,6 +33,18 @@ unverified-cleanup guards remain. See [committed-image-readback.md](committed-im
 for actual historical evidence, modeled proposed merge, all consumers and narrow
 inherited-test updates. Corrected actual hosted/native/full/cold/cleanup is pending.
 
+Run `37707667589` at `29ca4638` verified the inert-command base in actual hosted
+execution, then refused the initial smoke container before start. Its precise
+identity field is unknown because inspect was not exported. The corrected
+[container identity/readback contract](container-identity-readback.md) preserves
+all base guards and derives the full expected label union from revalidated
+immutable base provenance plus exact attempt identity. Moby create source proves
+normal image-label inheritance, but modeled container fixtures are not historical
+observations. Raw bounded container reads now precede refusal in initial/export/
+cleanup paths, with exact returned-ID/field/label checks and independent durable
+consumer retention. No arbitrary extras, blind cleanup, isolation/pin/budget
+changes or actual successor acceptance claim are allowed.
+
 A hosted bootstrap failed before public setup began because Docker's default
 `local` log compression cannot be combined with `max-file=1`. The repair sets
 `compress=false` explicitly for both bootstrap and acceptance, retaining exactly

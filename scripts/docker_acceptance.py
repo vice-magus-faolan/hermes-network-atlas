@@ -8,7 +8,9 @@ Local ordinary consent is interactive only; this wrapper never supplies an answe
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from contextlib import contextmanager
+from dataclasses import replace
 import fcntl
 import hashlib
 import io
@@ -24,12 +26,12 @@ import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, git_head, git_tree
 from docker_builder import (BOOTSTRAP_NAME, INPUT_FILES, build_owned, registry_path, validate_plan,
-                            register_consumer, require_base_command)
+                            register_consumer, BootstrapIdentity, verify_final_image)
 from acquisition_plan import parse_plan
 from docker_evidence import BoundedDirectory, archive_directory, json_bytes, regular_read
 from docker_contract import (ENDPOINT, EVIDENCE_LIMIT, Identity, MODES, NAME, OWNER, OWNER_VALUE,
                              check_endpoint, cleanup_allowed, create_command, export_archive, validate_container,
-                             verification_result)
+                             verification_result, container_identity_validation)
 
 BASE_FILES = tuple(name for name in INPUT_FILES if name not in {"hermes.tar", "hermes.commit"})
 BASE_LABEL = "org.network-atlas.acceptance.base"
@@ -129,7 +131,7 @@ class Docker:
         if len(ids) != 1:
             raise ValueError("ambiguous owned container")
         data = self.json(["inspect", ids[0]])[0]
-        if identifier not in (name, data["Id"]):
+        if identifier != name and identifier != data.get("Id"):
             raise ValueError("unexpected container ID")
         return data
 
@@ -247,26 +249,29 @@ def build_base(docker: Docker, root: Path, source: Path, plan: dict | None = Non
                        foreground=sys.stdin.isatty() and sys.stdout.isatty())
 
 
-def teardown(docker: Docker, identity: Identity) -> None:
-    data = docker.inspect(NAME)
-    if data is None or not cleanup_allowed(data, identity):
+def teardown(docker: Docker, identity: Identity, *, attempt: Path | None = None) -> None:
+    data = read_container(docker, identity, attempt, 'cleanup')
+    if data is None:
         return
+    identity = replace(identity, container_id=data['Id'])
     identifier = data["Id"]
     if data["State"]["Running"]:
         docker.run(["stop", "--time", "5", identifier], timeout=20)
-    data = docker.inspect(identifier)
-    if data is None or not cleanup_allowed(data, identity):
+    data = read_container(docker, identity, attempt, 'cleanup-stopped')
+    if data is None:
         raise ValueError("cleanup target drift")
     docker.run(["rm", identifier])
-    if docker.inspect(NAME) is not None:
+    if read_container(docker, identity, attempt, 'cleanup-absent') is not None:
         raise RuntimeError("owned container cleanup residue")
 
 
-def wait_container(docker: Docker, identifier: str, deadline: float) -> dict:
+def wait_container(docker: Docker, identifier: str, deadline: float, *, identity: Identity | None = None) -> dict:
     while time.monotonic() < deadline:
         data = docker.inspect(identifier)
         if data is None:
             raise RuntimeError("container disappeared before evidence export")
+        if identity is not None:
+            cleanup_allowed(data, identity)
         if not data["State"]["Running"]:
             return data
         time.sleep(0.2)
@@ -274,16 +279,11 @@ def wait_container(docker: Docker, identifier: str, deadline: float) -> dict:
 
 
 def validate_base(data: dict, record: dict, daemon: str) -> None:
-    require_base_command(data["Config"])
-    labels = data["Config"].get("Labels", {})
-    expected = {OWNER: OWNER_VALUE, BASE_LABEL: record["base_key"],
-                "org.network-atlas.acceptance.hermes": HERMES_COMMIT,
-                "org.network-atlas.acceptance.upstream": UPSTREAM_DIGEST}
-    if (data["Id"] != record["image"] or record["daemon"] != daemon
-            or record["upstream_digest"] != UPSTREAM_DIGEST or record["core_commit"] != HERMES_COMMIT
-            or any(labels.get(key) != value for key, value in expected.items())
-            or labels != record.get("labels") or data["Config"].get("User") != "1000:1000"
-            or data.get("RootFS", {}).get("Layers") != record.get("rootfs_layers")):
+    """Reconstruct exact eight-label authority, not a receipt/inspect subset match."""
+    identity = BootstrapIdentity(record['base_key'], daemon, record['image'], record['plan_hash'])
+    actual = verify_final_image(data, identity, returned_image=record['image'])
+    keys = ('base_key', 'daemon', 'upstream_digest', 'core_commit', 'core_tree', 'plan_hash', 'labels', 'rootfs_layers')
+    if any(record.get(key) != actual[key] for key in keys):
         raise ValueError("owned base key/upstream/core/image/daemon identity mismatch")
 
 
@@ -297,6 +297,7 @@ def attempt_preflight(docker: Docker, root: Path, image: str, mode: str, registr
         raise ValueError("durable owned base registry required")
     record = json.loads(regular_read(registry / "base.json", 512 * 1024))
     validate_base(base, record, docker.daemon)
+    identity = replace(identity, base_labels=tuple(sorted(record['labels'].items())))
     if base["Id"] != image:
         raise ValueError("requested image differs from base record")
     if mode == "accept" and record["dependency_inventory"] is None:
@@ -315,21 +316,89 @@ def attempt_preflight(docker: Docker, root: Path, image: str, mode: str, registr
     return identity, attempt
 
 
+def read_container(docker: Docker, identity: Identity, attempt: Path | None, stage: str,
+                   *, validator: Callable[[dict], object] | None = None, required: bool = False) -> dict | None:
+    """Retain actual fixed-name inspect BEFORE predicates; evidence is not authority.
+
+    A stricter 512 KiB parsed readback ceiling fits the existing aggregate/count
+    budgets. Diagnostic errors never displace a primary inspect/predicate error;
+    valid readback with failed mandatory persistence still fails before effects.
+    """
+    metadata = attempt / 'metadata' if attempt is not None else None
+    errors = []
+    audit = {'stage': stage, 'daemon': identity.daemon, 'commit': identity.commit, 'tree': identity.tree,
+             'image': identity.image, 'returned_container_id': identity.container_id,
+             'base_labels': dict(identity.base_labels), 'verified': False,
+             'provenance': 'actual parsed fixed-name Docker container inspect; not inferred config'}
+    original = None
+    try:
+        data = docker.inspect(NAME)
+        payload = json_bytes(data)
+        audit.update(readback_bytes=len(payload), readback_sha256=hashlib.sha256(payload).hexdigest())
+        if len(payload) > 512 * 1024:
+            raise ValueError('container readback diagnostic bound exceeded')
+        container_diagnostic_write(metadata, stage + '.json', data, errors)
+        audit['absent'] = data is None
+        validate_container_readback(data, identity, audit, validator, required)
+        return data
+    except BaseException as exc:
+        original = exc
+        audit.update(verified=False, error=type(exc).__name__ + ': ' + str(exc)[:2048])
+        raise
+    finally:
+        finish_container_diagnostics(metadata, stage, audit, errors, original)
+
+
+def validate_container_readback(data: object, identity: Identity, audit: dict,
+                                validator: Callable[[dict], object] | None, required: bool) -> None:
+    if data is None:
+        if required:
+            raise RuntimeError('created container absent')
+        return
+    if not isinstance(data, dict):
+        raise ValueError('container inspect requires one actual object')
+    audit.update(container_identity_validation(data, identity))
+    cleanup_allowed(data, identity)
+    if validator is not None:
+        validator(data)
+
+
+def container_diagnostic_write(metadata: Path | None, name: str, value: object, errors: list) -> None:
+    if metadata is None:
+        return
+    try:
+        metadata.mkdir(mode=0o700, exist_ok=True)
+        BoundedDirectory(metadata).json(name, value)
+    except BaseException as exc:
+        errors.append(exc)
+
+
+def finish_container_diagnostics(metadata: Path | None, stage: str, audit: dict, errors: list,
+                                 original: BaseException | None) -> None:
+    audit['diagnostic_errors'] = [type(exc).__name__ + ': ' + str(exc)[:2048] for exc in errors]
+    container_diagnostic_write(metadata, stage + '-validation.json', audit, errors)
+    if not errors:
+        return
+    if original is None:
+        raise errors[0]
+    for exc in errors:
+        original.add_note('container diagnostic export failed: ' + type(exc).__name__ + ': ' + str(exc)[:2048])
+
+
 def collect_export(docker: Docker, attempt: Path, identity: Identity, *, hosted_export: bool = False) -> dict:
-    current = docker.inspect(NAME)
+    current = read_container(docker, identity, attempt, 'export')
     if current is None:
         return {}
-    cleanup_allowed(current, identity)
+    identity = replace(identity, container_id=current['Id'])
     if current["State"]["Running"]:
         docker.run(["stop", "--time", "5", current["Id"]], timeout=20)
     metadata = attempt / "metadata"
     metadata.mkdir(mode=0o700, exist_ok=True)
     # A container can fail before its log driver starts. Preserve State.Error
     # before log export, which may fail too, and still perform owned teardown.
-    stopped = docker.inspect(current["Id"])
-    if stopped is None or not cleanup_allowed(stopped, identity):
+    stopped = read_container(docker, identity, attempt, 'stopped')
+    if stopped is None:
         raise ValueError("container absent or changed before stopped evidence export")
-    BoundedDirectory(metadata).json("stopped.json", stopped)
     BoundedDirectory(metadata).write("container.log", docker.run(["logs", current["Id"]], limit=4 * 1024 ** 2))
     incoming = attempt / "incoming"
     # Hosted runner UID can differ from container UID1000. Read ONLY the exact
@@ -395,22 +464,37 @@ def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity
                 raise ValueError("actual image dependency inventory differs from registered base")
     except BaseException as exc:
         outcome["export_error"] = type(exc).__name__ + ": " + str(exc)
+        outcome['export_error_notes'] = getattr(exc, '__notes__', [])
     try:
-        teardown(docker, identity)
+        teardown(docker, identity, attempt=attempt)
         outcome["cleanup_verified"] = True
     except BaseException as exc:
         outcome["cleanup_error"] = type(exc).__name__ + ": " + str(exc)
-    candidate = root / "candidate"
-    if candidate.exists() and not candidate.is_symlink() and docker.inspect(NAME) is None:
-        shutil.rmtree(candidate)
-    metadata = attempt / "metadata"
-    metadata.mkdir(mode=0o700, exist_ok=True)
+        outcome['cleanup_error_notes'] = getattr(exc, '__notes__', [])
+    retain_attempt_consumer(registry, identity, attempt, outcome)
     try:
-        BoundedDirectory(metadata).json("outcome.json", outcome)
-        if registry is not None:
-            register_consumer(registry, identity, attempt, "retained-awaiting-review")
+        export_attempt_outcome(docker, root, attempt, outcome)
     except BaseException as exc:
         outcome["outcome_export_error"] = type(exc).__name__ + ": " + str(exc)
+
+
+def export_attempt_outcome(docker: Docker, root: Path, attempt: Path, outcome: dict) -> None:
+    candidate = root / 'candidate'
+    if candidate.exists() and not candidate.is_symlink() and docker.inspect(NAME) is None:
+        shutil.rmtree(candidate)
+    metadata = attempt / 'metadata'
+    metadata.mkdir(mode=0o700, exist_ok=True)
+    BoundedDirectory(metadata).json('outcome.json', outcome)
+
+
+def retain_attempt_consumer(registry: Path | None, identity: Identity, attempt: Path, outcome: dict) -> None:
+    """Evidence persistence failure must not prevent durable consumer retention."""
+    if registry is None:
+        return
+    try:
+        register_consumer(registry, identity, attempt, 'retained-awaiting-review')
+    except BaseException as exc:
+        outcome['registry_error'] = type(exc).__name__ + ': ' + str(exc)
 
 
 def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Path | None = None, *, hosted: dict | None = None, hosted_export: bool = False) -> dict:
@@ -418,8 +502,10 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Pat
         from hosted_contract import require_hosted
         require_hosted(os.environ, workspace=ROOT, commit=git_head())
     identity, attempt = attempt_preflight(docker, root, image, mode, registry)
+    if registry is None:
+        raise ValueError('durable registry required')
     candidate = root / "candidate"
-    outcome = {"identity": identity.labels(), "mode": mode, "native_acceptance": False, "hosted_export": hosted_export}
+    outcome = {"identity": identity.container_labels(), "mode": mode, "native_acceptance": False, "hosted_export": hosted_export}
     try:
         snapshot(ROOT, identity.commit, candidate)
         # Public snapshot search permissions only; private host controller parent
@@ -427,32 +513,35 @@ def run_attempt(docker: Docker, root: Path, image: str, mode: str, registry: Pat
         candidate.chmod(0o755)
         if hosted_export:
             (attempt / "incoming").chmod(0o733)
-        docker.run(create_command(identity, candidate, mode, attempt / "incoming", hosted=hosted))
-        inspected = docker.inspect(NAME)
+        returned = docker.run(create_command(identity, candidate, mode, attempt / "incoming", hosted=hosted)).decode().strip()
+        identity = replace(identity, container_id=returned)
+        outcome['container_id'] = returned
+        inspected = read_container(docker, identity, attempt, 'created', required=True,
+                                   validator=lambda data: validate_container(data, identity, candidate, mode, attempt / 'incoming', hosted=hosted))
         if inspected is None:
-            raise RuntimeError("created container absent")
-        identifier = validate_container(inspected, identity, candidate, mode, attempt / "incoming", hosted=hosted)
-        metadata = attempt / "metadata"
-        metadata.mkdir(mode=0o700)
-        BoundedDirectory(metadata).json("created.json", docker.inspect(identifier))
+            raise RuntimeError('created container absent')
+        identifier = inspected['Id']
+        register_consumer(registry, identity, attempt, 'active')
         if mode == "accept":
             docker.interactive_start(identifier)
         else:
             docker.run(["start", identifier])
         deadline = time.monotonic() + (2 if mode == "interrupt" else 900)
         try:
-            state = wait_container(docker, identifier, deadline)
+            state = wait_container(docker, identifier, deadline, identity=identity)
         except TimeoutError:
             if mode != "interrupt":
                 raise
+            read_container(docker, identity, attempt, 'interrupt', required=True)
             docker.run(["stop", "--time", "5", identifier], timeout=20)
-            state = wait_container(docker, identifier, time.monotonic() + 5)
+            state = wait_container(docker, identifier, time.monotonic() + 5, identity=identity)
         outcome["exit_code"] = state["State"]["ExitCode"]
         outcome["oom_killed"] = state["State"].get("OOMKilled", False)
         if outcome["oom_killed"]:
             raise RuntimeError("owned acceptance OOM is failure")
     except BaseException as exc:
         outcome["error"] = type(exc).__name__ + ": " + str(exc)
+        outcome['error_notes'] = getattr(exc, '__notes__', [])
     finally:
         finish_attempt(docker, root, attempt, identity, outcome, registry)
     return outcome

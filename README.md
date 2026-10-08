@@ -72,6 +72,16 @@ acceptance still supplies its fixed Python/mode argv. Journals, bounded readback
 failure precedence and unverified-image cleanup refusal are preserved. Corrected
 actual hosted/native/full/cold/complete-cleanup acceptance remains pending.
 See [committed-image evidence and source-hypothesis limits](docs/committed-image-readback.md).
+Hosted run `37707667589` verified that corrected base, then refused smoke-container
+ownership before start without exporting container inspect. The historical precise
+field remains unknown. Moby's create/merge source demonstrates that base labels
+inherit; preflight now revalidates/fixes the full base provenance into one exact
+11-label expectation, with create's immutable returned ID required across the
+lifecycle. Bounded actual container readback is retained before predicates, with
+precise field/label diagnostics and independent consumer retention on failures.
+No extra-label subset, cleanup bypass or isolation change is permitted. See
+[container identity evidence and limits](docs/container-identity-readback.md).
+Corrected actual hosted/native/cold/full-canonical/complete-cleanup remains pending.
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable

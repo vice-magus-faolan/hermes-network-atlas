@@ -85,6 +85,21 @@ isolated setup in [operator-guide.md](operator-guide.md). Missing native admissi
 evidence fails; it is never skipped. All production modules are declared/compiled
 and all test modules discovered by the same verifier and CI workflow.
 
+Ten additional mandatory
+`tests/test_docker_container_readback.py::ContainerReadbackTests` IDs retain the
+actual verified run `37707667589` base image/identity projection and separately
+model Moby label inheritance. They exercise exact full composition/preflight,
+all six acceptance argv/isolation, coherent base provenance/config drift refusal,
+every label/Name/Image/returned-Id mismatch with raw-before-predicate persistence
+and production compact export, export/stop/reinspect/cleanup drift, bounded
+malformed/oversized/absent/daemon diagnostics and primary-error precedence,
+failed/malformed create residue without deletion, independent durable consumers
+despite outcome-export failure, and the production synthetic smoke lifecycle.
+All inherited test bodies/IDs remain; normal/-O are required. No actual historical
+container inspect exists and no real Docker/native success is inferred. See
+[container identity readback](container-identity-readback.md) for source semantics,
+exact authority, unchanged limits and the remaining actual hosted/final review gates.
+
 ## Executable evidence index
 
 Each named test is discovered by the canonical verifier. The matrix/reference

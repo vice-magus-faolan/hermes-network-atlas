@@ -28,6 +28,8 @@ class Identity:
     tree: str
     image: str
     daemon: str
+    base_labels: tuple[tuple[str, str], ...] = ()
+    container_id: str | None = None
 
     def __post_init__(self) -> None:
         if not all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (self.commit, self.tree)):
@@ -36,12 +38,35 @@ class Identity:
             raise ValueError("immutable image ID required")
         if not re.fullmatch(r"[A-Za-z0-9-]{1,128}", self.daemon):
             raise ValueError("explicit daemon identity required")
+        immutable_base_labels(self.base_labels)
+        if self.container_id is not None and not re.fullmatch(r"[0-9a-f]{64}", self.container_id):
+            raise ValueError("immutable returned container ID required")
 
     def labels(self) -> dict[str, str]:
         return {OWNER: OWNER_VALUE, "org.network-atlas.acceptance.commit": self.commit,
                 "org.network-atlas.acceptance.tree": self.tree,
                 "org.network-atlas.acceptance.image": self.image,
                 "org.network-atlas.acceptance.daemon": self.daemon}
+
+    def container_labels(self) -> dict[str, str]:
+        """Exact validated base provenance plus explicit attempt labels.
+
+        Preflight freezes the independently revalidated base labels. Docker
+        inherits absent image keys; only owner/daemon overlap, with equal values.
+        No inspect-derived extras or label subset can supply ownership authority.
+        """
+        return dict(self.base_labels, **self.labels())
+
+
+def immutable_base_labels(values: tuple[tuple[str, str], ...]) -> None:
+    """The validated eight-label map must not retain a mutable caller reference."""
+    if type(values) is not tuple or len(values) not in (0, 8):
+        raise ValueError('immutable complete base label pairs required')
+    for row in values:
+        if type(row) is not tuple or len(row) != 2 or not all(isinstance(value, str) for value in row):
+            raise ValueError('immutable string base label pairs required')
+    if len(dict(values)) != len(values):
+        raise ValueError('duplicate base label pairs refused')
 
 
 def check_endpoint(env: dict, info: dict, identity: Identity) -> None:
@@ -78,7 +103,7 @@ def create_command(identity: Identity, candidate: Path, mode: str, evidence: Pat
                "--env", f"NETWORK_ATLAS_IMAGE_ID={identity.image}"]
     for path, options in TMPFS.items():
         command.extend(("--tmpfs", f"{path}:{options}"))
-    for key, value in identity.labels().items():
+    for key, value in identity.container_labels().items():
         command.extend(("--label", f"{key}={value}"))
     if mode == "accept":
         command.extend(("--interactive", "--tty"))
@@ -93,11 +118,35 @@ def cleanup_allowed(inspected: dict | None, identity: Identity) -> bool:
     """Absent is idempotent; a mismatching existing resource is never ours to kill."""
     if inspected is None:
         return False
-    if (inspected.get("Name") != "/" + NAME or inspected.get("Image") != identity.image
-            or inspected.get("Config", {}).get("Labels") != identity.labels()
-            or not re.fullmatch(r"[0-9a-f]{64}", inspected.get("Id", ""))):
-        raise ValueError("container ownership/immutable identity mismatch")
+    validation = container_identity_validation(inspected, identity)
+    if validation['mismatches']:
+        raise ValueError("container ownership/immutable identity mismatch: " + ', '.join(validation['mismatches']))
     return True
+
+
+def container_identity_validation(data: dict, identity: Identity) -> dict:
+    """One exact ownership comparison shared by evidence and mutation guards."""
+    config = data.get('Config', {})
+    labels = config.get('Labels') if isinstance(config, dict) else None
+    expected = {'Name': '/' + NAME, 'Image': identity.image, 'Config.Labels': identity.container_labels(),
+                'Id': identity.container_id or 'exact lowercase 64-hex returned container ID'}
+    observed = {'Name': data.get('Name'), 'Image': data.get('Image'), 'Config.Labels': labels, 'Id': data.get('Id')}
+    mismatches = [key for key in ('Name', 'Image', 'Config.Labels') if expected[key] != observed[key]]
+    label_mismatches = label_differences(labels, identity.container_labels())
+    identifier = data.get('Id')
+    valid = isinstance(identifier, str) and re.fullmatch(r'[0-9a-f]{64}', identifier) is not None
+    # Legacy pure contract fixtures may lack a returned ID. Every production
+    # attempt carries frozen base provenance and must also carry create's ID.
+    if not valid or (identity.base_labels and identity.container_id is None) or (identity.container_id is not None and identifier != identity.container_id):
+        mismatches.append('Id')
+    return {'expected': expected, 'observed': observed, 'mismatches': mismatches,
+            'label_mismatches': label_mismatches, 'verified': not mismatches}
+
+
+def label_differences(observed: object, expected: dict[str, str]) -> list[str]:
+    if not isinstance(observed, dict):
+        return ['malformed Config.Labels']
+    return sorted(key for key in set(observed) | set(expected) if observed.get(key) != expected.get(key) or key not in expected)
 
 
 def validate_environment(values: list[str], expected: dict | None = None, *, native: bool = False) -> None:

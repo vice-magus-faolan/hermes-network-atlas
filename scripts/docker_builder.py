@@ -492,8 +492,11 @@ def register_consumer(registry: Path, identity, attempt: Path, status: str) -> N
     record = json.loads(regular_read(registry / "base.json", 512 * 1024))
     if record["image"] != identity.image or record["daemon"] != identity.daemon:
         raise ValueError("consumer/base identity mismatch")
+    if identity.base_labels and record['labels'] != dict(identity.base_labels):
+        raise ValueError('consumer/base provenance drift')
     consumers = record["consumers"]
     wanted = {"evidence": str(attempt), "commit": identity.commit, "tree": identity.tree, "status": status}
+    wanted.update(labels=identity.container_labels(), container_id=identity.container_id)
     index = next((index for index, row in enumerate(consumers) if row["evidence"] == str(attempt)), None)
     if index is None:
         if len(consumers) >= 8:
