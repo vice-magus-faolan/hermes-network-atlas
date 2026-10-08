@@ -55,14 +55,29 @@ exit; and deadline evidence survives owned-child reaping without affecting an
 unrelated child. Normal/-O are required. These are packet-denied source/fixture
 regressions, not acquisition, package/native acceptance or real Docker cleanup.
 
-Seven mandatory
+Seven inherited mandatory
 `tests/test_docker_image_readback.py::ImageReadbackTests` IDs cover all field
-mismatch names, unchanged empty-command merge refusal, journal-before-inspect,
+mismatch names, historical empty-command merge refusal, journal-before-inspect,
 actual parsed readback and compact export, exact returned digest/upstream ancestry,
 malformed/oversized/failed readback, diagnostic-error precedence, unverified-image
 cleanup refusal and hosted-controller failed-image proof retention. These synthetic
-daemon seams do not identify run `37700249768`'s unexported mismatch. The successor
-is diagnostic-only; see [committed-image-readback.md](committed-image-readback.md).
+daemon seams do not identify run `37700249768`'s unexported mismatch. The diagnostic
+successor's actual hosted run `37704198046` identifies `Config.Cmd` alone; its
+inherited setup command remains refused by the precise corrected default contract.
+
+Five additional mandatory
+`tests/test_docker_default_command.py::DefaultCommandTests` IDs cover both production
+commit paths and explicitly modeled Moby command merge; hash-bound actual historical
+image/stopped fixtures and their continued refusal; exact inert `/usr/bin/true` argv
+and empty entrypoint in initial validation, recovery/reuse and cleanup; unchanged
+explicit acceptance argv in all six modes; no-op file/owner/permission/privilege/
+absence/output/exit refusals before success inventory; a real tiny packet-denied
+no-op child through the shared audit; and original-error/cleanup refusal evidence.
+Normal/-O are required. One historical empty-CMD assertion and four success fixtures
+now encode the inert default, while the original realistic empty-merge failure and
+all other refusals remain. See [committed-image-readback.md](committed-image-readback.md)
+for the exact inherited test-body changes. Modeling a proposed config or executing
+the host's public no-op is NOT actual corrected image/native/full/cold/cleanup proof.
 
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported

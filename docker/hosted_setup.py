@@ -26,7 +26,7 @@ from hosted_contract import container_setup_guard
 from acquisition_support import (bounded_run, finite_download, reconstruct_public_core, audited_run,
                                  CommandLog, COMMAND_LOG, COMMAND_LOG_LIMIT, COMMAND_COUNT_LIMIT,
                                  TERMINAL_ROW_LIMIT, COMMAND_ARGV_LIMIT)
-from base_setup import readable_seed, inventory
+from base_setup import readable_seed, inventory, check_default_command
 from hosted_apt import provision
 
 PUBLIC = Path('/opt/inputs')
@@ -212,6 +212,7 @@ def main() -> int:
         raise ValueError('native candidate/selection state in reusable base')
     readable_seed(SEED)
     readable_seed(Path('/opt/verifier'))
+    check_default_command()
     record['seed_usage'] = inventory(SEED)
     record['verifier_usage'] = inventory(Path('/opt/verifier'))
     payload = json.dumps(record, sort_keys=True, indent=2).encode()

@@ -24,6 +24,7 @@ from docker_contract import OWNER, OWNER_VALUE, MEMORY, source_path, validate_en
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docker"))
 from acquisition_plan import artifact, exact, validate_linkage, require_execution_ready
+from acquisition_support import BASE_COMMAND
 
 CORE_TREE = "008b644d38770b7de0835592ddaf19a708e2fa82"
 UPSTREAM_DIGEST = "sha256:998acd06f485adfd6890e3e15a4b542543e0cf22ff904310095da328a5e3e561"
@@ -196,7 +197,7 @@ def commit_command(data: dict, identity: BootstrapIdentity, context: Path, *, ho
         raise ValueError("stopped exited rootfs required before commit")
     if data["State"].get("ExitCode") != 0 or data["State"].get("OOMKilled", False) or data["State"].get("Error"):
         raise ValueError("successful bootstrap required before commit")
-    changes = ["USER 1000:1000", "WORKDIR /work", "CMD []", "ENTRYPOINT []", "ENV PYTHONDONTWRITEBYTECODE=1"]
+    changes = ["USER 1000:1000", "WORKDIR /work", "CMD " + json.dumps(BASE_COMMAND), "ENTRYPOINT []", "ENV PYTHONDONTWRITEBYTECODE=1"]
     if hosted is not None:
         changes.extend(f"ENV {key}=" for key in hosted)
     labels = dict(identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})
@@ -371,15 +372,16 @@ def wait_bootstrap(docker, identity: BootstrapIdentity, context: Path, deadline:
 
 def image_validation(data: dict, identity: BootstrapIdentity, returned_image: str | None,
                      upstream_layers: list[str] | None) -> dict:
-    """Compare exact safety fields; empty flags retain their existing semantics."""
+    """Compare exact safety fields, including the single inert exec-form CMD."""
     expected = dict(identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})
     config = data.get("Config", {})
     if not isinstance(config, dict):
         raise ValueError("committed base Config shape drift")
-    wanted = {"Config.Labels": expected, "Config.User": "1000:1000", "Config.WorkingDir": "/work"}
+    wanted = {"Config.Labels": expected, "Config.User": "1000:1000", "Config.WorkingDir": "/work",
+              "Config.Cmd": list(BASE_COMMAND)}
     observed = {key: config.get(key.split('.')[1]) for key in wanted}
     mismatches = [key for key in wanted if observed[key] != wanted[key]]
-    for key in ("Volumes", "Entrypoint", "Cmd", "ExposedPorts"):
+    for key in ("Volumes", "Entrypoint", "ExposedPorts"):
         field = "Config." + key
         wanted[field], observed[field] = "empty", config.get(key)
         if observed[field]:
@@ -395,6 +397,12 @@ def image_validation(data: dict, identity: BootstrapIdentity, returned_image: st
     if not valid_image_layers(layers, upstream_layers):
         mismatches.append("RootFS.Layers")
     return {"expected": wanted, "observed": observed, "mismatches": mismatches, "verified": not mismatches}
+
+
+def require_base_command(config: dict) -> None:
+    """Recheck the same default contract before reuse or verified-image cleanup."""
+    if config.get("Cmd") != list(BASE_COMMAND) or config.get("Entrypoint"):
+        raise ValueError("owned base Config.Cmd/Config.Entrypoint drift")
 
 
 def valid_image_digest(value: object) -> bool:

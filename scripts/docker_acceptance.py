@@ -23,7 +23,8 @@ import tarfile
 import time
 
 from acceptance_support import HERMES_COMMIT, ROOT, git_head, git_tree
-from docker_builder import BOOTSTRAP_NAME, INPUT_FILES, build_owned, registry_path, validate_plan, register_consumer
+from docker_builder import (BOOTSTRAP_NAME, INPUT_FILES, build_owned, registry_path, validate_plan,
+                            register_consumer, require_base_command)
 from acquisition_plan import parse_plan
 from docker_evidence import BoundedDirectory, archive_directory, json_bytes, regular_read
 from docker_contract import (ENDPOINT, EVIDENCE_LIMIT, Identity, MODES, NAME, OWNER, OWNER_VALUE,
@@ -273,6 +274,7 @@ def wait_container(docker: Docker, identifier: str, deadline: float) -> dict:
 
 
 def validate_base(data: dict, record: dict, daemon: str) -> None:
+    require_base_command(data["Config"])
     labels = data["Config"].get("Labels", {})
     expected = {OWNER: OWNER_VALUE, BASE_LABEL: record["base_key"],
                 "org.network-atlas.acceptance.hermes": HERMES_COMMIT,

@@ -97,6 +97,11 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_default_command.DefaultCommandTests.test_both_production_commit_callers_model_exact_nonbootstrap_default",
+    "test_docker_default_command.DefaultCommandTests.test_actual_failed_image_and_stopped_data_remain_rejected",
+    "test_docker_default_command.DefaultCommandTests.test_exact_default_and_empty_entrypoint_required_by_all_consumers",
+    "test_docker_default_command.DefaultCommandTests.test_default_executable_availability_is_guarded_audited_and_output_free",
+    "test_docker_default_command.DefaultCommandTests.test_real_noop_child_uses_existing_audit_and_unverified_cleanup_stays_closed",
     "test_docker_image_readback.ImageReadbackTests.test_each_safety_mismatch_names_precise_field_without_relaxation",
     "test_docker_image_readback.ImageReadbackTests.test_empty_commit_command_merge_is_source_hypothesis_not_hosted_proof",
     "test_docker_image_readback.ImageReadbackTests.test_actual_readback_journal_mismatch_and_compact_export_survive_refusal",

@@ -41,11 +41,12 @@ Gilfoyle review are still required; preliminary source review is not acceptance.
 
 ## Retained failure observation versus source-derived cause
 
-The latest actual hosted run `37700249768` completed public provisioning before
-committed-image validation failed. The successor preserves the strict base/commit
-contract and adds bounded actual readback, field mismatches and pre-validation
-returned-image journals. Its correction is diagnostic-only because historical
-image inspect was absent; source-derived command merging is not an observed cause.
+Actual hosted run `37700249768` completed public provisioning before an unexported
+committed-image mismatch. Its diagnostic-only successor retained actual image
+readback in run `37704198046`: `Config.Cmd` alone failed, retaining the stopped
+setup argv. The corrected contract commits one exact inert `/usr/bin/true` default,
+checks availability/zero-output execution before setup success and revalidates it
+before base reuse/cleanup. Empty entrypoint and all other safety fields remain.
 See [committed-image-readback.md](committed-image-readback.md). No permission,
 authentication, pin, candidate containment or image-deletion rule is relaxed.
 
@@ -168,8 +169,11 @@ five representative hosted parent commands and one disabled legacy-wrapper call
 share the same tested budget. Count/byte exhaustion refuses before log/spawn;
 terminal-write failures preserve the primary exit; deadlines reap the owned
 child while an unrelated child survives. In source, the ordinary hosted parent
-has eleven commands (six Git, fetch, named install, resolver, verifier build,
-warm); nested warm has one inventory command in its own process. APT commands
+has twelve commands (six Git, fetch, named install, resolver, verifier build,
+warm and the new existing-public no-op check); nested warm has one inventory
+command in its own process. The no-op uses the same unchanged cumulative audit
+budget and refuses missing/unsafe files, command errors or unexpected output.
+APT commands
 stay in their separate file audit. This is a call-count audit and fixture proof,
 not real provisioning or a guarantee of peak filesystem/log fit.
 

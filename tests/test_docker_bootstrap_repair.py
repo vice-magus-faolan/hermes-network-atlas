@@ -188,7 +188,7 @@ class BootstrapRepairTests(unittest.TestCase):
                 fake.data['Mounts'][0]['Source'] = str(root / 'context')
                 image = 'sha256:' + 'b' * 64
                 final = {'Id': image, 'Size': 123, 'Config': {'Labels': dict(identity().labels(), **{'org.network-atlas.acceptance.kind': 'base'}),
-                         'User': '1000:1000', 'WorkingDir': '/work', 'Volumes': None, 'Entrypoint': [], 'Cmd': []},
+                         'User': '1000:1000', 'WorkingDir': '/work', 'Volumes': None, 'Entrypoint': [], 'Cmd': ['/usr/bin/true']},
                          'RootFS': {'Layers': ['sha256:' + 'c' * 64, 'sha256:' + 'd' * 64]}}
                 fake.json = Mock(return_value=[final])
                 original_run = fake.run

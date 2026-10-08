@@ -61,12 +61,16 @@ output count/hash/head-tail in bootstrap.log rather than pointing to a missing
 terminal audit. Real-child/export, tiny real-Git success, deadline/reaping and
 pre-effect budget regressions cover this repair without executing Docker.
 See [the complete bootstrap permission audit](docs/bootstrap-permission-contract.md).
-Actual hosted run `37700249768` subsequently completed public APT/native tool/
-verifier/union setup, then refused the committed base identity. The failing image
-inspect was not retained, so the mismatched field is unknown. A diagnostic-only
-successor journals the returned image and exports actual bounded image readback
-with expected/observed mismatch fields; guards and commit command are unchanged.
-It is not a guessed compatibility fix or native/full/cold/cleanup acceptance.
+Actual hosted run `37700249768` completed public APT/native tool/verifier/union
+setup, then refused an unexported committed-image mismatch. Diagnostic successor
+run `37704198046` retained actual inspect: only `Config.Cmd` failed, containing the
+setup argv after Docker's empty-command merge. The corrected contract commits
+exact exec-form `CMD ["/usr/bin/true"]`, empty entrypoint and unchanged UID/labels/
+ancestry. Both setup paths check the existing root-owned no-op and audit its zero
+output/exit before success; reuse and cleanup recheck the exact default. Candidate
+acceptance still supplies its fixed Python/mode argv. Journals, bounded readback,
+failure precedence and unverified-image cleanup refusal are preserved. Corrected
+actual hosted/native/full/cold/complete-cleanup acceptance remains pending.
 See [committed-image evidence and source-hypothesis limits](docs/committed-image-readback.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict

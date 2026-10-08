@@ -23,6 +23,9 @@ import zipfile
 
 HOSTS = {"files.pythonhosted.org", "github.com", "snapshot.debian.org", "registry-1.docker.io",
          "release-assets.githubusercontent.com", "objects.githubusercontent.com"}
+# Nonempty exec-form CMD avoids Docker commit's empty-command merge fallback.
+# No PATH lookup, shell, setup script, input mount or default acquisition.
+BASE_COMMAND = ("/usr/bin/true",)
 
 
 def public_url(url: str) -> None:

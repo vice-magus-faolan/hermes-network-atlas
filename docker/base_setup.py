@@ -14,8 +14,9 @@ import subprocess
 import sys
 import tarfile
 import resource
+import stat
 
-from acquisition_support import acquire, archive_bounds, validate_inputs, reconstruct_public_core
+from acquisition_support import acquire, archive_bounds, validate_inputs, reconstruct_public_core, BASE_COMMAND
 from acquisition_plan import parse_plan, require_execution_ready
 
 SEED = Path("/opt/seed")
@@ -25,6 +26,19 @@ CORE = SEED / "hermes-source"
 def run(argv: list[str]) -> str:
     from acquisition_support import audited_run
     return audited_run(argv, CORE)
+
+
+def check_default_command() -> None:
+    """Require the base's existing root-owned public no-op, then audit execution.
+
+    Never install a replacement or fall back to a shell/PATH-selected command.
+    The regular file must be executable by UID1000 and not writable by it.
+    """
+    info = Path(BASE_COMMAND[0]).lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or not info.st_mode & 0o001 or info.st_mode & 0o6022:
+        raise ValueError("base default command must be root-owned regular executable, not writable by acceptance UID")
+    if run(list(BASE_COMMAND)):
+        raise ValueError("base default command produced unexpected output")
 
 
 def inventory(path: Path) -> dict[str, int]:
@@ -111,6 +125,7 @@ def main() -> int:
     # Private container-owned files only; no host chmod/chown or capability grant.
     readable_seed(SEED)
     readable_seed(Path("/opt/verifier"))
+    check_default_command()
     record["seed_usage"] = inventory(SEED)
     record["verifier_usage"] = inventory(Path("/opt/verifier"))
     if record["seed_usage"]["bytes"] + record["verifier_usage"]["bytes"] > 1024 ** 3:

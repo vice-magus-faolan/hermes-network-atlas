@@ -20,7 +20,7 @@ from docker_acceptance import Docker, clean_checkout, command, lease, require_su
 from docker_builder import (BOOTSTRAP_NAME, BootstrapIdentity, UPSTREAM, UPSTREAM_DIGEST, CORE_TREE,
                             bootstrap_command, commit_command, export_bootstrap, finish_build,
                             registry_budget, reject_existing_owned, validate_bootstrap, read_final_image,
-                            resource_ids, require_bootstrap_success)
+                            resource_ids, require_bootstrap_success, require_base_command)
 from docker_contract import ENDPOINT, OWNER, OWNER_VALUE
 from docker_evidence import BoundedDirectory, json_bytes, regular_read
 from hosted_contract import require_bootstrap_contract, validate_setup_inventory
@@ -133,6 +133,7 @@ def successful(outcome: dict) -> None:
 
 def cleanup_image(docker: Docker, record: dict) -> None:
     current = docker.json(['image', 'inspect', record['image']])[0]
+    require_base_command(current['Config'])
     if current['Config'].get('Labels') != record['labels'] or current['Id'] != record['image']:
         raise ValueError('owned base cleanup identity drift')
     if docker.run(['ps', '-aq', '--filter', 'ancestor=' + record['image']]).strip():

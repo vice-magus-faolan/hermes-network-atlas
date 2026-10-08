@@ -24,7 +24,7 @@ LAYERS = ['sha256:' + 'b' * 64]
 def image_data():
     return {'Id': IMAGE, 'Size': 123, 'Config': {
         'Labels': dict(identity().labels(), **{'org.network-atlas.acceptance.kind': 'base'}),
-        'User': '1000:1000', 'WorkingDir': '/work', 'Cmd': [], 'Entrypoint': [],
+        'User': '1000:1000', 'WorkingDir': '/work', 'Cmd': ['/usr/bin/true'], 'Entrypoint': [],
         'Volumes': None, 'ExposedPorts': None},
         'RootFS': {'Layers': [*LAYERS, 'sha256:' + '3' * 64]}}
 
@@ -57,6 +57,7 @@ class ImageReadbackTests(unittest.TestCase):
         # Moby v28.0.4 daemon/commit.go merge restores container Cmd when both
         # changed Cmd and Entrypoint have length zero. This models ONLY that
         # source rule, not the unexported run81 committed image or real Docker.
+        # Retain the historical empty-command failure while checking the new argv.
         with scratch_home() as directory:
             data = inspected(Path(directory))
             data['Config']['Cmd'] = ['python3', '/opt/inputs/hosted_setup.py']
@@ -65,9 +66,10 @@ class ImageReadbackTests(unittest.TestCase):
             data['Config']['Env'] = [f'{k}={v}' for k, v in mapped.items()]
             data['HostConfig'] = builder.bootstrap_host_config(hosted=mapped)
             argv = builder.commit_command(data, identity(), Path(directory), hosted=mapped)
-            self.assertIn('CMD []', argv)
+            self.assertIn('CMD ["/usr/bin/true"]', argv)
             self.assertIn('ENTRYPOINT []', argv)
             committed = image_data()
+            committed['Config']['Cmd'] = []
             if not committed['Config']['Cmd'] and not committed['Config']['Entrypoint']:
                 committed['Config']['Cmd'] = data['Config']['Cmd']
             with self.assertRaisesRegex(ValueError, 'Config.Cmd'):
@@ -96,7 +98,7 @@ class ImageReadbackTests(unittest.TestCase):
             audit = json.loads((proof / 'image-validation.json').read_text())
             self.assertEqual(audit['mismatches'], ['Config.Cmd'])
             self.assertEqual(audit['observed']['Config.Cmd'], data['Config']['Cmd'])
-            self.assertEqual(audit['expected']['Config.Cmd'], 'empty')
+            self.assertEqual(audit['expected']['Config.Cmd'], ['/usr/bin/true'])
             self.assertFalse(audit['verified'])
             self.assertFalse((registry / 'base.json').exists())
             archive = root / 'evidence.tar'

@@ -226,7 +226,7 @@ class BuilderContractTests(unittest.TestCase):
             command = builder.commit_command(inspected(root), identity(), root)
             self.assertEqual(command[-2], "1" * 64)
             self.assertIn("USER 1000:1000", command)
-            self.assertIn("CMD []", command)
+            self.assertIn('CMD ["/usr/bin/true"]', command)
             self.assertNotIn("--pause=false", command)
             for field, bad in (("Image", "sha256:" + "2" * 64), ("Id", "short"), ("Name", "/unrelated")):
                 value = inspected(root)
@@ -352,7 +352,7 @@ class BuilderContractTests(unittest.TestCase):
         ident = identity()
         data = {"Id": "sha256:" + "2" * 64, "Size": 123,
                 "Config": {"Labels": dict(ident.labels(), **{"org.network-atlas.acceptance.kind": "base"}),
-                           "User": "1000:1000", "WorkingDir": "/work", "Cmd": [], "Entrypoint": [], "Volumes": None},
+                           "User": "1000:1000", "WorkingDir": "/work", "Cmd": ["/usr/bin/true"], "Entrypoint": [], "Volumes": None},
                 "RootFS": {"Layers": ["sha256:" + "b" * 64, "sha256:" + "3" * 64]}}
         record = builder.verify_final_image(data, ident)
         harness.validate_base(data, record, ident.daemon)
@@ -401,7 +401,7 @@ class FakeBuilderDocker:
             return [{"Id": self.plan["upstream_image"], "Architecture": "amd64", "Os": "linux", "Config": {},
                      "RootFS": {"Layers": self.plan["rootfs_layers"]}, "RepoDigests": ["python@" + builder.UPSTREAM_DIGEST]}]
         return [{"Id": "sha256:" + "2" * 64, "Size": 123,
-                 "Config": {"User": "1000:1000", "WorkingDir": "/work", "Cmd": [], "Entrypoint": [],
+                 "Config": {"User": "1000:1000", "WorkingDir": "/work", "Cmd": ["/usr/bin/true"], "Entrypoint": [],
                             "Labels": dict(self.identity.labels(), **{"org.network-atlas.acceptance.kind": "base"})},
                  "RootFS": {"Layers": [*self.plan["rootfs_layers"], "sha256:" + "3" * 64]}}]
 

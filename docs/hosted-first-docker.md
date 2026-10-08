@@ -22,14 +22,16 @@ Final same-card Gilfoyle review requires actual exact-head hosted admission and
 canonical/cold/cleanup evidence, not preliminary source review or mocked results.
 Missing current-artifact native acceptance remains FAILED, not skipped or green.
 
-Run `37700249768` at `522b5116` actually completed public provisioning and failed
-the final committed-image predicate. Its unexported inspect leaves the differing
-field unknown. The next source correction is deliberately diagnostic-only:
-returned-image journaling, actual bounded readback and precise expected/observed
-mismatch export without changing commit/identity/cleanup guards. It is a meaningful
-targeted hosted correction, not a guessed successful compatibility repair. See
-[committed-image-readback.md](committed-image-readback.md) for evidence and the
-source-derived empty-command merge hypothesis, explicitly not an observed cause.
+Run `37700249768` at `522b5116` completed public provisioning but its unexported
+committed-image mismatch remains unknown. Diagnostic successor run `37704198046`
+at `3ac37933` retained actual image/stopped readback: only `Config.Cmd` failed,
+retaining setup argv after Docker 28.0.4's empty-command merge. The corrected source
+uses precise exec-form `CMD ["/usr/bin/true"]` with empty entrypoint, validates the
+existing public no-op before setup success and rechecks the default for reuse and
+cleanup. Controlled candidate argv/isolation and returned-image/bounded-diagnostic/
+unverified-cleanup guards remain. See [committed-image-readback.md](committed-image-readback.md)
+for actual historical evidence, modeled proposed merge, all consumers and narrow
+inherited-test updates. Corrected actual hosted/native/full/cold/cleanup is pending.
 
 A hosted bootstrap failed before public setup began because Docker's default
 `local` log compression cannot be combined with `max-file=1`. The repair sets
