@@ -97,6 +97,20 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_representation.RepresentationTests.test_controller_readbacks_require_actual_source_objects_accounting_and_export",
+    "test_docker_representation.RepresentationTests.test_producer_retirement_failure_preserves_git_source_and_primary_diagnostic",
+    "test_docker_representation.RepresentationTests.test_producer_consumer_and_controller_use_actual_versioned_path_before_native",
+    "test_docker_representation.RepresentationTests.test_real_git_only_red_green_complete_crlf_modes_links_objects_and_shallow",
+    "test_docker_representation.RepresentationTests.test_real_self_inclusive_physical_logical_and_verifier_accounting",
+    "test_docker_representation.RepresentationTests.test_old_mixed_partial_boolean_and_forged_ledger_refuse_before_copy",
+    "test_docker_representation.RepresentationTests.test_config_hooks_alternates_grafts_replace_links_and_attributes_refuse",
+    "test_docker_representation.RepresentationTests.test_object_source_mode_and_metadata_tamper_never_reach_archive",
+    "test_docker_representation.RepresentationTests.test_archive_path_hardlink_special_symlink_ancestor_and_duplicate_refuse",
+    "test_docker_representation.RepresentationTests.test_actual_binary_stream_deadline_size_and_failed_child_are_reaped",
+    "test_docker_representation.RepresentationTests.test_partial_cleanup_primary_enospc_export_and_existing_destination",
+    "test_docker_representation.RepresentationTests.test_local_producer_and_unowned_retirement_fail_before_effects",
+    "test_docker_representation.RepresentationTests.test_actual_limits_include_spool_and_no_inventory_flag_shortcut",
+    "test_docker_representation.RepresentationTests.test_ambient_git_authority_is_not_forwarded_and_export_ignore_is_no_success",
     "test_docker_measurement.MeasurementTests.test_feature_phase_gates_measurement_separately_from_native_acceptance",
     "test_docker_measurement.MeasurementTests.test_real_git_exact_marker_routes_and_normal_main_pr_without_message_skip",
     "test_docker_measurement.MeasurementTests.test_malformed_hash_symlink_dirty_parent_and_mixed_product_refuse",
@@ -326,7 +340,7 @@ DOCKER_SOURCES = ("scripts/docker_acceptance.py", "scripts/docker_contract.py", 
                   "scripts/hosted_docker.py", "scripts/hosted_evidence.py", "docker/hosted_setup.py", "docker/hosted_apt.py",
                   "scripts/docker_snapshot.py", "scripts/core_identity.py", "scripts/native_tool_execution.py",
                   "scripts/native_union_diagnostics.py", "docker/hosted_git.py", "docker/hosted_retention.py",
-                  "scripts/measurement_route.py", "scripts/packing_measurement.py")
+                  "scripts/measurement_route.py", "scripts/packing_measurement.py", "scripts/core_representation.py")
 
 
 def check_docker_source() -> bool:

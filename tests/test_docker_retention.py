@@ -33,9 +33,9 @@ class RetentionTests(unittest.TestCase):
         calls = []
         for statement in main.body:
             for node in ast.walk(statement):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'compact_core', 'retained_inventory'}:
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'compact_core', 'seal_inventory'}:
                     calls.append(node.func.id)
-        self.assertEqual(calls, ['compact_core', 'retained_inventory'],
+        self.assertEqual(calls, ['compact_core', 'seal_inventory'],
                          'producer reaches retained guard without meaningful compaction/accounting')
 
     def fixture(self, root):

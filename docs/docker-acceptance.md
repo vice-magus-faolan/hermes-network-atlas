@@ -16,6 +16,14 @@ hosted acceptance and final same-card Gilfoyle review remain mandatory. The lega
 schema-2 build/acquire/setup below stays disabled, including its prewarm dispatcher;
 its former local fit/consent sequencing does not govern the hosted route.
 
+The active hosted successor now uses an explicitly versioned Git-only retained
+CORE and mandatory complete authenticated source materialization BEFORE native
+code. This is not a source exclusion or a larger numeric budget. Old/mixed bases
+refuse; physical/logical/self-inclusive/transient accounting is explicit. See
+[the controlling representation contract](core-retained-representation.md).
+Actual corrected hosted fit, fresh union/native/canonical/cold/cleanup remain
+pending; source tests are not those acceptance results.
+
 This is a local, opt-in acceptance harness, not a runtime deployment or hosted
 GitHub runner. Its new Docker/native path must be exercised and independently
 reviewed on the exact committed artifact before it is accepted. Packet-free

@@ -470,6 +470,7 @@ def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity
             value = json.loads(inventory.read_text())
             if value != record["dependency_inventory"]:
                 raise ValueError("actual image dependency inventory differs from registered base")
+            verify_representation_export(attempt, value, outcome)
     except BaseException as exc:
         outcome["export_error"] = type(exc).__name__ + ": " + str(exc)
         outcome['export_error_notes'] = getattr(exc, '__notes__', [])
@@ -484,6 +485,17 @@ def finish_attempt(docker: Docker, root: Path, attempt: Path, identity: Identity
         export_attempt_outcome(docker, root, attempt, outcome)
     except BaseException as exc:
         outcome["outcome_export_error"] = type(exc).__name__ + ": " + str(exc)
+
+
+def verify_representation_export(attempt: Path, inventory: dict, outcome: dict) -> None:
+    if 'core_representation' not in inventory or 'error' in outcome:
+        return  # Deliberate legacy-controller compatibility; new prepare refuses it.
+    if outcome['mode'] not in {'smoke', 'refusal', 'accept', 'hosted-accept'}:
+        return  # Intentional fail/interrupt modes do not materialize source.
+    from core_representation import require_materialization
+    proof = json.loads(regular_read(attempt / 'export/core-materialization.json', 32 * 1024))
+    manifest = json.loads(regular_read(attempt / 'export/consumer-copy-manifest.json', 4 * 1024 ** 2))
+    require_materialization(proof, inventory, manifest)
 
 
 def export_attempt_outcome(docker: Docker, root: Path, attempt: Path, outcome: dict) -> None:

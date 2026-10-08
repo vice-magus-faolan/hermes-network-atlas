@@ -170,6 +170,9 @@ class ImageReadbackTests(unittest.TestCase):
 
     @patch('hosted_docker.export_git_preparation', new=lambda *args: None)
     @patch('hosted_docker.export_retention', new=lambda *args: None)
+    @patch('core_representation.validate_inventory', new=lambda *args: None)
+    @patch('hosted_docker.export_representation', new=lambda *args: None)
+    @patch('hosted_docker.compare_representation', new=lambda *args: None)
     def test_hosted_failed_image_retains_proofs_and_never_registers_or_deletes_base(self):
         from test_docker_bootstrap_repair import ExportDocker, archive, NAMES
         from test_hosted_docker import diagnostics

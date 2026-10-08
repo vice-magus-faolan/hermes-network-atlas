@@ -159,7 +159,9 @@ class DefaultCommandTests(unittest.TestCase):
             main = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
             calls = [node for node in ast.walk(main) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'check_default_command']
             self.assertEqual(len(calls), 1)
-            export = next(node for node in ast.walk(main) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'write_bytes')
+            export = next(node for node in ast.walk(main) if isinstance(node, ast.Call) and
+                          ((isinstance(node.func, ast.Attribute) and node.func.attr == 'write_bytes') or
+                           (isinstance(node.func, ast.Name) and node.func.id == 'seal_inventory')))
             self.assertLess(calls[0].lineno, export.lineno)
 
     def test_real_noop_child_uses_existing_audit_and_unverified_cleanup_stays_closed(self):

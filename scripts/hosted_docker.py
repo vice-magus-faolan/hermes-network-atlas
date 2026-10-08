@@ -34,6 +34,9 @@ PUBLIC_FILES = {'Dockerfile': 'docker/Dockerfile', 'dependencies.json': 'docker/
                 'native_union_diagnostics.py': 'scripts/native_union_diagnostics.py',
                 'hosted_git.py': 'docker/hosted_git.py',
                 'hosted_retention.py': 'docker/hosted_retention.py',
+                'core_representation.py': 'scripts/core_representation.py',
+                'docker_snapshot.py': 'scripts/docker_snapshot.py',
+                'acceptance_support.py': 'scripts/acceptance_support.py',
                 'docker_evidence.py': 'scripts/docker_evidence.py'}
 FAILURES = ('error', 'export_error', 'cleanup_error', 'outcome_export_error', 'registry_error', 'resource_error')
 
@@ -118,10 +121,14 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
         outcome['export_hashes'] = export_bootstrap(docker, evidence, identity, provenance=True)
         export_git_preparation(docker, evidence, identity, root / 'context', hosted, outcome)
         export_retention(docker, evidence, identity, root / 'context', hosted, outcome)
+        export_representation(docker, evidence, identity, root / 'context', hosted, outcome)
         if 'export_error' in outcome:
             raise ValueError('Git preparation provenance export refused before image commit')
         inventory = json.loads(regular_read(evidence / 'inventory.json', 512 * 1024))
         validate_setup_inventory(inventory)
+        from core_representation import validate_inventory
+        validate_inventory(inventory)
+        compare_representation(evidence, inventory)
         image = docker.run(commit_command(data, identity, root / 'context', hosted=hosted), timeout=300).decode().strip()
         outcome['returned_image'] = image[:128]
         record = read_final_image(docker, image, identity, evidence, registry, initial['RootFS']['Layers'])
@@ -133,6 +140,7 @@ def build(docker: Docker, root: Path, source: Path, diagnostics: dict, registry:
     finally:
         export_git_preparation(docker, evidence, identity, root / 'context', hosted, outcome)
         export_retention(docker, evidence, identity, root / 'context', hosted, outcome)
+        export_representation(docker, evidence, identity, root / 'context', hosted, outcome)
         export_union_diagnostics(docker, evidence, identity, root / 'context', hosted, outcome)
         finish_build(docker, evidence, identity, outcome, provenance=True)
     return outcome, initial
@@ -193,6 +201,32 @@ def export_retention(docker, evidence: Path, identity, public: Path, hosted: dic
                 raise ValueError('retained compaction source identity differs from pinned core')
     except BaseException as exc:
         outcome.setdefault('export_error', export_error_text(exc))
+
+
+def export_representation(docker, evidence: Path, identity, public: Path, hosted: dict, outcome: dict) -> None:
+    """Independently retain partial move/retirement proof under exact ownership."""
+    try:
+        data = stopped_bootstrap(docker, identity)
+        validate_bootstrap(data, identity, public, hosted=hosted)
+        budget = BoundedDirectory(evidence)
+        rows = {name: copy_seed_member(docker, data['Id'], budget, name) for name in
+                ('core-representation.json', 'core-representation-diagnostic.json')}
+        budget.json('core-representation-export.json', rows)
+        outcome['core_representation_export'] = rows
+        if data['State']['ExitCode'] == 0:
+            if any(row['status'] != 'present' for row in rows.values()):
+                raise ValueError('required CORE representation proof absent')
+            from core_representation import require_record
+            require_record(json.loads(regular_read(evidence / 'core-representation.json', 32 * 1024)))
+    except BaseException as exc:
+        outcome.setdefault('export_error', export_error_text(exc))
+
+
+def compare_representation(evidence: Path, inventory: dict) -> None:
+    actual = json.loads(regular_read(evidence / 'core-representation.json', 32 * 1024))
+    diagnostic = json.loads(regular_read(evidence / 'core-representation-diagnostic.json', 32 * 1024))
+    if actual != inventory['core_representation'] or diagnostic.get('stage') != 'complete' or diagnostic.get('representation') != actual:
+        raise ValueError('actual CORE representation/diagnostic differs from inventory')
 
 
 def successful(outcome: dict) -> None:

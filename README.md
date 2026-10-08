@@ -161,14 +161,26 @@ retained fit/native/full/cold/cleanup and final review remain pending.
 Actual hosted run `37831615760` resolved that observer race and completed full
 object/source-preserving compaction, then strict final accounting measured the
 seed 22,832,303 bytes over the unchanged 1 GiB ceiling. A tiny tuned comparison
-does not establish full-core savings or impossibility. The current successor is
-MEASUREMENT ONLY: exact source/ref/allowlist/hash validation routes a reviewed
+does not establish full-core savings or impossibility. That successor was
+MEASUREMENT ONLY: exact source/ref/allowlist/hash validation routed a reviewed
 feature push exclusively to two fixed bounded hosted native Git variants, never
 the known failing acceptance pipeline. Production packing/cache/PM/pins/limits
 remain unchanged. Immutable non-Git counters plus explicit reserve yield only a
 projection; all measurement reports keep native/canonical/final acceptance false.
 The host Git/zlib runtime differs from the producer and is recorded, not promoted
 to runtime equivalence. See [hosted packing measurement](docs/hosted-packing-measurement.md).
+Actual run `37843978698` completed the current full-core measurement; the tuned
+variant timed out at the unchanged child bound. The explicitly approved producer
+successor retains ALL CORE Git state at rest as `atlas-core-git-only-v1`, removing
+only the authenticated duplicate expanded bootstrap worktree. Every contained
+consumer must reconstruct and authenticate complete source/objects/modes/links
+before any native scanner or PM import. Physical retained and logical expanded
+totals are explicit; final inventories include themselves and consumer peaks
+include full spool/source overlap. Numeric limits, full scanning, pins, native
+fresh union and isolation are unchanged. The measurement marker is retired for
+this production successor. Tiny genuine Git and source checks are NOT corrected
+hosted fit/native/canonical/cold/cleanup acceptance, which remains pending. See
+[the versioned CORE representation](docs/core-retained-representation.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable

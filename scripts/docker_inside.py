@@ -57,10 +57,13 @@ def prepare() -> tuple[Path, dict[str, str]]:
         raise ValueError("fresh fixed container layout required")
     FIXTURE.mkdir(mode=0o700)
     (FIXTURE / "synthetic-atlas-home").touch()
-    expected = authenticate_source(SEED / 'hermes-source', 'consumer-seed')
-    for name in ("hermes-source", "tools", "uv-cache"):
+    from core_representation import restore, authenticate_inventory
+    authenticate_inventory(SEED, Path('/opt/verifier'))
+    restore(SEED, FIXTURE / 'hermes-source', WORK, lambda row: write_json('core-materialization.json', row))
+    for name in ("tools", "uv-cache"):
         shutil.copytree(SEED / name, FIXTURE / name, symlinks=True)
-    authenticate_source(FIXTURE / 'hermes-source', 'consumer-copy', expected=expected)
+        usage(WORK)
+    authenticate_source(FIXTURE / 'hermes-source', 'consumer-copy')
     shutil.copytree(ROOT, FIXTURE / "candidate", symlinks=True)
     home = FIXTURE / "hermes"
     home.mkdir()

@@ -1,5 +1,14 @@
 # Owned producer Git packing and retained accounting
 
+This documents the original compaction and observer repairs. The explicitly
+approved current successor retains the complete Git store without its duplicate
+expanded worktree, then requires exact full consumer materialization. Numeric
+ceilings and every object/source/native invariant remain unchanged. See
+[versioned physical/logical/self-inclusive accounting](core-retained-representation.md)
+for the amended at-rest representation and precisely enumerated inherited test
+seams. Historical assertions below describe their original source phases; actual
+corrected hosted fit and native acceptance remain pending.
+
 ## Observed hosted failure
 
 Hosted run `37815273128`, exact Atlas

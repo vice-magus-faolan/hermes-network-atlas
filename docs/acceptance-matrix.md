@@ -102,6 +102,22 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Fourteen additive mandatory `tests/test_docker_representation.py::RepresentationTests`
+IDs cover actual tiny complete Git-only publication, literal commit/tree/shallow,
+unreachable objects and absent parents, native CRLF/executable/symlink archive,
+complete source/object/metadata readbacks, actual self-inclusive physical/logical/
+verifier totals, owned spool/source peak overlap, old/mixed/partial/count/config/
+hook/alternate/attribute/path/type/tamper refusals, real owned child deadline/
+size/nonzero/reaping, simulated ENOSPC/primary-error/cleanup/export/no-reuse,
+producer retirement failure and independent controller complete proof refusal.
+Normal and actual -O are required. All inherited IDs/fixtures/assertions remain;
+two structural AST expectations follow `seal_inventory` and two old minimal daemon
+fixtures add only NEW representation-boundary decorators, with unchanged bodies.
+Exact hashes/diffs are retained, not falsely called byte-identical. Full tracked
+source/test/doc native-default scope remains unchanged. Source implementation and
+tiny Git are NOT corrected hosted fit/fresh union/native/canonical/cold/restart/
+cleanup/final acceptance. See [CORE retained representation](core-retained-representation.md).
+
 Ten additive mandatory `tests/test_docker_measurement.py::MeasurementTests` IDs
 cover real predecessor feature-routing RED, mutually exclusive measurement/native
 jobs, unchanged main/PR/ordinary feature controls, actual tiny Git marker/hash/

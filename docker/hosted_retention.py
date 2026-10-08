@@ -41,6 +41,8 @@ def retain(seed: Path, report: dict) -> None:
     payload = json.dumps(report, sort_keys=True).encode()
     if len(payload) > REPORT_LIMIT:
         raise ValueError('retained inventory report bound')
+    if 'core_representation' in report:
+        guard_representation_report(seed, len(payload))
     pending = seed / 'retained-inventory.pending'
     fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
@@ -49,6 +51,14 @@ def retain(seed: Path, report: dict) -> None:
         pending.replace(seed / 'retained-inventory.json')
     finally:
         pending.unlink(missing_ok=True)
+
+
+def guard_representation_report(seed: Path, size: int) -> None:
+    """Include atomic report overwrite duplication in represented physical bounds."""
+    row = {}
+    measure(seed, row)
+    if row['bytes'] + size > BYTE_LIMIT or row['files'] + 1 > FILE_LIMIT:
+        raise ValueError('represented retained report transient bound')
 
 
 def component(root: Path, path: Path) -> str:
@@ -278,8 +288,13 @@ def compact_core(core: Path, seed: Path, commit: str, tree: str) -> dict:
             original.add_note(f'retention diagnostic failed: {type(exc).__name__}')
 
 
-def retained_inventory(seed: Path, verifier: Path, compaction: dict) -> dict:
-    owned_layout(seed / 'hermes-source', seed)
+def retained_inventory(seed: Path, verifier: Path, compaction: dict, representation: dict | None = None) -> dict:
+    if representation is None:
+        owned_layout(seed / 'hermes-source', seed)
+    else:
+        from core_representation import producer_store, require_record
+        producer_store(seed)
+        require_record(representation)
     if verifier != Path('/opt/verifier') and seed == Path('/opt/seed'):
         raise ValueError('fixed verifier retention root required')
     report = {'stage': 'measuring', 'compaction': compaction, 'native_acceptance': False,
@@ -291,6 +306,9 @@ def retained_inventory(seed: Path, verifier: Path, compaction: dict) -> dict:
             for field, limit in (('bytes', BYTE_LIMIT), ('files', FILE_LIMIT)):
                 if report[name][field] > limit:
                     report['violations'].append(name + ':' + field)
+        if representation is not None:
+            report['core_representation'] = representation
+            report['logical_expanded_seed_bytes'] = report['seed']['bytes'] + representation['expanded_bytes']
         retain(seed, report)  # exact complete component totals survive guard refusal
         if report['violations']:
             raise ValueError('public retained inventory bound')
@@ -322,6 +340,11 @@ def require_complete(report: dict) -> None:
     require_compaction(compact)
     for name in ('seed', 'verifier'):
         require_accounting(report.get(name))
+    if 'core_representation' in report:
+        from core_representation import require_record
+        require_record(report['core_representation'])
+        if report.get('logical_expanded_seed_bytes') != report['seed']['bytes'] + report['core_representation']['expanded_bytes']:
+            raise ValueError('explicit logical/physical CORE accounting differs')
 
 
 def require_compaction(row: dict) -> None:
