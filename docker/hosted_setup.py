@@ -32,8 +32,8 @@ from hosted_apt import provision
 PUBLIC = Path('/opt/inputs')
 SEED = Path('/opt/seed')
 CORE = SEED / 'hermes-source'
-HERMES = 'f42f579cf8bac4918ac9599bece71618afadd846'
-TREE = '008b644d38770b7de0835592ddaf19a708e2fa82'
+HERMES = '5645275e50d66dca04c9565634f9b5207a38aef5'
+TREE = '85282aca9d246911005dba7adbdf3ca3ddd04df5'
 
 
 def run(argv: list[str]) -> str:

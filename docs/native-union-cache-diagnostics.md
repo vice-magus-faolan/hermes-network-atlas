@@ -1,5 +1,20 @@
 # Native member-union cache diagnosis
 
+## Current authenticated offline successor
+
+Actual subsequent run `37734182194` exported stale kittentts direct-URL HTTP
+revalidation and network-none DNS failure. Native installation succeeded but
+enable/canonical/cold acceptance did not. Exact policy/key/freshness origin and
+complete other-dependency closure remain unknown; diagnostics are not a repair.
+The current successor uses authenticated, independently source-reviewed core
+`5645275e50d66dca04c9565634f9b5207a38aef5` and explicit supported `offline=True`
+only for network-none consumer enable. It preserves fresh native union resolution,
+selection, quarantine, consent, ambient sanitizer, diagnostic bounds and failure
+precedence. Actual offline cache closure is still unproved. See
+[current core identity, caller/worker/engine trace and gates](native-offline-consumer.md).
+The sections below describe the immutable earlier diagnostic phase and old core;
+their historical source coordinates and failures are not rewritten as new proof.
+
 ## Observed failure and scope
 
 Hosted run `37729012087` executed exact candidate

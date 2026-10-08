@@ -97,6 +97,15 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_docker_offline.OfflineConsumerTests.test_atlas_enable_flag_reaches_actual_native_keyword_contract",
+    "test_docker_offline.OfflineConsumerTests.test_default_online_enable_ignores_ambient_policy",
+    "test_docker_offline.OfflineConsumerTests.test_offline_flag_refuses_other_actions_before_mode_or_filesystem",
+    "test_docker_offline.OfflineConsumerTests.test_network_none_call_requests_offline_only_after_install",
+    "test_docker_offline.OfflineConsumerTests.test_ordinary_network_none_call_retains_interactive_consent",
+    "test_docker_offline.OfflineConsumerTests.test_real_activation_selection_and_worker_request_keep_policy_and_refusal",
+    "test_docker_offline.OfflineConsumerTests.test_real_engine_fresh_member_lock_and_sync_are_explicit_offline",
+    "test_docker_offline.OfflineConsumerTests.test_current_core_identity_workflow_and_unrelated_pins",
+    "test_docker_offline.OfflineConsumerTests.test_historical_base_and_failed_image_never_satisfy_current_pin",
     "test_docker_union_diagnostics.UnionDiagnosticsTests.test_near_cap_enable_output_deadline_and_owned_cleanup_are_bounded",
     "test_docker_union_diagnostics.UnionDiagnosticsTests.test_independent_producer_file_export_bounds_and_guard_precede_reads",
     "test_docker_union_diagnostics.UnionDiagnosticsTests.test_pinned_member_workspace_quarantine_moves_cutoff_without_source_edit",

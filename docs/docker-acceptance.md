@@ -55,7 +55,9 @@ any ordinary CAUTION confirmation. Old host fixture approval does not apply.
 build recipe or fallback. It pins the linux/amd64 Python 3.14.7 manifest digest.
 `docker/dependencies.json` declares public dependency inputs. The complete
 public Hermes archive is pinned to
-`f42f579cf8bac4918ac9599bece71618afadd846`; its PM lock pins Python and uv
+`5645275e50d66dca04c9565634f9b5207a38aef5` from the authenticated public fork;
+see [complete identity and explicit offline consumer](native-offline-consumer.md).
+Source review/authentication is not native/cache acceptance. Its unchanged PM lock pins Python and uv
 artifacts and checksums. Apt package/index closure must be resolved from the
 dated Debian snapshot before effects. Only fixed length/hash public artifacts
 may be acquired; redirects are checked, proxies are not inherited, and every

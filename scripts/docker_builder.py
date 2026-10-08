@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docker"))
 from acquisition_plan import artifact, exact, validate_linkage, require_execution_ready
 from acquisition_support import BASE_COMMAND
 
-CORE_TREE = "008b644d38770b7de0835592ddaf19a708e2fa82"
+CORE_TREE = "85282aca9d246911005dba7adbdf3ca3ddd04df5"
 UPSTREAM_DIGEST = "sha256:998acd06f485adfd6890e3e15a4b542543e0cf22ff904310095da328a5e3e561"
 UPSTREAM = "python:3.14.7-slim-bookworm@" + UPSTREAM_DIGEST
 BOOTSTRAP_NAME = "network-atlas-bootstrap"

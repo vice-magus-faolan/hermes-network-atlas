@@ -27,8 +27,8 @@ NAMESPACE = "network-atlas-native-caution-v1"
 PROMPT = b"Install anyway? Only continue if you trust the source. [y/N]:"
 # Digest of path/type/executable-bit/content for EVERY member of the exact
 # public git archive. Python bytecode caches/VCS metadata are not source members.
-CORE_SOURCE_DIGEST = "880bc1836050b055ecd47f08bcc3f25fc1392f824a170f93d07e2ae7e8705b96"
-CORE_TREE = "008b644d38770b7de0835592ddaf19a708e2fa82"
+CORE_SOURCE_DIGEST = "6c136cc4cf643181091c0077b85ff1fc86615cd841425e91ae1269f951137c79"
+CORE_TREE = "85282aca9d246911005dba7adbdf3ca3ddd04df5"
 SCANNER_HASHES = {
     "tools/plugin_guard.py": "d4ad147e69b1768aa6ecc44d091f4ef09251c10160275ba99c8bb7cb53155788",
     "tools/plugin_guard_context.py": "c1788bd81b22684983aa748e960e3699132f49509a8d99d96e51f5a144e2b271",

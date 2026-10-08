@@ -102,6 +102,19 @@ exact authority, unchanged limits and the remaining actual hosted/final review g
 
 ## Executable evidence index
 
+Nine additive mandatory `tests/test_docker_offline.py::OfflineConsumerTests` IDs
+exercise literal predecessor parser/caller RED and successor explicit offline
+enable GREEN, effect-free non-enable flag refusal, unchanged online default,
+both network-none caller consent boundaries, actual native activation/Selection/
+worker request and unchanged refusal, fresh member engine lock/sync offline argv,
+authenticated current pins/fork workflow, and old-base/image current-policy
+refusal. Normal/-O are required. Actual uv/publication/install/readback effects
+are intercepted, NOT genuine cache/native acceptance. Five inherited test/helper
+files have only documented pin literals/URL or scoped historical replay decorators
+changed; all original historical JSON bytes and test IDs remain. Exact hashes/diffs
+are retained, not falsely described as all-byte-identical. See
+[authenticated offline consumer](native-offline-consumer.md).
+
 Eleven additive mandatory `tests/test_docker_union_diagnostics.py::UnionDiagnosticsTests`
 IDs cover real failed-enable export RED/GREEN, actual PTY audit/primary identity,
 near-cap output and deadline/owned reaping, cache metadata/opaque hashes/symlink/

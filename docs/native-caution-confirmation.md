@@ -9,7 +9,9 @@ anchor, real signing keys or per-commit signed CI consent is required. It does n
 approve local/runtime force, persistent replacement, deployment, live collection,
 publication of unreviewed bytes or main integration.
 
-Hermes is pinned to f42f579cf8bac4918ac9599bece71618afadd846. Its unchanged
+Current acceptance Hermes is pinned to 5645275e50d66dca04c9565634f9b5207a38aef5
+from the authenticated public fork; see [source-only offline prerequisite](native-offline-consumer.md).
+Its unchanged
 `plugin-guard-v8` scanner scans the entire committed plugin tree, including source,
 docs, tests and harnesses, under ordinary native exclusions. SAFE proceeds without
 force. CAUTION selects the supported `cmd_install(..., force=True)` option in the

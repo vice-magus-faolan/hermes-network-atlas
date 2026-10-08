@@ -53,7 +53,7 @@ class NativePMContractTests(unittest.TestCase):
     def setUpClass(cls):
         deny_network()
         core = runtime_root()
-        if git_head(core) != HERMES_COMMIT or git_tree(core) != '008b644d38770b7de0835592ddaf19a708e2fa82':
+        if git_head(core) != HERMES_COMMIT or git_tree(core) != '85282aca9d246911005dba7adbdf3ca3ddd04df5':
             raise ValueError('actual pinned public PM source required')
         subprocess.run(['git', '-C', str(core), 'diff', '--exit-code', 'HEAD', '--',
                         'pm', 'hermes_constants.py', 'hermes_cli/plugins_cmd.py'], check=True,

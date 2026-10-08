@@ -253,7 +253,7 @@ def core_sources(source: dict, plan: dict) -> dict:
         raise ValueError("core archive/input digest mismatch")
     return {"archive": {"category": "core-archive", "sha256": row["archive_sha256"], "compressed_bytes": row["archive_bytes"],
                         "name": "hermes", "version": row["commit"], "filename": "hermes.tar",
-                        "url": "https://github.com/NousResearch/hermes-agent"}}
+                        "url": "https://github.com/vice-magus-faolan/hermes-agent"}}
 
 
 def source_records(plan: dict) -> dict:

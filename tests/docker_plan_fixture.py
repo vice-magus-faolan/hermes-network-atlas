@@ -48,7 +48,7 @@ def linked_plan(builder):
     artifacts.extend([
         {"category": "upstream-layer", "name": "layer-0", "version": manifest["sha256"], "filename": "d" * 64 + ".tar.gz", "url": "https://registry-1.docker.io/v2/library/python/blobs/sha256:" + "d" * 64,
          "sha256": "d" * 64, "compressed_bytes": 100, "unpacked_bytes": 1000, "members": 10, "source": "oci", "record": "0"},
-        {"category": "core-archive", "name": "hermes", "version": builder.HERMES_COMMIT, "filename": "hermes.tar", "url": "https://github.com/NousResearch/hermes-agent",
+        {"category": "core-archive", "name": "hermes", "version": builder.HERMES_COMMIT, "filename": "hermes.tar", "url": "https://github.com/vice-magus-faolan/hermes-agent",
          "sha256": inputs["hermes.tar"], "compressed_bytes": 100, "unpacked_bytes": 1000, "members": 10, "source": "core", "record": "archive"}])
     return {"schema": 2, "status": "linked_metadata_only", "core_commit": builder.HERMES_COMMIT, "core_tree": builder.CORE_TREE,
             "platform": "linux/amd64", "upstream": "sha256:" + manifest["sha256"], "upstream_image": "sha256:" + config["sha256"],

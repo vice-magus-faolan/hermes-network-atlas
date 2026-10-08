@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Online SETUP ONLY: real native install/enable, unchanged admission and consent."""
+"""SETUP ONLY: real native install/enable, explicit dependency policy, unchanged consent."""
 from __future__ import annotations
 
 import argparse
@@ -74,8 +74,12 @@ def main() -> int:
     parser.add_argument("ref", nargs="?")
     parser.add_argument("--origin-commit")
     parser.add_argument("--admission-mode", choices=("local", MODE), default="local")
+    parser.add_argument("--offline-enable", action="store_true",
+                        help="enable with cached dependency resolution; no admission or consent bypass")
     confirmation_arguments(parser)
     args = parser.parse_args()
+    if args.offline_enable and args.action != "enable":
+        raise ValueError("offline dependency policy is enable-only")
     hosted = select_mode(args.admission_mode, os.environ)
     if hosted and (args.action != "install" or approval_values(args)):
         raise ValueError("hosted CI mode is install-only and cannot use signed consent")
@@ -117,7 +121,10 @@ def main() -> int:
         else:
             plugins_cmd.cmd_install(candidate.as_uri(), enable=False, ref=args.ref)
     elif action == "enable":
-        plugins_cmd.cmd_enable("network-atlas")
+        if args.offline_enable:
+            plugins_cmd.cmd_enable("network-atlas", offline=True)
+        else:
+            plugins_cmd.cmd_enable("network-atlas")
     else:
         raise ValueError("unknown fixture action")
     result = readback(root, source, home, action)

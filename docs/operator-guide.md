@@ -10,7 +10,10 @@ own gates. Do not infer permission from these examples.
 
 Compatibility is Python >=3.11,<3.15 and Hermes >=0.21.4,<0.22; executable evidence
 uses Linux x86_64, Python 3.14.7 and exact Hermes
-f42f579cf8bac4918ac9599bece71618afadd846. Other platforms/versions are not proven.
+5645275e50d66dca04c9565634f9b5207a38aef5 from `vice-magus-faolan/hermes-agent`.
+This narrowly amended public core is source-reviewed/authenticated only; actual
+corrected native/hosted acceptance remains pending. No live core update is implied.
+Other platforms/versions are not proven. See [core identity and offline consumer](native-offline-consumer.md).
 Atlas itself needs only ruamel.yaml>=0.18.16,<0.19 beyond the standard library,
 declared with the supported native plugin.yaml python_dependencies field.
 
@@ -38,6 +41,16 @@ relax security settings. Native enable can resolve upstream optional requirement
 and revalidate URL dependencies even when a frozen core build is cached. Therefore
 setup may need the network; the Atlas test process must not have it. An incomplete
 package-intelligence warning is not a clean vulnerability verdict.
+
+The contained Docker network-none consumer now requests the reviewed core's
+supported explicit offline dependency policy via the enable-only synthetic setup
+flag `--offline-enable`. Ordinary online setup remains unchanged; ambient
+`UV_OFFLINE` is still stripped, not an authority or cache-closure guarantee.
+Native admission, dependency/capability consent, fresh resolution and genuine
+selection/readback remain mandatory. Offline does not promise complete cached
+Git/build/tool inputs; cache misses must fail, not acquire through an online
+fallback. This source-only change is not permission to update a live core/profile
+or evidence of genuine successful hosted enable/canonical/cold acceptance.
 
 ## Profile-local policy
 

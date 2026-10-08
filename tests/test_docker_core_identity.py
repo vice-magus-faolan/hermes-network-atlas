@@ -61,7 +61,7 @@ class CoreIdentityTests(unittest.TestCase):
     def test_real_pinned_named_install_publishes_source_local_launchers(self):
         core = runtime_root()
         self.assertEqual(subprocess.check_output(['git', '-C', str(core), 'rev-parse', 'HEAD'], text=True).strip(),
-                         'f42f579cf8bac4918ac9599bece71618afadd846')
+                         '5645275e50d66dca04c9565634f9b5207a38aef5')
         sys.path.insert(0, str(core))
         import pm.cli as cli
         import pm.install as install
@@ -201,7 +201,7 @@ class CoreIdentityTests(unittest.TestCase):
 
     def test_actual_public_archive_manifest_matches_unchanged_pin_without_extraction(self):
         core = runtime_root()
-        child = subprocess.Popen(['git', '-C', str(core), 'archive', 'f42f579cf8bac4918ac9599bece71618afadd846'],
+        child = subprocess.Popen(['git', '-C', str(core), 'archive', '5645275e50d66dca04c9565634f9b5207a38aef5'],
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         manifest = {}
         total = 0

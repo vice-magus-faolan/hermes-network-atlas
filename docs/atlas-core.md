@@ -270,7 +270,11 @@ A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
 A07/A08 discovery/reconciliation separately; Phase 3 documents A09 inspection
 evidence. A13 is indexed in acceptance-matrix.md, not proved by Phase 1 alone.
 
-Native source remains the inspected f42f579cf8bac4918ac9599bece71618afadd846.
+Historical Phase 1 native source was f42f579cf8bac4918ac9599bece71618afadd846.
+Current cumulative acceptance consumes the separately authenticated source-only
+offline prerequisite `5645275e50d66dca04c9565634f9b5207a38aef5`; see
+[native-offline-consumer.md](native-offline-consumer.md) for identity and pending
+real native/cache/hosted gates. The execution statements below are Phase 1 history.
 Phase 1 local execution uses its existing admitted Python 3.11.15 environment
 with ruamel.yaml 0.18.17; parent scaffold evidence exercised Python 3.14.7 with
 0.18.16. No production dependency installation/modification is part of these

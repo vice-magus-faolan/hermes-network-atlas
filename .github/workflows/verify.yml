@@ -24,8 +24,8 @@ jobs:
       - name: Exact public native core
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: NousResearch/hermes-agent
-          ref: f42f579cf8bac4918ac9599bece71618afadd846
+          repository: vice-magus-faolan/hermes-agent
+          ref: 5645275e50d66dca04c9565634f9b5207a38aef5
           path: .hermes-runtime-source
           persist-credentials: false
       - name: Initialize hosted scratch at step scope
@@ -65,8 +65,8 @@ jobs:
       - name: Exact native Hermes test source (no live activation)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          repository: NousResearch/hermes-agent
-          ref: f42f579cf8bac4918ac9599bece71618afadd846
+          repository: vice-magus-faolan/hermes-agent
+          ref: 5645275e50d66dca04c9565634f9b5207a38aef5
           path: .hermes-runtime-source
           persist-credentials: false
       - name: Prepare isolated verifier prerequisites

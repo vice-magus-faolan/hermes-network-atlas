@@ -124,6 +124,14 @@ lock and cache readbacks, native resolver debug output, and enable logs/audit ev
 on failure, without changing pins, selection, resolver or isolation. It does not
 claim cache closure or native-enabled/full/cold acceptance. See
 [member-union cache evidence and limits](docs/native-union-cache-diagnostics.md).
+Subsequent actual run `37734182194` retained stale direct-URL HTTP revalidation
+and network-none DNS refusal; native enabled/full/cold acceptance still failed.
+The current successor consumes independently source-reviewed/authenticated core
+`5645275e50d66dca04c9565634f9b5207a38aef5` from the public fork and requests its
+explicit native offline dependency policy only during network-none enable. The
+default online setup, native fresh union/selection, scanning and consent remain.
+This is not demonstrated cache closure or corrected hosted/native acceptance.
+See [authenticated offline consumer and remaining gates](docs/native-offline-consumer.md).
 The legacy metadata-plan build/acquisition/root setup remains disabled pending
 authenticated dependency closure and a reviewed aggregate storage architecture. Strict
 `linked_metadata_only` projections and declared budget estimates cannot enable
@@ -150,6 +158,7 @@ external database, web app, MCP server, or background service is required.
 - [Complete authenticated public core across PM setup and contained copying](docs/complete-core-identity.md)
 - [Bounded actual selected native-tool and kernel execution diagnostics](docs/native-tool-execution.md)
 - [Bounded actual member-union source/cache and failure-log diagnostics](docs/native-union-cache-diagnostics.md)
+- [Authenticated core prerequisite and explicit network-none offline enable](docs/native-offline-consumer.md)
 - [Legacy finite public Docker acquisition/peak plan and unresolved execution gates](docs/docker-acquisition-plan.md)
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "hermes_commit": "f42f579cf8bac4918ac9599bece71618afadd846",
+  "hermes_commit": "5645275e50d66dca04c9565634f9b5207a38aef5",
   "python": "3.14.7",
   "uv": "0.12.3",
   "debian_snapshot": "20260919T000000Z",

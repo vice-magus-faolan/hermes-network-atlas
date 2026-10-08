@@ -4,7 +4,10 @@ For the subsequent actually observed fresh member-union enable/cache refusal,
 see [native-union-cache-diagnostics.md](native-union-cache-diagnostics.md): exact
 pinned generation/quarantine/argv/environment trace, executed contract seams,
 UV_OFFLINE stripping, bounded real resolver diagnostics and preserved unknowns.
-The latest successor is diagnostics-only, not native-enabled acceptance.
+That historical successor was diagnostics-only. The current successor consumes
+the authenticated source-reviewed explicit offline core and updates only contained
+network-none enable; see [the current core/caller audit](native-offline-consumer.md).
+Actual corrected native-enabled/cache/full acceptance remains pending.
 
 ## Observed defect and narrow repair
 
@@ -16,7 +19,7 @@ failed with the pinned CLI's incompatible-flags message. Native acceptance was
 not reached. These facts do not revise the preceding failed runs or establish
 later provisioning, cold-cache or cleanup success.
 
-The unchanged public core is `f42f579cf8bac4918ac9599bece71618afadd846`, tree
+The historical failure used public core `f42f579cf8bac4918ac9599bece71618afadd846`, tree
 `008b644d38770b7de0835592ddaf19a708e2fa82`. In that source:
 
 - `pm/cli.py:267-294` rejects names/extras/target with `--tools-only`.
@@ -37,7 +40,14 @@ legacy recipe is repaired too; its independent execution guard remains closed.
 
 ## All native PM boundaries in the hosted path
 
-Coordinates below refer to the unchanged pinned core, not the latest upstream.
+The table below preserves that historical source audit, not current upstream.
+Current acceptance uses `5645275e50d66dca04c9565634f9b5207a38aef5`, tree
+`85282aca9d246911005dba7adbdf3ca3ddd04df5`, complete source digest
+`6c136cc4cf643181091c0077b85ff1fc86615cd841425e91ae1269f951137c79`.
+Named tool/verifier/store/producer contracts remain unchanged; the current native
+enable/Selection/sync/worker/engine policy trace is in
+[native-offline-consumer.md](native-offline-consumer.md). Producer warm and ordinary
+online setup stay default-online. No pin update is a live runtime promotion.
 All installation/build/publication effects below remain hosted-only. The
 lightweight contract tests bind signatures or intercept effect boundaries;
 they do NOT execute these effects or certify usable offline closures.

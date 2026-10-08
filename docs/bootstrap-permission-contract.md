@@ -106,11 +106,13 @@ boundary. Actual failed output is retained, never synthesised from source.
 
 ### Downstream pinned PM source audit
 
-The unchanged core `f42f579cf8bac4918ac9599bece71618afadd846` releases native
+The historical core `f42f579cf8bac4918ac9599bece71618afadd846` releases native
 `fetch-<hash>` archives on successful tool publication (`pm/install.py`,
 `_remove_downloads`). The predecessor's late `tool_artifacts()` read therefore
 cannot rely on those cache entries surviving. This is a source-derived later
 defect, NOT an observed second failure in run `37619683658`.
+Current acceptance consumes the authenticated offline-policy core successor;
+tool/archive behavior is unchanged. See [current identity and acceptance limits](native-offline-consumer.md).
 
 The guarded, bounded `fetch-tools` child uses that exact PM's native
 `Store.fetch_many` under its native store lock/scratch context, authenticates the

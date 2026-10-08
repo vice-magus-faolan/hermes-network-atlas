@@ -159,7 +159,7 @@ def scan_and_install(source: Path, env: dict, mode: str) -> int:
     code, _text = execute([*base, "install", str(candidate), git_head()], env, "install.log", interactive=True)
     if code:
         raise RuntimeError("ordinary native installation failed")
-    code, _text = execute([*base, "enable"], env, "enable.log", interactive=True)
+    code, _text = execute([*base, "enable", "--offline-enable"], env, "enable.log", interactive=True)
     if code:
         raise RuntimeError("genuine native enable/PM failed")
     receipt = json.loads((FIXTURE / "native-enabled.json").read_text())
@@ -175,9 +175,7 @@ def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) ->
     from hosted_contract import require_hosted
     diagnostics = require_hosted(os.environ, workspace=ROOT, commit=git_head())
     env.update(diagnostics)
-    # Pinned PM strips UV_OFFLINE. Actual Docker network:none + inherited
-    # syscall denial enforce isolation; never claim this env flag enforces it.
-    env['UV_OFFLINE'] = '1'
+
     install = [*base, "install", str(candidate), git_head(), "--admission-mode", "hosted-ci-caution",
                "--origin-commit", git_head()]
     diagnostic_error = tool_diagnostics(env)
@@ -190,7 +188,9 @@ def hosted_install(base: list[str], candidate: Path, source: Path, env: dict) ->
     if diagnostic_error:
         raise RuntimeError(diagnostic_error)
     # Narrow supported PM prompt only, not blanket yes or scan confirmation.
-    hosted_enable([*base, "enable"], source, env)
+    # Explicit supported dependency policy, not an ambient environment setting.
+    # Actual network:none/syscall denial still enforce the transport boundary.
+    hosted_enable([*base, "enable", "--offline-enable"], source, env)
     receipt = json.loads((FIXTURE / "native-enabled.json").read_text())
     receipt.update(candidate_commit=git_head(), candidate_tree=git_tree(), fixture_commit=git_head(),
                    setup_network="Docker network none plus inherited syscall denial", environment=env,

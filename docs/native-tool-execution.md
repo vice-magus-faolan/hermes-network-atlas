@@ -75,9 +75,12 @@ and canonical acceptance are refused by the existing error-precedence boundary.
 
 ## Native path and producer audit
 
-Pinned Hermes remains `f42f579cf8bac4918ac9599bece71618afadd846`, tree
-`008b644d38770b7de0835592ddaf19a708e2fa82`, complete source digest
-`880bc1836050b055ecd47f08bcc3f25fc1392f824a170f93d07e2ae7e8705b96`.
+Current acceptance Hermes is `5645275e50d66dca04c9565634f9b5207a38aef5`, tree
+`85282aca9d246911005dba7adbdf3ca3ddd04df5`, complete source digest
+`6c136cc4cf643181091c0077b85ff1fc86615cd841425e91ae1269f951137c79`.
+This authenticated source-only prerequisite adds explicit offline dependency
+policy; tool execution/pins are unchanged. Historical runs used the prior core.
+See [offline consumer and pending real acceptance](native-offline-consumer.md).
 Producer `docker/hosted_setup.py` uses normal named native `install python uv`,
 authenticated tool archives, genuine verifier/member-union PM warming, then
 rebuilds the entire authenticated source. `base_setup.readable_seed` preserves

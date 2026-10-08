@@ -72,6 +72,10 @@ class DefaultCommandTests(unittest.TestCase):
                     self.assertIn('WORKDIR /work', argv)
                     self.assertNotIn('CMD []', argv)
 
+    # Isolate historical pin expectations while preserving every original
+    # Cmd/Entrypoint/ownership assertion and immutable fixture byte.
+    @patch.object(builder, 'HERMES_COMMIT', 'f42f579cf8bac4918ac9599bece71618afadd846')
+    @patch.object(builder, 'CORE_TREE', '008b644d38770b7de0835592ddaf19a708e2fa82')
     def test_actual_failed_image_and_stopped_data_remain_rejected(self):
         image, stopped = actual_records()
         labels = stopped['Config']['Labels']

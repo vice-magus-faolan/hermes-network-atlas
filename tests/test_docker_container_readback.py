@@ -57,6 +57,10 @@ def model(candidate, identity, mode='smoke'):
 
 
 class ContainerReadbackTests(unittest.TestCase):
+    # Replay the immutable historical contract, not approval of this old base
+    # under the successor pin. Current-policy refusal is tested separately.
+    @patch.object(builder, 'HERMES_COMMIT', 'f42f579cf8bac4918ac9599bece71618afadd846')
+    @patch.object(builder, 'CORE_TREE', '008b644d38770b7de0835592ddaf19a708e2fa82')
     def test_predecessor_rejects_modeled_inheritance_from_actual_verified_base(self):
         image, record = proof()
         harness.validate_base(image, record, record['daemon'])
@@ -390,6 +394,8 @@ class ContainerReadbackTests(unittest.TestCase):
                 builder.register_consumer(registry, identity, root, 'active')
             self.assertEqual(before, (registry / 'base.json').read_bytes())
 
+    @patch.object(builder, 'HERMES_COMMIT', 'f42f579cf8bac4918ac9599bece71618afadd846')
+    @patch.object(builder, 'CORE_TREE', '008b644d38770b7de0835592ddaf19a708e2fa82')
     def test_production_smoke_sequence_uses_exact_model_and_full_owned_lifecycle(self):
         image, record = proof()
         with scratch_home() as directory:
