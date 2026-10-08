@@ -147,10 +147,26 @@ class DisposableValidationTests(unittest.TestCase):
             validation.run(['/usr/bin/false'])
         self.assertEqual(context.exception.returncode, 1)
         validation.run(['/usr/bin/true'])
+        owned = []
+        popen = subprocess.Popen
+        def spawn(*args, **kwargs):
+            process = popen(*args, **kwargs)
+            owned.append(process)
+            return process
+        with patch.object(validation.subprocess, 'Popen', side_effect=spawn), self.assertRaises(subprocess.TimeoutExpired):
+            validation.run(['/usr/bin/sleep', '10'], timeout=0.05)
+        self.assertIsNotNone(owned[0].poll())
+        self.assertLess(owned[0].returncode, 0)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(owned[0].pid, 0)
         tree = ast.parse((ROOT / 'scripts/disposable_validation.py').read_text())
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'run')
         self.assertIn('start_new_session=True', ast.unparse(function))
-        self.assertIn('timeout=1800', ast.unparse(function))
+        default = function.args.kw_defaults[0]
+        if default is None:
+            self.fail('owned child timeout must have a bounded default')
+        self.assertEqual(ast.literal_eval(default), 1800)
+        self.assertIn('timeout=timeout', ast.unparse(function))
         self.assertIn('os.killpg(process.pid', ast.unparse(function))
 
     def test_cleanup_is_always_scoped_and_artifacts_never_include_volume_or_core(self):

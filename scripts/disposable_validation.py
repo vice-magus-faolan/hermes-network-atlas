@@ -37,12 +37,12 @@ def guard() -> None:
             raise ValueError('capless/no-new-privileges/seccomp container required')
 
 
-def run(argv: list[str], env: dict[str, str] | None = None) -> None:
+def run(argv: list[str], env: dict[str, str] | None = None, *, timeout: float = 1800) -> None:
     """Leave real output in ordinary CI logs; reap only this owned child group."""
     print('Executing: ' + json.dumps(argv), flush=True)
     process = subprocess.Popen(argv, cwd=ROOT, env=env, start_new_session=True)
     try:
-        code = process.wait(timeout=1800)
+        code = process.wait(timeout=timeout)
         if code:
             raise subprocess.CalledProcessError(code, argv)
     finally:
