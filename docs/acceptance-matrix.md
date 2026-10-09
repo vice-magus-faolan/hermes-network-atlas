@@ -18,6 +18,15 @@ disposable-validation.md; new disposable validation IDs are additive/mandatory.
 No local full-core fixture/native admission/Docker is required or authorized for
 the preliminary exact-SHA source/workflow review. Missing admission still fails
 the full canonical verifier; source-only review is not final feature delivery.
+Hosted run 37864339897's provider green is invalid: canonical failed with eight
+PM import errors and cold lacked canonical success proof. The bounded correction
+adds workflow-wide explicit bash pipefail and pre-discovery pinned package roots.
+Three mandatory `tests/test_disposable_failure.py::DisposableFailureTests` IDs
+prove actual producer/tee failure propagation, cold-interpreter actual pinned PM
+import lifetime RED/GREEN with stale-origin refusal, and real failed canonical
+execution preventing proof/cold admission. All inherited IDs/files/assertions,
+product modules and historical fixtures remain unchanged by this correction.
+Corrected exact-head hosted native/full-canonical/cold and final review remain pending.
 
 ## Historical harness contracts (superseded)
 

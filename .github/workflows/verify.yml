@@ -6,6 +6,10 @@ on:
     branches: [main]
 permissions:
   contents: read
+defaults:
+  run:
+    # Explicit bash is -e -o pipefail; tee must not hide Docker failures.
+    shell: bash
 concurrency:
   group: network-atlas-issue-6-ci
   cancel-in-progress: false

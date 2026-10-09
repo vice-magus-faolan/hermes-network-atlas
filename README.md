@@ -8,6 +8,8 @@ exact-artifact review, hosted native validation, publication and live activation
 are separately gated. Issue #6 host-discovery code is implemented; the corrected
 disposable Docker CI path still needs an actual exact-head hosted result.
 Source approval and local unit tests are not feature delivery.
+The first hosted attempt installed/enabled natively, but canonical tests failed;
+its green provider status masked that failure through tee and is not acceptance.
 
 ## What it does
 
@@ -91,6 +93,9 @@ cap-drop ALL/no-new-privileges and read-only source. The candidate-owned volume 
 destroyed after the run, never shared with another candidate. Hosted admission permits
 CAUTION only after full native scanning; DANGEROUS always refuses. No credentials,
 host-home mounts, local Docker, force-enabled live homes or secondary offline install.
+Explicit bash pipefail preserves container failures through logged pipelines.
+Canonical imports bind to the pinned core before temporary scanner fixtures run;
+missing canonical success proof refuses the cold consumer before execution.
 See [disposable validation](docs/disposable-validation.md) and the
 [acceptance checklist](docs/acceptance-matrix.md). The old retention/measurement
 harness is superseded, preserved with its unchanged validators and historical failures.

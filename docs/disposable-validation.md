@@ -28,11 +28,17 @@ artifacts run the same `offline-verification` job on fresh GitHub-hosted Ubuntu
    historical harness regression remains discovered. Native tool/slash/CLI
    dispatch, nine synthetic host-method scenarios, the three-alias scenario and
    fresh-process persistence/restart run through the real installed plugin.
+   Before discovery the verifier binds `pm`, `hermes_cli` and `tools` package roots
+   to the configured pinned core (commit/tree, relevant source diff and import
+   origins checked). It does not reset caches, rewrite modules or change admission.
 5. A SEPARATE cold network-none container uses the SAME selected native interpreter
    and `scripts/docker_cold.py`, checking genuine generation/installed bytes and
    registration without reinstalling, resolving dependencies or collecting.
    Canonical success and unchanged native receipt are prerequisites.
-6. Ordinary CI logs retain actual exits/output. Compact setup/enable/scan/admission,
+6. Explicit workflow-wide `shell: bash` uses GitHub's `bash --noprofile --norc -e
+   -o pipefail {0}` template: a failing Docker producer cannot be masked by tee.
+   No job/step shell override or continue-on-error bypass exists on any event path.
+   Ordinary CI logs retain actual exits/output. Compact setup/enable/scan/admission,
    canonical and cold evidence is uploaded, including on failure. Cleanup stops
    and removes only this run's three named containers, its volume and its image
    tag. No global prune, daemon changes, forced cleanup or reused candidate state.
@@ -53,7 +59,20 @@ UID1000, not a broad safe.directory exception.
 A stopped setup container retains the same volume for compact native evidence
 readback before scoped cleanup. Failed steps stay failed; a missing native receipt,
 canonical success or cold result is not inferred from source tests or image build.
-The actual hosted run is still UNPERFORMED at this implementation handoff.
+Hosted run `37864339897` is NOT acceptance despite its provider success status.
+Native online install/enable and installed candidate identity genuinely passed;
+canonical reported `Ran 444 tests ... FAILED (errors=8)` and exited 1. Cold then
+refused the missing `canonical-complete.json`. Implicit bash -e pipelines hid both
+failures behind tee. The eight observed errors were missing pinned PM modules/native
+API; the hosted log did not record those packages' import origins. Source tracing
+identifies a lifetime hazard: scanner-policy tests load native packages from a
+temporary core snapshot which their class cleanup deletes. A cold interpreter
+reproduction of that actual pinned import path imports the
+actual pinned `plugins_cmd`, removes only a tiny source-path alias and reproduces
+`No module named 'pm.cli'`; sys.path insertion alone does not repair cached __path__.
+Binding package roots before tests fixes that lifetime boundary without changing
+inherited tests or their assertions. Corrected exact-head HOSTED native/full-
+canonical/cold proof is still UNPERFORMED, not inferred from local regressions.
 
 ## Acceptance checklist
 
@@ -69,6 +88,14 @@ unchanged pins, online-once/same-volume lifecycle, offline/non-root/resource fla
 pre-effect local refusal, full canonical dispatch, stale-selection/cold refusal,
 primary error evidence, fresh-volume refusal, real tiny owned-child exit/reaping,
 and scoped cleanup/artifact paths. These tests do not run Docker or native admission.
+Three additive mandatory `tests/test_disposable_failure.py` IDs execute the real
+failing-producer/tee shell (including the old false-green control), cold -S actual
+pinned PM import RED/GREEN and stale-origin refusal, and a real failed canonical
+child which cannot publish success proof or start cold execution. The import test
+uses existing dependencies without .pth/bootstrap and only a tiny temporary path
+alias to read-only core source, not a new environment or full-core copy. Normal
+and actual -O are required. All inherited test files/assertions remain unchanged
+in this bounded correction; native admission and the same owned volume are unchanged.
 
 Local source review uses ONLY the retained interpreter/cache, packet-denied tiny
 fixtures and retained actionlint 1.7.7. No local downloads, new environments,

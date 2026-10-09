@@ -9,8 +9,11 @@ Missing prerequisites are failures, not skipped integration coverage.
 from __future__ import annotations
 
 import ast
+import importlib
 import os
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 from offline_guard import deny_network
@@ -97,6 +100,9 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_disposable_failure.DisposableFailureTests.test_workflow_explicit_bash_propagates_real_producer_failure_through_tee",
+    "test_disposable_failure.DisposableFailureTests.test_cold_interpreter_real_pinned_pm_import_survives_temporary_source_cleanup",
+    "test_disposable_failure.DisposableFailureTests.test_real_failed_canonical_child_cannot_publish_proof_or_reach_cold",
     "test_disposable_validation.DisposableValidationTests.test_all_events_use_one_conventional_path_without_retained_controller",
     "test_disposable_validation.DisposableValidationTests.test_online_once_then_network_none_verify_and_cold_same_owned_volume",
     "test_disposable_validation.DisposableValidationTests.test_local_entrypoint_refuses_before_setup_or_state_effects",
@@ -424,6 +430,7 @@ def main() -> int:
     if not check_source() or not check_docker_source():
         print("ERROR: refactor function(s) estimated above 15 before review")
         return 1
+    pin_runtime_imports()
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     count = suite.countTestCases()
     if count == 0:
@@ -442,6 +449,34 @@ def main() -> int:
           f"{len(REQUIRED_DOCKER_TESTS)} Docker contract IDs present", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
+
+
+def pin_runtime_imports() -> None:
+    """Bind native package roots before temporary scanner fixtures can import them.
+
+    Scanner-policy tests import a disposable copy of the core, then delete it.
+    A plain verifier interpreter must not cache pm/hermes_cli/tools from that
+    copy: inserting a later sys.path entry cannot repair a cached package's
+    __path__. Keep the real pinned source alive; never purge/rewrite modules.
+    """
+    source_value = os.environ.get('NETWORK_ATLAS_HERMES_ROOT')
+    if not source_value:
+        return  # Existing missing-runtime tests still fail; no coverage is skipped.
+    from acceptance_support import HERMES_COMMIT, git_head, git_tree
+    from caution_confirmation import CORE_TREE
+    source = Path(source_value).resolve(strict=True)
+    if git_head(source) != HERMES_COMMIT or git_tree(source) != CORE_TREE:
+        raise ValueError('canonical imports require the pinned public core')
+    subprocess.run(['git', '-C', str(source), 'diff', '--exit-code', 'HEAD', '--',
+                    'pm', 'hermes_cli', 'tools', 'hermes_constants.py', 'utils.py'],
+                   check=True, capture_output=True, timeout=15)
+    sys.path.insert(0, str(source))
+    for name in ('pm', 'hermes_cli', 'tools'):
+        module = importlib.import_module(name)
+        location = module.__file__
+        if location is None or Path(location).resolve() != source / name / '__init__.py':
+            raise ValueError('canonical native package resolved outside pinned core: ' + name)
+        print('Canonical native package: ' + name + '=' + location, flush=True)
 
 
 if __name__ == "__main__":
