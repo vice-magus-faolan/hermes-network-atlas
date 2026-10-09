@@ -74,6 +74,17 @@ Binding package roots before tests fixes that lifetime boundary without changing
 inherited tests or their assertions. Corrected exact-head HOSTED native/full-
 canonical/cold proof is still UNPERFORMED, not inferred from local regressions.
 
+Hosted run `37870601979` correctly failed canonical and skipped cold: all 493
+tests ran, with two pinned PM workspace errors importing `packaging`. Native
+online install/enable and pinned package origins passed; cleanup completed.
+`requirements-test.txt` now declares `packaging==26.0`, matching the unchanged
+core application declaration and `pm/pyproject.toml` / `pm/uv.lock`; the existing
+Dockerfile installs this verifier prerequisite online. The additive mandatory
+`test_disposable_dependencies` regression checks declaration/lock alignment,
+Dockerfile consumption and the actual PM requirement-parser import site. Local
+availability is not clean-image proof: corrected hosted full-canonical/cold
+acceptance remains pending. No native/core/base pin or interpreter choice changes.
+
 ## Acceptance checklist
 
 The twelve H01–H12 rows in `docs/acceptance-matrix.md` map every public issue #6

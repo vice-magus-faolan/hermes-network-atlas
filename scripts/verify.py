@@ -100,6 +100,7 @@ REQUIRED_CI_ADMISSION_TESTS = {
 
 
 REQUIRED_DOCKER_TESTS = {
+    "test_disposable_dependencies.DisposableDependencyTests.test_packaging_is_declared_at_pinned_pm_version_and_consumed_by_image",
     "test_disposable_failure.DisposableFailureTests.test_workflow_explicit_bash_propagates_real_producer_failure_through_tee",
     "test_disposable_failure.DisposableFailureTests.test_cold_interpreter_real_pinned_pm_import_survives_temporary_source_cleanup",
     "test_disposable_failure.DisposableFailureTests.test_real_failed_canonical_child_cannot_publish_proof_or_reach_cold",

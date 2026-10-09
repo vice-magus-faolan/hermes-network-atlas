@@ -4,3 +4,5 @@ ruamel.yaml==0.18.16
 python-dotenv==1.2.2
 # Native supported installer console, not plugin runtime dependency expansion.
 rich==14.3.3
+# Pinned core/PM requirement parsing used by canonical workspace regressions.
+packaging==26.0
