@@ -85,6 +85,19 @@ Dockerfile consumption and the actual PM requirement-parser import site. Local
 availability is not clean-image proof: corrected hosted full-canonical/cold
 acceptance remains pending. No native/core/base pin or interpreter choice changes.
 
+Hosted run `37874270081` then ran all 494 tests and failed the same two workspace
+paths at the actual pinned `pm/workspace.py:129` import of `tomli_w`; cold was
+correctly skipped and owned cleanup succeeded. The test requirements now include
+the COMPLETE unchanged four-package PM runtime declaration/lock: packaging26.0,
+tomli-w1.2.0, ruamel.yaml0.18.16 and truststore0.10.4. Two additive mandatory
+dependency regressions check every exact declaration against the PM lock and
+Docker requirements, and execute the actual pinned workspace TOML writer with
+tiny synthetic inputs and no acquisition. The existing packaging test body,
+Dockerfile, native setup, interpreter selection and all inherited coverage remain
+unchanged. Hermes-owned imports and optional interactive `prompt_toolkit` are not
+extra PyPI prerequisites for these paths. Cached local availability does not prove
+a clean image: actual corrected hosted native/full-canonical/cold remains pending.
+
 ## Acceptance checklist
 
 The twelve H01–H12 rows in `docs/acceptance-matrix.md` map every public issue #6
