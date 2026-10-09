@@ -203,9 +203,9 @@ Initial Hermes APIs were inspected at f42f579cf8bac4918ac9599bece71618afadd846,
 v0.21.4+canary.20260930T070235Z. Official docs checked on 2026-09-30:
 https://hermes-agent.nousresearch.com/docs/developer-guide/plugins and
 https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins.
-Current acceptance uses the independently source-reviewed/authenticated narrow
-offline core `5645275e50d66dca04c9565634f9b5207a38aef5`; the original inspection
-coordinates below remain historical. See [current core/caller contract and gates](native-offline-consumer.md).
+Current acceptance pins public core `5645275e50d66dca04c9565634f9b5207a38aef5`;
+the original inspection coordinates below remain historical. See
+[disposable native validation](disposable-validation.md) for current gates.
 The docs advertise directory plugin discovery, register_tool, register_command,
 and register_cli_command. Installed APIs are the executable contract; docs are
 not evidence that schema validation, origin attestation, or sandboxing occurs.

@@ -60,38 +60,18 @@ scratch-only setup. Canonical Atlas acceptance is a separate socket-denied proce
 with non-forwarding synthetic transports. Admission evidence is candidate-bound;
 security scan/refusal/consent controls are not mocked or disabled. This test guard
 is not a production sandbox. See docs/operator-guide.md for the exact boundary.
-An explicit operator-approved exception accepts native CAUTION with the supported
-force option solely in fresh GitHub-hosted Ubuntu CI. Full pinned core/candidate
-scans, DANGEROUS refusal, default native trust/catalog/PM admission and real tree/
-enable readback remain mandatory. Fresh fixture guards prohibit replacement or
-receipt reuse. The reviewed push/pull_request workflow has pinned actions,
-contents: read and no supplied secrets/deployment credentials. Environment strings
-are diagnostics, not isolation or human authority; the actual hosted VM/workflow
-is the boundary, not a sandbox against malicious same-UID candidate code.
-Local/runtime force remains prohibited and successor local consent stays
-exact-byte/ordinary. The legacy signed route remains inactive optional regression
-code, not a mandatory CI controller/anchor provisioning gate; no real key or
-anchor is shipped. See docs/native-caution-confirmation.md for residual trust
-limits, local admission gates and mandatory actual hosted execution readback.
+Only the reviewed workflow on fresh GitHub-hosted Ubuntu CI permits the supported
+CAUTION-only force exception after full pinned core/candidate scans. DANGEROUS
+always refuses. Fresh nonreplacement fixtures, real tree/enable/PM readback,
+pinned actions, contents: read and no supplied secrets remain mandatory.
+Environment strings are diagnostics, not isolation or local operator authority;
+local/runtime force is prohibited. Candidate containers run non-root/capless;
+canonical and cold runs are network-none with admitted source mounted read-only.
+No local Docker/native setup is authorized by source review. See
+docs/disposable-validation.md for the lifecycle and residual consent boundary.
 No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,
 private exports, SSH keys, passwords, tokens, or live config to a public issue.
-
-The hosted public prerequisite container uses UID/GID 0:0 with Docker's standard
-default capabilities, no added capabilities, no-new-privileges and default
-seccomp/AppArmor. Genuine apt/dpkg ownership and maintainer scripts are not
-bypassed. Actual effective/permitted/bounding capabilities, zero ambient/inherited
-capabilities, NNP and seccomp are checked before provisioning and recorded. This
-public-only phase has no candidate code, host homes/credentials/socket, privileged
-mode, host namespaces or deployment access. It is not the candidate acceptance
-contract: candidate code runs UID/GID 1000:1000, cap-drop ALL, read-only, network-none
-and packet-denied. Local Docker/install/acquisition/force remain prohibited in
-this delivery. See docs/bootstrap-permission-contract.md for the complete audit.
-Repository concurrency allows one active CI run with pending-run coalescing;
-reviewed corrected feature commits get fresh hosted VMs under standing delivery
-authority, not per-attempt human consent. Missing native/canonical/cleanup proof
-still fails. Failure exports keep primary state/logs and missing success-only
-members distinct; diagnostics/cleanup cannot manufacture success.
 
 For suspected security defects, do not publish exploit details or private
 network data in an issue. Use GitHub private vulnerability reporting when the

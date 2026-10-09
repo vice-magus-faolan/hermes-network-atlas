@@ -1,9 +1,0 @@
-{
-  "schema": 1,
-  "hermes_commit": "5645275e50d66dca04c9565634f9b5207a38aef5",
-  "python": "3.14.7",
-  "uv": "0.12.3",
-  "debian_snapshot": "20260919T000000Z",
-  "plugin_python_dependencies": ["ruamel.yaml>=0.18.16,<0.19"],
-  "verifier_requirements": ["ruamel.yaml==0.18.16", "python-dotenv==1.2.2", "rich==14.3.3"]
-}

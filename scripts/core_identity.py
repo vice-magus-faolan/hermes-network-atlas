@@ -18,7 +18,7 @@ CORE_TREE = '85282aca9d246911005dba7adbdf3ca3ddd04df5'
 MANIFEST_BYTES = 4 * 1024 ** 2
 MEMBER_COUNT = 100000
 SOURCE_BYTES = 256 * 1024 ** 2
-DIFFERENCES = 64
+
 
 
 def canonical(value: object) -> bytes:
@@ -71,15 +71,6 @@ def source_manifest(source: Path) -> dict:
                 raise ValueError('complete core manifest byte bound')
     manifest_digest(manifest)
     return manifest
-
-
-def identity_report(actual: dict, expected: dict, phase: str) -> dict:
-    """Bound differing paths, but retain the honest total and both complete digests."""
-    paths = sorted(name for name in set(actual) | set(expected) if actual.get(name) != expected.get(name))
-    return {'phase': phase, 'expected_digest': manifest_digest(expected), 'actual_digest': manifest_digest(actual),
-            'expected_members': len(expected), 'actual_members': len(actual), 'difference_count': len(paths),
-            'differences': [{'path': name, 'expected': expected.get(name), 'actual': actual.get(name)} for name in paths[:DIFFERENCES]],
-            'omitted_differences': max(0, len(paths) - DIFFERENCES), 'native_acceptance': False}
 
 
 def require_identity(manifest: dict, *, expected_digest: str = CORE_SOURCE_DIGEST) -> None:

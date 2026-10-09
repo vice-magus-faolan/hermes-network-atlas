@@ -44,21 +44,13 @@ operator docs. Each stage requires same-card independent exact-SHA approval
 before the next starts; component approval is not main integration/publication.
 The reviewed-branch PR-only publication owner is separate. No main advancement,
 runtime promotion or live probes are implied. See host-discovery-policy.md.
-The approved CAUTION-only exception uses supported native force exclusively in
-fresh GitHub-hosted Ubuntu CI, with full scanning/pins, DANGEROUS refusal,
-read-only permission and no supplied secrets/deployment access. No mandatory
-signing-controller or per-commit signed CI consent remains. See
-native-caution-confirmation.md. Final changed local bytes still require ordinary
-exact-byte consent; local/runtime force is prohibited. Synthetic policy tests
-cannot close native admission, independent approval or actual hosted CI. The
-publisher verifies real exact-head hosted acceptance after reviewed branch push.
-
-The product-first issue #6 correction retires the retained-producer repair chain.
-All CI events now use [disposable-validation.md](disposable-validation.md): one
-online native install/enable and its candidate-owned volume for offline canonical
-and cold runtime. Native SAME-CARD Gilfoyle preliminary exact-SHA source review
-does not require unavailable local admission; Faolan owns the actual hosted result
-and later final evidence/PR handoff. Source review is not feature completion.
+The active CI contract is disposable-validation.md: one online native install/
+enable followed by full network-none canonical and cold same-generation checks.
+Builder scope correction and independent exact-SHA SOURCE-ONLY review stay on the
+original card; review covers the whole net diff against main. Local native setup,
+Docker or full-core fixtures are not source-review prerequisites or authorization.
+Faolan owns updating existing draft PR #7 non-force, fresh hosted evidence and
+final independent/human review. Old-SHA acceptance does not cover corrected bytes.
 
 ## Gates
 

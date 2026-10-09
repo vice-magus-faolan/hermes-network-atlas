@@ -4,13 +4,6 @@ Read README.md, docs/project-specification.md, docs/implementation-addendum.md,
 docs/delivery-plan.md, and docs/acceptance-matrix.md before work. The addendum
 controls conflicts. Do not expand beyond V1 phases 1–3.
 
-Issue #6 is a narrow Phase 2 host-only amendment: staged network-local ICMP echo
-and at most four TCP discovery ports, excluding 4403. Read
-docs/host-discovery-policy.md before transport work. Datagrams only; no raw-socket
-or capability-bearing helper fallback, privilege grants, payloads or services.
-Legacy traffic remains TCP 80/443; stage-1 nonlegacy ping requests refuse before
-effects. Independent exact-artifact approval gates descendant transport work.
-
 Canonical verification: `python3 scripts/verify.py`. Bootstrap checks do not
 prove implemented behavior; extend this verifier as implementation lands.
 Tests are fixture-based, isolated, and network-free. Never read live atlas data

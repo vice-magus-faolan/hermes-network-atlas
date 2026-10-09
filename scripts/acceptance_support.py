@@ -27,16 +27,10 @@ def plugin_hashes(root: Path = ROOT) -> dict[str, str]:
 
 
 def git_head(root: Path = ROOT) -> str:
-    from docker_snapshot import CANDIDATE, git_identity
-    if root == CANDIDATE:
-        return git_identity(root, 'commit')
     return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
 
 
 def git_tree(root: Path = ROOT) -> str:
-    from docker_snapshot import CANDIDATE, git_identity
-    if root == CANDIDATE:
-        return git_identity(root, 'tree')
     return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD^{tree}"], text=True).strip()
 
 
@@ -60,17 +54,12 @@ def contained(root: Path, value: str) -> Path:
 
 def fixture_environment(root: Path) -> dict[str, str]:
     """No credentials, ambient Python paths, profile config, or proxy inheritance."""
-    env = {"PATH": "/usr/bin:/bin", "HOME": str(root / "user"), "HERMES_HOME": str(root / "hermes"),
+    return {"PATH": "/usr/bin:/bin", "HOME": str(root / "user"), "HERMES_HOME": str(root / "hermes"),
             "TMPDIR": str(root), "PYTHONDONTWRITEBYTECODE": "1", "UV_PYTHON_DOWNLOADS": "never",
             "HERMES_DISABLE_LAZY_INSTALLS": "1", "HERMES_MANAGED": "false",
             "HERMES_BUNDLED_PLUGINS": str(root / "empty-bundled"), "HERMES_ENABLE_PROJECT_PLUGINS": "0",
             "XDG_CONFIG_HOME": str(root / "xdg-config"), "XDG_DATA_HOME": str(root / "xdg-data"),
             "XDG_CACHE_HOME": str(root / "xdg-cache")}
-    from docker_snapshot import CANDIDATE, git_settings, validate_snapshot
-    if ROOT == CANDIDATE:
-        validate_snapshot(ROOT)
-        env.update(git_settings(ROOT))
-    return env
 
 
 def validate_receipt(root: Path) -> dict:

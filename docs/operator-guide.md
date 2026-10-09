@@ -45,8 +45,8 @@ package-intelligence warning is not a clean vulnerability verdict.
 Active CI performs one supported native install AND enable ONLINE, then runs
 canonical and cold network-none consumers using that exact selected generation
 in a disposable candidate-owned volume. It does not attempt a second fresh
-offline dependency-resolution installation. The legacy `--offline-enable` helper
-and its refusal regressions remain historical, not the active CI path. Full
+offline dependency-resolution installation. The optional `--offline-enable` helper
+is not the active CI path. Full
 native scanning, genuine selection/installed-byte readback and dependency consent
 remain mandatory. Source approval/local unit tests do not prove successful hosted
 enable/canonical/cold acceptance or permit a live core/profile update.
@@ -279,8 +279,8 @@ scanning, DANGEROUS refusal, fresh nonreplacement fixtures, ordinary native PM a
 tree/enable readback, contents: read, pinned actions and no supplied secrets or
 deployment access. Environment diagnostics cannot prove isolation or authorize
 force on this server. No signing-controller/real keys/per-commit signed CI approval
-is required; historical signed regressions remain inactive optional code. See
-[native-caution-confirmation.md](native-caution-confirmation.md) for guards, full
+is required; signed consent regressions remain inactive optional code. See
+[disposable-validation.md](disposable-validation.md) for guards, full
 scan records, local consent and the publisher's real exact-head hosted check.
 Explicit native enable on this runtime may not ask a separate
 Python dependency question. This is setup evidence, NOT the acceptance result.

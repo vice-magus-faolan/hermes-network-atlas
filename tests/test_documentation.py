@@ -78,10 +78,10 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("tests/test_caution_confirmation.py", workflow)
         for activation in ("--approval", "--allowed-signers", "--signer", "secrets."):
             self.assertNotIn(activation, workflow)
-        contract = (ROOT / "docs" / "native-caution-confirmation.md").read_text()
+        contract = " ".join((ROOT / "docs" / "disposable-validation.md").read_text().split())
         for term in ("INACTIVE by default", "GitHub-hosted", "DANGEROUS always",
-                     "not an OS isolation", "no signing-controller", "publication fails honestly",
-                     "not shipped", "no changed repository bytes", "not independent"):
+                     "not an OS isolation", "not a signing-controller", "publication fail honestly",
+                     "approval is shipped", "changed commit/tree/scope", "not native admission or independent review"):
             self.assertIn(term, contract)
         verifier = ast.parse((ROOT / "scripts" / "verify.py").read_text())
         for manifest, module, class_name in (("REQUIRED_CONFIRMATION_TESTS", "test_caution_confirmation", "CautionConfirmationTests"),

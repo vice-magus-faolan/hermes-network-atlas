@@ -1,113 +1,12 @@
 # Acceptance matrix
 
-## Current product-first delivery contract
-
-The active path is [disposable-validation.md](disposable-validation.md): ONE
-conventional hosted Docker image, ONE ONLINE native install AND enable, then
-full packet-denied canonical and cold/restart checks using that very selection
-in its candidate-owned volume. All feature/main/PR events use this path.
-H01–H12 below remain the complete public issue #6 acceptance checklist; A01–A14
-and every product safety regression remain required. Native/full-canonical/cold
-proof on the final exact artifact is pending actual hosted execution and review.
-
-The retained-producer/measurement/controller sections below are SUPERSEDED
-historical contracts, not active delivery requirements. Their tests, fixtures,
-limits and failures remain preserved, not weakened or reclassified as success.
-Only four directly affected workflow methods changed, as explicitly indexed in
-disposable-validation.md; new disposable validation IDs are additive/mandatory.
-No local full-core fixture/native admission/Docker is required or authorized for
-the preliminary exact-SHA source/workflow review. Missing admission still fails
-the full canonical verifier; source-only review is not final feature delivery.
-Hosted run 37864339897's provider green is invalid: canonical failed with eight
-PM import errors and cold lacked canonical success proof. The bounded correction
-adds workflow-wide explicit bash pipefail and pre-discovery pinned package roots.
-Three mandatory `tests/test_disposable_failure.py::DisposableFailureTests` IDs
-prove actual producer/tee failure propagation, cold-interpreter actual pinned PM
-import lifetime RED/GREEN with stale-origin refusal, and real failed canonical
-execution preventing proof/cold admission. All inherited IDs/files/assertions,
-product modules and historical fixtures remain unchanged by this correction.
-Corrected exact-head hosted native/full-canonical/cold and final review remain pending.
-
-## Historical harness contracts (superseded)
-
-For the GitHub-hosted Docker delivery contract, see
-[hosted-first-docker.md](hosted-first-docker.md). Local implementation tests are
-not native admission; absent fresh current-artifact acceptance remains FAILED.
-The pre-CI handoff needs independent exact-code/workflow review, not a claimed
-guaranteed-fit/local-all-green precondition or another per-attempt human approval.
-Final actual native/canonical/hosted/independent/publication gates are unchanged.
-
-The public bootstrap now uses standard Docker defaults for genuine package
-ownership and maintainer scripts. Candidate acceptance still drops ALL capabilities
-and runs non-root/offline. Complete audit is in
-[bootstrap-permission-contract.md](bootstrap-permission-contract.md). Local tests
-and preliminary source review do not prove actual hosted/native acceptance.
-
-Mandatory `tests/test_docker_apt.py::AptProofTests` covers preinstall genuine
-archive hashes surviving normal post-install cache removal, unchanged base package
-versions, distinct empty index/archive refusals, control/index/installed drift,
-each APT command's failure-stage/output/exit retention, explicit all-preinstalled
-zero-archive refusal, malformed/nonregular/size/count proof, real owned child
-failure/deadline/output/resource audit, diagnostic-error precedence and independent
-failed-bootstrap diagnostic export/compact manifest. Native tool hash retention
-before PM publication and direct local fetch/APT guard refusals are covered too.
-These eleven IDs are mandatory in `scripts/verify.py`; fixtures are tiny and
-packet-denied, not real signed APT/native acceptance or a successful hosted retry.
-
-Eight mandatory `tests/test_docker_pm.py::NativePMContractTests` IDs execute the
-actual pinned parser/flag predicate on production argv, predecessor refusal,
-corrected narrow named dispatch, default-closure scope, real build-env parser/API
-binding, member encoding/all used PM signatures, actual bounded owned command
-success/failure diagnostics and primary-error precedence. Both normal and -O
-processes are required. See [native-pm-contract-audit.md](native-pm-contract-audit.md)
-for every hosted PM call and exact pinned source coordinates. The tests never
-install/acquire; signature/dispatch success is not native acceptance.
-
-Four additional mandatory `tests/test_docker_command_logs.py::CommandLogTests`
-IDs exercise real failed children through the production wrapper and the actual
-4 MiB aggregate reader: near-limit output plus uncaught traceback and actual
-exporter readback; repeated failed rows with non-ASCII/invalid UTF-8/control/JSON
-escaping and pre-spawn cumulative-budget refusal; argv/count effect-free bounds;
-and real nonzero failure surviving terminal-emission errors. Normal/-O are required.
-The exception is a bounded exit summary; the audit retains actual count/hash and
-32 KiB head/tail. Its 1 MiB encoded cumulative ceiling, 256 KiB terminal reservation
-and 32-command cap do not widen existing child/log/export budgets. No Docker is
-executed; synthetic daemon export seams are not real native/hosted acceptance.
-
-Five mandatory `tests/test_docker_reconstruction.py::ReconstructionLogTests` IDs
-extend that same audit to every fixed Git reconstruction stage: actual failed
-children (including near-cap and hostile output) survive the aggregate reader
-and production exporter; a tiny real Git tree/commit reconstruction still passes
-its original predicates; six Git stages and five ordinary hosted phase commands
-plus the disabled legacy wrapper use one unchanged budget; count/byte exhaustion
-refuses before Git/log effects; terminal-write errors retain the actual primary
-exit; and deadline evidence survives owned-child reaping without affecting an
-unrelated child. Normal/-O are required. These are packet-denied source/fixture
-regressions, not acquisition, package/native acceptance or real Docker cleanup.
-
-Seven inherited mandatory
-`tests/test_docker_image_readback.py::ImageReadbackTests` IDs cover all field
-mismatch names, historical empty-command merge refusal, journal-before-inspect,
-actual parsed readback and compact export, exact returned digest/upstream ancestry,
-malformed/oversized/failed readback, diagnostic-error precedence, unverified-image
-cleanup refusal and hosted-controller failed-image proof retention. These synthetic
-daemon seams do not identify run `37700249768`'s unexported mismatch. The diagnostic
-successor's actual hosted run `37704198046` identifies `Config.Cmd` alone; its
-inherited setup command remains refused by the precise corrected default contract.
-
-Five additional mandatory
-`tests/test_docker_default_command.py::DefaultCommandTests` IDs cover both production
-commit paths and explicitly modeled Moby command merge; hash-bound actual historical
-image/stopped fixtures and their continued refusal; exact inert `/usr/bin/true` argv
-and empty entrypoint in initial validation, recovery/reuse and cleanup; unchanged
-explicit acceptance argv in all six modes; no-op file/owner/permission/privilege/
-absence/output/exit refusals before success inventory; a real tiny packet-denied
-no-op child through the shared audit; and original-error/cleanup refusal evidence.
-Normal/-O are required. One historical empty-CMD assertion and four success fixtures
-now encode the inert default, while the original realistic empty-merge failure and
-all other refusals remain. See [committed-image-readback.md](committed-image-readback.md)
-for the exact inherited test-body changes. Modeling a proposed config or executing
-the host's public no-op is NOT actual corrected image/native/full/cold/cleanup proof.
+The active CI path is [disposable-validation.md](disposable-validation.md): one
+online supported install AND enable, then full packet-denied canonical and cold
+same-generation checks in a run-owned Docker volume. The focused candidate needs
+fresh exact-head hosted evidence and independent review; old-SHA approval is not
+current acceptance. Baseline/product tests remain mandatory. Removed added tests
+belong only to abandoned acquisition/packing/retention/measurement/controllers;
+those experiments and historical receipts remain archived outside the merge tree.
 
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
@@ -115,171 +14,7 @@ isolated setup in [operator-guide.md](operator-guide.md). Missing native admissi
 evidence fails; it is never skipped. All production modules are declared/compiled
 and all test modules discovered by the same verifier and CI workflow.
 
-Ten additional mandatory
-`tests/test_docker_container_readback.py::ContainerReadbackTests` IDs retain the
-actual verified run `37707667589` base image/identity projection and separately
-model Moby label inheritance. They exercise exact full composition/preflight,
-all six acceptance argv/isolation, coherent base provenance/config drift refusal,
-every label/Name/Image/returned-Id mismatch with raw-before-predicate persistence
-and production compact export, export/stop/reinspect/cleanup drift, bounded
-malformed/oversized/absent/daemon diagnostics and primary-error precedence,
-failed/malformed create residue without deletion, independent durable consumers
-despite outcome-export failure, and the production synthetic smoke lifecycle.
-All inherited test bodies/IDs remain; normal/-O are required. No actual historical
-container inspect exists and no real Docker/native success is inferred. See
-[container identity readback](container-identity-readback.md) for source semantics,
-exact authority, unchanged limits and the remaining actual hosted/final review gates.
-
 ## Executable evidence index
-
-Fourteen additive mandatory `tests/test_docker_representation.py::RepresentationTests`
-IDs cover actual tiny complete Git-only publication, literal commit/tree/shallow,
-unreachable objects and absent parents, native CRLF/executable/symlink archive,
-complete source/object/metadata readbacks, actual self-inclusive physical/logical/
-verifier totals, owned spool/source peak overlap, old/mixed/partial/count/config/
-hook/alternate/attribute/path/type/tamper refusals, real owned child deadline/
-size/nonzero/reaping, simulated ENOSPC/primary-error/cleanup/export/no-reuse,
-producer retirement failure and independent controller complete proof refusal.
-Normal and actual -O are required. All inherited IDs/fixtures/assertions remain;
-two structural AST expectations follow `seal_inventory` and two old minimal daemon
-fixtures add only NEW representation-boundary decorators, with unchanged bodies.
-Exact hashes/diffs are retained, not falsely called byte-identical. Full tracked
-source/test/doc native-default scope remains unchanged. Source implementation and
-tiny Git are NOT corrected hosted fit/fresh union/native/canonical/cold/restart/
-cleanup/final acceptance. See [CORE retained representation](core-retained-representation.md).
-
-Ten additive mandatory `tests/test_docker_measurement.py::MeasurementTests` IDs
-cover real predecessor feature-routing RED, mutually exclusive measurement/native
-jobs, unchanged main/PR/ordinary feature controls, actual tiny Git marker/hash/
-parent/whole-diff validation and mixed/malformed/dirty/link refusal, pre-effect
-local guard, two fixed genuine serial native variants preserving complete source/
-objects/shallow/unreachable data with owned disposal, actual failure/audit/cleanup
-precedence, projection equality/refusal/reserve/nonacceptance and resource/export
-bounds. Normal/-O required. Two minimal inherited expectation seams change: the
-hosted job condition adds validated acceptance output with original event/ref
-predicates, and the core-checkout loop excludes only the source-routing gate;
-all actual core consumers keep every original pin assertion. All inherited IDs,
-remaining body assertions and historical JSON
-bytes remain. No full core fixture/acquisition/native admission runs locally.
-Full source measurement is hosted only after exact independent source/workflow
-review. A sufficient projection or successful measurement is never native/full
-canonical/final approval. Production packing/cache/tools/pins/budgets are unchanged.
-See [hosted packing measurement](hosted-packing-measurement.md).
-
-Eight additive mandatory `tests/test_docker_retention_observer.py::ObserverTests`
-IDs exercise the actual live observer/owned child enumerate-stat race with a
-deterministic barrier and genuine Git, full tiny source/object/shallow preservation
-and unchanged lowered retention budget, exact loose-leaf/empty-fanout ENOENT scope,
-strict final failure/proof refusal, permission/read/link/special/ancestor/escape
-refusals, entry/time/transient byte bounds and postfailure/non-prune tolerance reset.
-Normal/-O required. Every prune-phase sample is explicitly incomplete, not a final
-total; final before/after/object/source/seed/verifier accounting remains strict.
-All 450 inherited IDs/bodies/assertions, 264 required IDs, 50 test paths and six
-historical JSONs are preserved. The authenticated real hosted observer failure is
-not object loss, overflow or corrected acceptance. See [producer retention](producer-retention.md).
-
-Thirteen additive mandatory `tests/test_docker_retention.py::RetentionTests` IDs
-cover actual producer ordering, real tiny shallow packing with every reachable/
-unreachable object and original absent parents preserved, full source/modes/links,
-effect-free local/layout/ambient/alternate refusals, corrupt/changed object and
-source refusal, actual-file same-budget RED then real-pack GREEN, component byte/
-file totals and unchanged limits, bounded malformed/special/deadline reporting,
-real owned-child failure/output/deadline and unrelated survival, primary-error
-precedence, and independently ownership-first bounded export. Normal/-O required.
-All 437 inherited IDs/method bodies/assertions and 49 tests-tree paths remain;
-only two old minimal daemon seams gain documented new-export-boundary decorators.
-These synthetic budgets and real tiny Git objects are not the actual hosted seed
-or native acceptance. See [producer retention](producer-retention.md).
-
-Ten additive mandatory `tests/test_docker_git_preparation.py::GitPreparationTests`
-IDs cover actual producer command ordering RED/GREEN; exact original declaration/
-lock drift refusal; actual pinned uv help/parser and nonrealizing PM selection;
-substituted narrow online/independent offline commands and owned target disposal;
-actual-file PEP 610 name/version/source/commit/malformed/additional-distribution
-refusals; tiny real Git object hashing/missing/forged-object refusal; direct local,
-missing-tool and preexisting-root pre-effect refusal; actual owned-child deadline/
-output/reaping/resource caps and primary-error precedence; failed preparation
-preventing warm; and independently guarded/bounded complete provenance export.
-Normal/-O are required. All inherited IDs/assertions/fixtures remain; two old
-controller methods add only documented new-boundary decorators, with unchanged
-bodies. Local installs are substituted, not genuine Misaki/native acceptance.
-See [producer-only Git preparation and limits](producer-git-preparation.md).
-
-Nine additive mandatory `tests/test_docker_offline.py::OfflineConsumerTests` IDs
-exercise literal predecessor parser/caller RED and successor explicit offline
-enable GREEN, effect-free non-enable flag refusal, unchanged online default,
-both network-none caller consent boundaries, actual native activation/Selection/
-worker request and unchanged refusal, fresh member engine lock/sync offline argv,
-authenticated current pins/fork workflow, and old-base/image current-policy
-refusal. Normal/-O are required. Actual uv/publication/install/readback effects
-are intercepted, NOT genuine cache/native acceptance. Five inherited test/helper
-files have only documented pin literals/URL or scoped historical replay decorators
-changed; all original historical JSON bytes and test IDs remain. Exact hashes/diffs
-are retained, not falsely described as all-byte-identical. See
-[authenticated offline consumer](native-offline-consumer.md).
-
-Eleven additive mandatory `tests/test_docker_union_diagnostics.py::UnionDiagnosticsTests`
-IDs cover real failed-enable export RED/GREEN, actual PTY audit/primary identity,
-near-cap output and deadline/owned reaping, cache metadata/opaque hashes/symlink/
-count/report/malformed refusals, read-only source/lock/member projection, actual
-pinned PM argv/sanitizers/API and tiny workspace quarantine, producer failure
-persistence and independent ownership-guarded/bounded export, plus primary-error
-precedence. Normal/-O are required; all inherited test bodies/fixtures/IDs remain.
-This is an explicitly diagnostics-only successor: actual run `37729012087` completed
-native install but not enable, and its exact cache freshness/key deficiency remains
-unknown. Intercepted pinned-engine calls and tiny fixtures are not resolution or
-corrected hosted/native/full/cold acceptance. See
-[member-union cache diagnostics](native-union-cache-diagnostics.md).
-
-Eight additive mandatory `tests/test_docker_work_execution.py::WorkExecutionTests`
-IDs cover exec only on the exact private `/work` create/inspect contract across
-all modes; option/resource/UID/mount/source/export mutations; authenticated actual
-run `37724779987` noexec/EACCES refusal; synthetic effective kernel flags/protection/
-coverage, fixed current-version/containment/denial checks; incremental contract
-export and primary error; actual entrypoint wiring; and install failure/success
-with diagnostic failure refusing enable/canonical. Normal/-O are required. All
-inherited IDs and bodies remain except the precisely authorized `/work` literal
-gaining `exec,` at `tests/test_docker_tool_execution.py:256`; the rest of that body
-is unchanged, with exact before/after hashes and diff retained. The actual failed
-report is immutable; synthetic prospective reports are not corrected hosted/native
-acceptance. See [native tool execution evidence](native-tool-execution.md).
-
-Eight additional mandatory `tests/test_docker_tool_execution.py::ToolExecutionTests`
-IDs cover actual pinned selection without PM healing/acquisition, current identity
-drift, real tiny contained ELF/link/hash/mode/EACCES, escape/loop/missing/FIFO/size/
-loader refusals, actual kernel mountinfo/statvfs versus intended HostConfig,
-incremental pre-probe report and generic bounded exporter retention, real failed/
-output/deadline owned children, and installer-primary/diagnostic-secondary behavior.
-Normal/-O are required; all inherited tests/fixtures remain unchanged. The exact
-historical permission cause in run `37720941089` remains UNKNOWN; this successor
-changes diagnostics only, not mount/permission/PM/admission/isolation contracts.
-These tiny production seams are not corrected hosted/native/full/cold acceptance.
-See [native tool execution evidence](native-tool-execution.md).
-
-Six additional mandatory `tests/test_docker_core_identity.py::CoreIdentityTests`
-IDs exercise actual pinned named dispatch/project-local launcher writes with
-acquisition and external PATH exposure replaced, full producer reconstruction
-from a tiny real Git archive before replacing owned PM work material, complete
-mutation/addition/removal/executable/symlink drift, seed/copied-core manifests
-retained before refusal, source/member/manifest/special-type bounds and original
-error precedence, and streamed exact public archive digest without extraction.
-Normal/-O are required; all inherited bodies/fixtures remain unchanged. The
-normal-path source mechanism is proved, but run `37716278161`'s unexported exact
-member drift is unknown. These are not native install/admission or corrected
-hosted/full/cold/all-mode cleanup. See [complete core identity](complete-core-identity.md).
-
-Seven additional mandatory `tests/test_docker_startup.py::StartupTests` IDs cover
-real tiny Git reconstruction and different-owner refusal/success, exact literal
-path/record/config and commit/tree/blob/dirty/symlink/escape refusal, sanitized
-native child trust for only the fixed snapshot with other repos still refused,
-private hosted layout/owner/mode/nonempty/symlink refusals and actual bounded
-writes, early real Git exit128 plus secondary-export precedence without unproven
-identity claims, and all six unchanged isolation argv. Normal/-O are required.
-Git's owner test seam and POSIX cross-UID mode analysis are not actual container
-UID/native/hosted proof. All inherited test bodies/fixtures remain unchanged.
-See [snapshot startup/layout contract](snapshot-startup-contract.md) for actual
-run `37712086262`, the narrow process-local trust and ephemeral export leaf, and
-the remaining actual hosted/native/full-canonical/cold/all-mode-cleanup gates.
 
 Each named test is discovered by the canonical verifier. The matrix/reference
 contract is checked by `tests/test_documentation.py::DocumentationTests`.
@@ -300,34 +35,6 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 | A12 | `tests/test_core.py::QueryUpdateMapTests::test_shared_knowledge_never_transfers_inspection_authority`; `tests/test_inspection.py::InspectionTests::test_disabled_revoked_shared_profile_and_ambiguous_mappings_fail_closed`; `tests/test_commands.py::OperatorStatusTests::test_shared_foreign_batches_do_not_claim_local_last_discovery`; `tests/test_unresolved.py::UnresolvedEvidenceTests::test_shared_foreign_knowledge_visible_without_authority_separate_store_empty`; `tests/test_unresolved.py::UnresolvedEvidenceTests::test_foreign_same_mac_does_not_resolve_local_lineage` | `docs/atlas-core.md`; `docs/operator-guide.md`; `docs/unresolved-evidence.md`; `SECURITY.md` |
 | A13 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `tests/test_harness.py::AcceptanceHarnessTests::test_socket_denial_is_inherited_through_exec`; `tests/test_harness.py::AcceptanceHarnessTests::test_code_and_native_selection_changes_invalidate_receipt` | `docs/operator-guide.md`; `scripts/cumulative_acceptance.py`; `scripts/cumulative_transport.py`; `scripts/offline_guard.py` |
 | A14 | `tests/test_documentation.py::DocumentationTests::test_matrix_paths_and_exact_test_symbols_exist`; `tests/test_documentation.py::DocumentationTests::test_readme_distinguishes_implementation_from_live_delivery`; `tests/test_commands.py::OperatorStatusTests::test_empty_status_has_consistent_counts_scopes_and_no_file_effects`; `tests/test_commands.py::OperatorStatusTests::test_discovery_and_inspection_are_distinct_local_qualified_summaries`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_complete_partial_failed_and_small_control_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_lowered_detail_limits_do_not_change_whole_batch_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_status_keep_distinct_complete_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_complete_and_failed_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_status_output_cap_still_refuses_without_store_changes` | `README.md`; `docs/operator-guide.md`; `docs/atlas-core.md`; `SECURITY.md`; `CONTRIBUTING.md` |
-
-## Docker harness evidence boundaries
-
-Docker contract regressions are required by the same canonical verifier. They
-exercise synthetic inspection/ownership/export refusals and actual owned local
-CLI child cleanup, not Docker daemon/native admission substitutes:
-
-| Gate | Evidence and interpretation |
-| --- | --- |
-| Contract | `tests/test_docker_acceptance.py::DockerContractTests::test_inspection_drift_rejects_wrong_labels_image_mounts_flags_network`; `tests/test_docker_acceptance.py::DockerContractTests::test_actual_counts_exit_zero_skips_missing_and_mismatch_refuse`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_active_lease_refuses_and_releases_without_suffix_retry`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_optimized_native_readback_mismatch_manifest_and_generation_refuse` |
-| Hosted provisioning / pre-effect local refusal | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_complete_package_contract_refuses_before_controller_effects`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_setup_and_apt_refuse_before_filesystem_acquisition_or_pm`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_actual_controller_entrypoint_contract_gate_precedes_scratch_and_daemon`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_standard_docker_capabilities_and_process_containment_golden_and_drift`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_real_setup_guard_requires_root_container_and_actual_status_before_effects`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_hosted_apt_permits_normal_authenticated_provisioning_not_script_bypass`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_hosted_build_success_crosschecks_process_proof_before_commit_and_owned_cleanup`; standard defaults only for public provisioning; local refusal and authentication remain, mocks are not actual package install |
-| Primary failure / missing success evidence | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_failed_export_preserves_stopped_logs_and_all_missing_members`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_success_requires_every_inventory_and_provenance_member`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_permission_archive_and_output_failures_are_not_missing`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_stopped_failure_is_primary_before_success_only_exports_or_commit`; actual production exporter with tiny synthetic regular tar bytes, not real Docker/native acceptance |
-| Secondary errors / identity | `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_reinspection_ownership_drift_never_reads_logs_or_members`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_primary_failure_survives_secondary_cleanup_evidence_write`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_final_diagnostic_error_is_secondary_unless_no_primary`; `tests/test_docker_bootstrap_repair.py::BootstrapRepairTests::test_all_stopped_failure_kinds_refuse_before_rootfs_commit`; no blind image removal or primary-error replacement |
-| Bounded uncompressed logging | `tests/test_docker_builder.py::BuilderContractTests::test_bootstrap_command_requires_exact_uncompressed_bounded_local_logs`; `tests/test_docker_builder.py::BuilderContractTests::test_bootstrap_inspection_refuses_missing_compressed_extra_or_expanded_logs`; `tests/test_docker_acceptance.py::DockerContractTests::test_acceptance_command_requires_exact_uncompressed_bounded_local_logs`; `tests/test_docker_acceptance.py::DockerContractTests::test_acceptance_inspection_refuses_missing_compressed_extra_or_expanded_logs`; exact local/max-size=4m/max-file=1/compress=false, no daemon-default or limit change |
-| Start/log diagnostic preservation | `tests/test_docker_builder.py::BuilderContractTests::test_bootstrap_stopped_error_survives_log_failure_and_owned_teardown`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_acceptance_stopped_error_survives_log_failure_and_owned_teardown`; actual stopped-state export seam with synthetic Docker state, not a new hosted success or native receipt |
-| Actual owned child/lifecycle | `tests/test_docker_acceptance.py::DockerLifecycleTests::test_actual_bounded_command_pass_fail_deadline_output_and_owned_cleanup`; `tests/test_docker_acceptance.py::DockerLifecycleTests::test_failed_export_keeps_original_failure_and_still_tears_down`; real Docker passing/failing/interrupted cleanup still requires external run evidence |
-| Code-only owned bootstrap/plan | `tests/test_docker_builder.py::BuilderContractTests::test_actual_synthetic_bootstrap_sequence_success_failure_interrupt_and_durable_identity`; `tests/test_docker_builder.py::BuilderContractTests::test_complete_plan_identity_unknown_lengths_hashes_and_peak_reserve`; `tests/test_docker_builder.py::BuilderContractTests::test_unapproved_or_incomplete_plan_never_reaches_daemon_or_native`; no actual first setup or peak proof is inferred |
-| Write-side export/retention | `tests/test_docker_builder.py::EvidenceWriteTests::test_exact_serialization_overwrite_transient_count_and_aggregate_before_write`; `tests/test_docker_builder.py::EvidenceWriteTests::test_sqlite_consistent_backup_preflight_limit_and_no_partial_export`; `tests/test_docker_builder.py::BuilderContractTests::test_durable_consumers_retained_and_cap_exhaustion_no_auto_deletion`; cooperative bounds are not a bind quota |
-| Cold-selection contract | `tests/test_docker_builder.py::AcquisitionAndColdTests::test_cold_selection_generation_prefix_config_and_installed_tree_refuse_in_optimized_mode`; `tests/test_docker_builder.py::AcquisitionAndColdTests::test_cold_proof_missing_image_or_generation_fails_host_outcome_validation`; real changed-artifact enable/cold consumer remains mandatory |
-| Plan/registry review remediation | `tests/test_docker_builder.py::BuilderContractTests::test_invented_plan_without_source_closure_refuses_before_effects`; `tests/test_docker_builder.py::BuilderContractTests::test_suffix_registry_wrong_home_profile_and_temporary_parent_refuse`; `tests/test_docker_plan.py::PlanLinkageTests::test_oci_manifest_config_compressed_layer_and_ordered_diffid_linkage`; `tests/test_docker_plan.py::PlanLinkageTests::test_each_closure_pin_edges_roots_and_exact_member_identity_refuse`; `tests/test_docker_plan.py::PlanLinkageTests::test_live_build_and_acquire_remain_disabled_even_linked_metadata_no_effect`; linkage/mock refusal is not authenticated resolution or proven fit |
-| Genuine container native acceptance | Fresh real native scan/install/enable/PM-selected generation, contained receipt, full canonical logs and cold/restart evidence on exact commit/tree/image; missing proof fails acceptance, never a smoke-to-native promotion |
-| Minimal host evidence | Required packet-free host/kernel permission diagnostics remain explicit; container fixtures do not prove host ICMP capabilities or live readiness |
-| Final/hosted/publication | Independent cumulative exact-SHA review and publisher-owned actual hosted CI/PR review remain separate; local Docker is not hosted-CI authority |
-
-See `docs/docker-acceptance.md` for exact layout, resource/retention constraints,
-ordinary local consent and the pre-canary exact-byte safety gate. New Docker
-runtime/native proof remains pending until exercised; no full success is inferred
-from the Dockerfile or packet-free unit regressions.
 
 ## Acceptance requirements
 
@@ -456,39 +163,14 @@ explicitly refuses to run if the critical chunk/legacy regression IDs are absent
 
 ## Residual and unperformed checks
 
-The prospective ordinary CAUTION confirmation route is inactive. Canonical
-`REQUIRED_CONFIRMATION_TESTS` includes eight exact IDs from
-`tests/test_caution_confirmation.py::CautionConfirmationTests`: non-TTY real native
-refusal, missing/candidate-controlled authority, exact-byte/scope/identity/finding
-and signature mismatch, signed dangerous refusal, candidate/core drift, real
-ordinary prompt with packet-denied PM failure, synthetic successful prompt transport
-and marker/output/deadline refusal. These are also run before default CI setup.
-No synthetic approval is candidate admission or real CI authority. The legacy
-signed route remains inactive optional coverage, not a CI provisioning gate.
-`REQUIRED_CI_ADMISSION_TESTS` mandates all eleven hosted-policy tests in
-`tests/test_ci_admission.py::HostedCIAdmissionTests`: explicit matching diagnostics,
-fresh contained nonreplacement fixture, real native CAUTION/force-policy selection
-without installation, native DANGEROUS refusal even with force, SAFE/no-force and
-candidate/core drift, parsed hosted/read-only/pinned/no-secret workflow, real local
-entrypoint/mixed-consent/enable refusals and origin/ref/config revalidation,
-main/feature push and PR merge refs matching parsed workflow branch filters,
-and disallowed event/branch/tag/malformed/non-merge ref refusal. The runner-context
-regression rejects runner expressions before step scope and executes scratch
-initialization/export with
-space-containing paths; the same scratch directory persists through GITHUB_ENV
-for later admission and canonical steps. Full workflow expression/context
-validation uses pinned actionlint before a changed candidate's local admission;
-YAML parsing alone is not proof that GitHub accepts a workflow. Pushes are limited
-to main/the issue-6 feature and PRs target main; a main test context is not authority
-to push/merge main. PR evidence binds the checked-out merge artifact, not head tip.
-The approved hosted workflow uses supported force only for CAUTION on fresh
-GitHub-hosted Ubuntu VMs with full scanning, DANGEROUS refusal, no supplied secrets
-or deployment access and unchanged native admission/enable/readback. Environment
-strings are not hosted isolation proof; local/runtime force remains prohibited.
-See `docs/native-caution-confirmation.md`. Fresh exact-byte ordinary local admission,
-canonical acceptance and independent review remain mandatory. The publisher checks
-actual exact-head hosted native/canonical execution after the reviewed branch push;
-no controller/key/anchor provisioning or per-commit signed CI consent is required.
+Mandatory disposable dependency/failure/lifecycle tests exercise pinned PM
+prerequisites/import lifetime, actual shell/child failure propagation, candidate-
+bound canonical/cold proof, fresh native setup/local refusal and run-scoped cleanup.
+Native CAUTION/CI policy tests retain full scanner/default policy, changed-byte,
+external consent, DANGEROUS and nonreplacement refusals. They cannot certify actual
+admission, hosted execution or independent approval. The hosted exception is not
+local/runtime force permission. Source-only checks use retained tools and tiny
+packet-denied fixtures; full-core fixtures and native admission are hosted only.
 
 A01 setup is a real native CLI-entrypoint install/enable and PM publication in
 marked disposable homes. A13 uses real discovery/registry/command/core APIs and
