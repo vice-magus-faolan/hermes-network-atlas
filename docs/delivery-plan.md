@@ -38,6 +38,20 @@ Exact commit SHAs, tests, risks, and verdicts belong in immutable run handoffs.
 Phase 4 integrations and optional automatic context injection stay out of this
 queue. Runtime deployment/live-network validation is a separate future decision.
 
+Issue #6 uses a separate serial host-only lane: staged policy/capability contract,
+then bounded ICMP/TCP transport, then cumulative safety/native acceptance and
+operator docs. Each stage requires same-card independent exact-SHA approval
+before the next starts; component approval is not main integration/publication.
+The reviewed-branch PR-only publication owner is separate. No main advancement,
+runtime promotion or live probes are implied. See host-discovery-policy.md.
+The active CI contract is disposable-validation.md: one online native install/
+enable followed by full network-none canonical and cold same-generation checks.
+Builder scope correction and independent exact-SHA SOURCE-ONLY review stay on the
+original card; review covers the whole net diff against main. Local native setup,
+Docker or full-core fixtures are not source-review prerequisites or authorization.
+Faolan owns updating existing draft PR #7 non-force, fresh hosted evidence and
+final independent/human review. Old-SHA acceptance does not cover corrected bytes.
+
 ## Gates
 
 Seed every card behind an inert construction gate before any can run. Verify

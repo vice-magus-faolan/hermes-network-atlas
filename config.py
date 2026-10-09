@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from ipaddress import ip_network
+from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 import re
 from collections.abc import Mapping
@@ -14,6 +14,9 @@ from ruamel.yaml.error import YAMLError
 MAX_CONFIG_BYTES = 65536
 MAX_POLICY_ENTRIES = 32
 NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
+LEGACY_TCP_PORTS = (80, 443)
+MAX_TCP_DISCOVERY_PORTS = 4
+EXCLUDED_TCP_PORTS = frozenset({4403})
 
 
 class ConfigError(ValueError):
@@ -44,6 +47,8 @@ class Network:
     cidr: str
     passive: bool
     ping: bool
+    icmp_echo: bool = False
+    tcp_ports: tuple[int, ...] = LEGACY_TCP_PORTS
 
 
 @dataclass(frozen=True)
@@ -114,9 +119,8 @@ def _entries(value: object, label: str) -> Mapping:
     return value
 
 
-def _network(name: str, raw: object) -> Network:
-    data = _object(raw, {"cidr", "discovery"}, "network")
-    cidr = data.get("cidr")
+def _scope(cidr: object) -> IPv4Network | IPv6Network:
+    """Canonical bounded scope shared by all configured discovery methods."""
     if not isinstance(cidr, str) or len(cidr) > 64:
         raise ConfigError("network requires a canonical CIDR")
     try:
@@ -125,14 +129,44 @@ def _network(name: str, raw: object) -> Network:
         raise ConfigError("invalid CIDR") from exc
     if str(network) != cidr:
         raise ConfigError("CIDR must be canonical")
-    modes = _object(data.get("discovery", {}), {"passive", "ping"}, "network.discovery")
-    passive = _bool(modes.get("passive", False), "passive")
-    ping = _bool(modes.get("ping", False), "ping")
     if network.version == 4 and network.num_addresses > 256:
         raise ConfigError("V1 IPv4 scope exceeds 256 addresses")
+    return network
+
+
+def _tcp_ports(value: object) -> tuple[int, ...]:
+    if type(value) is not list or len(value) > MAX_TCP_DISCOVERY_PORTS:
+        raise ConfigError("tcp_ports must be a list with at most four ports")
+    ports = tuple(_integer(port, 65535, "tcp port") for port in value)
+    if len(set(ports)) != len(ports) or EXCLUDED_TCP_PORTS.intersection(ports):
+        raise ConfigError("duplicate or excluded TCP discovery port")
+    return tuple(sorted(ports))
+
+
+def _network(name: str, raw: object) -> Network:
+    data = _object(raw, {"cidr", "discovery"}, "network")
+    network = _scope(data.get("cidr"))
+    modes = _object(data.get("discovery", {}), {"passive", "ping", "icmp_echo", "tcp_ports"}, "network.discovery")
+    passive = _bool(modes.get("passive", False), "passive")
+    ping = _bool(modes.get("ping", False), "ping")
+    icmp_echo = _bool(modes.get("icmp_echo", False), "icmp_echo")
+    ports = _tcp_ports(modes.get("tcp_ports", list(LEGACY_TCP_PORTS)))
     if network.version == 6 and ping:
         raise ConfigError("V1 active discovery is IPv4 only")
-    return Network(name, cidr, passive, ping)
+    if icmp_echo and not ping:
+        raise ConfigError("icmp_echo requires ping authorization")
+    if ping and not (icmp_echo or ports):
+        raise ConfigError("active discovery requires at least one method")
+    return Network(name, str(network), passive, ping, icmp_echo, ports)
+
+
+def validate_network(network: Network) -> None:
+    """Revalidate native snapshots before invocation, not just YAML at startup."""
+    if type(network.tcp_ports) is not tuple or len(network.tcp_ports) > MAX_TCP_DISCOVERY_PORTS:
+        raise ConfigError("invalid immutable TCP discovery ports")
+    _network(_name(network.name), {"cidr": network.cidr, "discovery": {
+        "passive": network.passive, "ping": network.ping, "icmp_echo": network.icmp_echo,
+        "tcp_ports": list(network.tcp_ports)}})
 
 
 def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:

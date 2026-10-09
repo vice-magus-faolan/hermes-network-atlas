@@ -8,12 +8,13 @@ import os
 from pathlib import Path
 import subprocess
 
-HERMES_COMMIT = "f42f579cf8bac4918ac9599bece71618afadd846"
+HERMES_COMMIT = "5645275e50d66dca04c9565634f9b5207a38aef5"
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
                 "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
-                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py")
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py", "host_discovery.py",
+                "host_transport.py", "host_schedule.py")
 
 
 def file_hash(path: Path) -> str:

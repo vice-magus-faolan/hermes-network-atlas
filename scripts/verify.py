@@ -9,8 +9,11 @@ Missing prerequisites are failures, not skipped integration coverage.
 from __future__ import annotations
 
 import ast
+import importlib
 import os
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 from offline_guard import deny_network
@@ -19,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_FILES = ("__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
                 "storage.py", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
                 "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
-                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py")
+                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py", "host_discovery.py",
+                "host_transport.py", "host_schedule.py")
 
 REQUIRED_CHUNK_TESTS = {
     "test_discovery_chunks.ChunkDiscoveryTests.test_sparse_24_startup_budget_reaches_last_address_and_reconciles_exact_batch",
@@ -30,6 +34,112 @@ REQUIRED_CHUNK_TESTS = {
     "test_unresolved.UnresolvedEvidenceTests.test_partial_chunk_original_later_lineage_and_foreign_visibility",
     "test_unresolved.UnresolvedEvidenceTests.test_malformed_stored_receipt_entries_fail_in_public_error_envelope",
 }
+
+REQUIRED_HOST_DISCOVERY_TESTS = {
+    "test_documentation.DocumentationTests.test_host_operator_contract_and_required_canonical_coverage",
+    "test_host_acceptance.CumulativeHostTests.test_every_method_uses_combined_budget_at_each_concurrency",
+    "test_host_acceptance.CumulativeHostTests.test_sparse_late_range_each_method_and_all_filtered_control",
+    "test_host_acceptance.CumulativeHostTests.test_sensitive_destinations_excluded_without_socket_or_helper",
+    "test_host_acceptance.CumulativeHostTests.test_hostile_echo_fields_and_bytes_never_qualify_response",
+    "test_host_acceptance.CumulativeHostTests.test_shared_receive_exhaustion_retains_other_method_evidence",
+    "test_host_acceptance.CumulativeHostTests.test_deadline_after_open_before_send_and_unregister_failure_cleanup",
+    "test_host_acceptance.CumulativeHostTests.test_legacy_and_new_exact_lineage_shared_read_without_apply_authority",
+    "test_host_transport.HostTransportTests.test_icmp_golden_header_and_hostile_reply_validation",
+    "test_host_transport.HostTransportTests.test_combined_probe_bound_before_capability_or_transport",
+    "test_host_transport.HostTransportTests.test_native_fixture_assertions_through_ordinary_local_public_handlers",
+    "test_acceptance.CumulativeAcceptanceTests.test_supported_admission_three_aliases_and_fresh_process_without_collection",
+    "test_commands.OperatorStatusTests.test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_legacy_defaults_and_explicit_defaults_preserve_exact_transport",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_strict_enablement_port_types_bounds_duplicates_cap_and_exclusion",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_method_dependencies_ipv6_scope_and_unknown_authority_fail_closed",
+    "test_host_discovery_policy.HostDiscoveryPolicyTests.test_combined_bounds_refuse_before_any_effect_and_report_on_public_routes",
+    "test_host_discovery_policy.ICMPCapabilityTests.test_disabled_expired_unsupported_are_packet_free_no_open",
+    "test_host_discovery_policy.ICMPCapabilityTests.test_open_success_only_unverified_and_socket_closed_no_packet_operations",
+    "test_host_discovery_policy.ICMPCapabilityTests.test_permission_protocol_resource_failures_are_bounded_no_retry_or_helper",
+    "test_host_transport.HostTransportTests.test_icmp_only_positive_survives_filtered_web_and_retains_times",
+    "test_host_transport.HostTransportTests.test_tcp_2222_and_optional_22000_only_positives",
+    "test_host_transport.HostTransportTests.test_mixed_duplicates_retained_address_counts_deduplicated_after_restart",
+    "test_host_transport.HostTransportTests.test_denied_missing_icmp_does_not_suppress_tcp_and_no_fallback",
+    "test_host_transport.HostTransportTests.test_all_filtered_timeouts_not_offline_or_packets_for_unstarted",
+    "test_host_transport.HostTransportTests.test_scope_and_4403_caller_forgery_refuse_before_transport",
+    "test_host_transport.HostTransportTests.test_round_robin_late_range_rate_concurrency_and_single_host_deadline",
+    "test_host_transport.HostTransportTests.test_output_limit_is_shared_across_methods_owned_sockets_close",
+    "test_host_transport.HostTransportTests.test_interruption_selector_failure_and_expired_before_send_close_only_owned",
+    "test_host_transport.HostTransportTests.test_persistence_failure_retains_history_and_output_receipt_rolls_back",
+    "test_host_transport.HostTransportTests.test_original_later_lineage_and_foreign_methods_do_not_transfer_authority",
+    "test_host_transport.HostTransportTests.test_runtime_method_failure_preserves_other_method_positive",
+    "test_host_transport.HostTransportTests.test_host_budget_is_not_renewed_per_method_or_port",
+    "test_host_transport.HostTransportTests.test_completed_scheduler_returns_without_idle_operation_wait",
+    "test_host_transport.HostTransportTests.test_tcp_refusal_is_response_only_after_connect_not_socket_setup",
+}
+
+
+REQUIRED_CONFIRMATION_TESTS = {
+    "test_caution_confirmation.CautionConfirmationTests.test_native_caution_in_ci_non_tty_refuses_without_approval",
+    "test_caution_confirmation.CautionConfirmationTests.test_missing_or_candidate_controlled_authority_refuses",
+    "test_caution_confirmation.CautionConfirmationTests.test_exact_commit_tree_scope_scanner_findings_and_signature_mismatches_refuse",
+    "test_caution_confirmation.CautionConfirmationTests.test_genuinely_dangerous_full_tree_refuses_even_signed_approval",
+    "test_caution_confirmation.CautionConfirmationTests.test_signed_request_cannot_confirm_changed_candidate_or_core",
+    "test_caution_confirmation.CautionConfirmationTests.test_synthetic_signed_caution_reaches_ordinary_native_prompt_with_network_denied_pm",
+    "test_caution_confirmation.CautionConfirmationTests.test_synthetic_verified_child_prompt_transport_answers_once_and_exits",
+    "test_caution_confirmation.CautionConfirmationTests.test_prompt_transport_without_matching_marker_or_with_bounds_never_confirms",
+}
+
+REQUIRED_CI_ADMISSION_TESTS = {
+    "test_ci_admission.HostedCIAdmissionTests.test_explicit_mode_and_matching_diagnostics_required",
+    "test_ci_admission.HostedCIAdmissionTests.test_main_feature_push_and_pr_merge_refs_match_workflow",
+    "test_ci_admission.HostedCIAdmissionTests.test_other_events_branches_tags_and_nonmerge_pr_refs_refuse",
+    "test_ci_admission.HostedCIAdmissionTests.test_fresh_marked_contained_fixture_no_replacement",
+    "test_ci_admission.HostedCIAdmissionTests.test_native_full_scan_caution_selects_supported_force_without_install",
+    "test_ci_admission.HostedCIAdmissionTests.test_native_dangerous_refuses_even_force_and_never_calls_installer",
+    "test_ci_admission.HostedCIAdmissionTests.test_safe_does_not_select_force_and_candidate_or_core_drift_refuses",
+    "test_ci_admission.HostedCIAdmissionTests.test_reviewed_workflow_hosted_readonly_pins_no_secrets_or_privileged_event",
+    "test_ci_admission.HostedCIAdmissionTests.test_workflow_runner_context_scratch_initialized_at_step_then_persisted",
+    "test_ci_admission.HostedCIAdmissionTests.test_real_entrypoints_refuse_local_ci_mode_mixed_consent_and_enable",
+    "test_ci_admission.HostedCIAdmissionTests.test_install_boundary_rechecks_context_origin_ref_and_modified_scan_policy",
+}
+
+REQUIRED_DOCKER_TESTS = {
+    "test_disposable_native.DisposableNativeTests.test_complete_core_identity_counts_all_source_and_refuses_drift_types_and_bounds",
+    "test_disposable_native.DisposableNativeTests.test_removed_hosted_controller_context_and_offline_install_refuse_before_effects",
+    "test_disposable_native.DisposableNativeTests.test_cold_native_selection_checks_generation_interpreter_config_and_installed_tree",
+    "test_disposable_dependencies.DisposableDependencyTests.test_packaging_is_declared_at_pinned_pm_version_and_consumed_by_image",
+    "test_disposable_dependencies.DisposableDependencyTests.test_every_pinned_pm_runtime_requirement_is_declared_and_lock_aligned",
+    "test_disposable_dependencies.DisposableDependencyTests.test_actual_pinned_workspace_writes_member_toml_without_acquisition",
+    "test_disposable_failure.DisposableFailureTests.test_workflow_explicit_bash_propagates_real_producer_failure_through_tee",
+    "test_disposable_failure.DisposableFailureTests.test_cold_interpreter_real_pinned_pm_import_survives_temporary_source_cleanup",
+    "test_disposable_failure.DisposableFailureTests.test_real_failed_canonical_child_cannot_publish_proof_or_reach_cold",
+    "test_disposable_validation.DisposableValidationTests.test_all_events_use_one_conventional_path_without_retained_controller",
+    "test_disposable_validation.DisposableValidationTests.test_online_once_then_network_none_verify_and_cold_same_owned_volume",
+    "test_disposable_validation.DisposableValidationTests.test_local_entrypoint_refuses_before_setup_or_state_effects",
+    "test_disposable_validation.DisposableValidationTests.test_verify_runs_full_canonical_and_receipt_refuses_stale_selection",
+    "test_disposable_validation.DisposableValidationTests.test_cold_requires_prior_candidate_success_and_uses_selected_python_without_install",
+    "test_disposable_validation.DisposableValidationTests.test_native_diagnostics_keep_primary_error_and_fresh_setup_cannot_reuse",
+    "test_disposable_validation.DisposableValidationTests.test_owned_real_child_failure_and_deadline_are_not_success",
+    "test_disposable_validation.DisposableValidationTests.test_cleanup_is_always_scoped_and_artifacts_never_include_volume_or_core",
+}
+DOCKER_SOURCES = ("scripts/disposable_validation.py", "scripts/docker_cold.py",
+                  "scripts/ci_admission.py", "scripts/core_identity.py", "scripts/caution_confirmation.py")
+
+
+def check_docker_source() -> bool:
+    """Compile and check the small active native/CI dependency closure."""
+    valid = True
+    for filename in DOCKER_SOURCES:
+        tree = ast.parse((ROOT / filename).read_text(), filename=filename)
+        compile(tree, filename, "exec")
+        for function in (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)):
+            score = 1
+            for node in ast.walk(function):
+                if isinstance(node, (ast.If, ast.For, ast.While, ast.IfExp, ast.ExceptHandler, ast.comprehension)):
+                    score += 1
+                if isinstance(node, ast.BoolOp):
+                    score += len(node.values) - 1
+            if score > 10:
+                print(f"Complexity review: {filename}:{function.lineno} {function.name} estimate={score}")
+            if score > 15:
+                valid = False
+    return valid
 
 
 def test_ids(suite: unittest.TestSuite) -> set[str]:
@@ -82,21 +192,54 @@ def main() -> int:
     """Run discovered tests and refuse a misleading zero-test success."""
     os.chdir(ROOT)
     deny_network()
-    if not check_source():
+    if not check_source() or not check_docker_source():
         print("ERROR: refactor function(s) estimated above 15 before review")
         return 1
+    pin_runtime_imports()
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     count = suite.countTestCases()
     if count == 0:
         print("ERROR: no tests discovered")
         return 1
-    missing = REQUIRED_CHUNK_TESTS - test_ids(suite)
+    missing = (REQUIRED_CHUNK_TESTS | REQUIRED_HOST_DISCOVERY_TESTS | REQUIRED_CONFIRMATION_TESTS
+               | REQUIRED_CI_ADMISSION_TESTS | REQUIRED_DOCKER_TESTS) - test_ids(suite)
     if missing:
-        print(f"ERROR: bounded chunk regression coverage absent: {sorted(missing)}")
+        print(f"ERROR: required discovery regression coverage absent: {sorted(missing)}")
         return 1
     print(f"Canonical verification: {count} tests discovered; cumulative synthetic V1, NOT live validation", flush=True)
+    print(f"Required discovery regressions: {len(REQUIRED_CHUNK_TESTS)} chunk/legacy and "
+          f"{len(REQUIRED_HOST_DISCOVERY_TESTS)} host/native and "
+          f"{len(REQUIRED_CONFIRMATION_TESTS)} inert confirmation and "
+          f"{len(REQUIRED_CI_ADMISSION_TESTS)} hosted CI policy and "
+          f"{len(REQUIRED_DOCKER_TESTS)} disposable validation IDs present", flush=True)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
+
+
+def pin_runtime_imports() -> None:
+    """Keep pinned native package roots alive before temporary scanner fixtures.
+
+    A later sys.path entry cannot repair a package cached from deleted source.
+    Refuse stale origins rather than clearing or rewriting imported modules.
+    """
+    source_value = os.environ.get('NETWORK_ATLAS_HERMES_ROOT')
+    if not source_value:
+        return  # Missing-runtime tests still fail; no coverage is skipped.
+    from acceptance_support import HERMES_COMMIT, git_head, git_tree
+    from caution_confirmation import CORE_TREE
+    source = Path(source_value).resolve(strict=True)
+    if git_head(source) != HERMES_COMMIT or git_tree(source) != CORE_TREE:
+        raise ValueError('canonical imports require the pinned public core')
+    subprocess.run(['git', '-C', str(source), 'diff', '--exit-code', 'HEAD', '--',
+                    'pm', 'hermes_cli', 'tools', 'hermes_constants.py', 'utils.py'],
+                   check=True, capture_output=True, timeout=15)
+    sys.path.insert(0, str(source))
+    for name in ('pm', 'hermes_cli', 'tools'):
+        module = importlib.import_module(name)
+        location = module.__file__
+        if location is None or Path(location).resolve() != source / name / '__init__.py':
+            raise ValueError('canonical native package resolved outside pinned core: ' + name)
+        print('Canonical native package: ' + name + '=' + location, flush=True)
 
 
 if __name__ == "__main__":

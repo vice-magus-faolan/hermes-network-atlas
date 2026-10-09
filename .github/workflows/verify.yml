@@ -1,37 +1,125 @@
 name: Verify
 on:
   push:
+    branches: [main, feat/6-host-discovery]
   pull_request:
+    branches: [main]
 permissions:
   contents: read
+defaults:
+  run:
+    # Explicit bash is -e -o pipefail; tee must not hide Docker failures.
+    shell: bash
+concurrency:
+  group: network-atlas-issue-6-ci
+  cancel-in-progress: false
 jobs:
   offline-verification:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      NETWORK_ATLAS_HERMES_ROOT: ${{ github.workspace }}/.hermes-runtime-source
-      TMPDIR: ${{ github.workspace }}/.test-scratch
+    # One disposable path for feature, main and PR merge artifacts. No fallback.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - name: Exact complete public Hermes source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          python-version: '3.14'
-      - name: Exact native Hermes test source (no live activation)
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: NousResearch/hermes-agent
-          ref: f42f579cf8bac4918ac9599bece71618afadd846
+          repository: vice-magus-faolan/hermes-agent
+          ref: 5645275e50d66dca04c9565634f9b5207a38aef5
           path: .hermes-runtime-source
           persist-credentials: false
-      - name: Prepare isolated verifier prerequisites
+      - name: Initialize owned run names and compact evidence
+        env:
+          TMPDIR: ${{ runner.temp }}/atlas-test-scratch
         run: |
-          mkdir -p "$TMPDIR"
-          python3 -m pip install --disable-pip-version-check -r requirements-test.txt
-      - name: Online prerequisite setup — isolated supported install and enable
+          mkdir -p "$TMPDIR/evidence"
+          printf 'TMPDIR=%s\n' "$TMPDIR" >> "$GITHUB_ENV"
+          printf 'ATLAS_CI_PREFIX=atlas-ci-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          git rev-parse HEAD HEAD^{tree}
+          git -C .hermes-runtime-source rev-parse HEAD HEAD^{tree}
+      - name: Conventional public dependency image (no native state)
+        run: docker build --pull --file docker/validation.Dockerfile --tag "$ATLAS_CI_PREFIX" .
+      - name: Online supported native install and enable
+        # scripts/prepare_acceptance.py performs full native scanning and CAUTION-only
+        # admission. This ONE online setup persists its genuine selected generation.
         run: |
-          python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT" | tee "$TMPDIR/native-setup.log"
-          python3 -c 'import os,pathlib; lines=pathlib.Path(os.environ["TMPDIR"],"native-setup.log").read_text().splitlines(); value=next(x for x in lines if x.startswith("NETWORK_ATLAS_ACCEPTANCE_FIXTURE=")); pathlib.Path(os.environ["GITHUB_ENV"]).open("a").write(value+"\n")'
-      - name: Canonical offline verification
-        run: python3 scripts/verify.py
+          docker volume create "$ATLAS_CI_PREFIX-state"
+          docker run --name "$ATLAS_CI_PREFIX-setup" \
+            --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 2 --memory 6g --memory-swap 6g --pids-limit 256 \
+            --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,target=/state" \
+            --env GITHUB_ACTIONS --env RUNNER_ENVIRONMENT --env RUNNER_OS \
+            --env GITHUB_REPOSITORY --env GITHUB_EVENT_NAME --env GITHUB_REF \
+            --env GITHUB_JOB --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env GITHUB_WORKSPACE=/workspace/network-atlas \
+            "$ATLAS_CI_PREFIX" setup --admission-mode hosted-ci-caution \
+            2>&1 | tee "$TMPDIR/evidence/setup.log"
+          docker cp "$ATLAS_CI_PREFIX-setup:/state/fixture.path" "$TMPDIR/fixture.path"
+          IFS= read -r fixture < "$TMPDIR/fixture.path"
+          [[ "$fixture" =~ ^atlas-admission-[A-Za-z0-9_]+$ ]]
+          printf 'ATLAS_FIXTURE=%s\n' "$fixture" >> "$GITHUB_ENV"
+      - name: Full packet-denied canonical verification
+        # Entry runs tests/test_ci_admission.py, tests/test_caution_confirmation.py
+        # and python3 scripts/verify.py, including real tool/slash/CLI and restart.
+        run: |
+          docker run --name "$ATLAS_CI_PREFIX-verify" \
+            --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 2 --memory 6g --memory-swap 6g --pids-limit 256 \
+            --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,target=/state" \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,volume-subpath=$ATLAS_FIXTURE/hermes-source,target=/state/$ATLAS_FIXTURE/hermes-source,readonly" \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,volume-subpath=$ATLAS_FIXTURE/hermes/plugins/network-atlas,target=/state/$ATLAS_FIXTURE/hermes/plugins/network-atlas,readonly" \
+            --env GITHUB_ACTIONS --env RUNNER_ENVIRONMENT --env RUNNER_OS \
+            --env GITHUB_REPOSITORY --env GITHUB_EVENT_NAME --env GITHUB_REF \
+            --env GITHUB_JOB --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env GITHUB_WORKSPACE=/workspace/network-atlas \
+            "$ATLAS_CI_PREFIX" verify --admission-mode hosted-ci-caution \
+            2>&1 | tee "$TMPDIR/evidence/canonical.log"
+      - name: Cold network-none native selected-generation readback
+        run: |
+          image=$(docker image inspect --format '{{.Id}}' "$ATLAS_CI_PREFIX")
+          docker run --name "$ATLAS_CI_PREFIX-cold" \
+            --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 2 --memory 6g --memory-swap 6g --pids-limit 256 \
+            --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,target=/state" \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,volume-subpath=$ATLAS_FIXTURE/hermes-source,target=/state/$ATLAS_FIXTURE/hermes-source,readonly" \
+            --mount "type=volume,source=$ATLAS_CI_PREFIX-state,volume-subpath=$ATLAS_FIXTURE/hermes/plugins/network-atlas,target=/state/$ATLAS_FIXTURE/hermes/plugins/network-atlas,readonly" \
+            --env GITHUB_ACTIONS --env RUNNER_ENVIRONMENT --env RUNNER_OS \
+            --env GITHUB_REPOSITORY --env GITHUB_EVENT_NAME --env GITHUB_REF \
+            --env GITHUB_JOB --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            --env GITHUB_WORKSPACE=/workspace/network-atlas \
+            "$ATLAS_CI_PREFIX" cold --admission-mode hosted-ci-caution --image "$image" \
+            2>&1 | tee "$TMPDIR/evidence/cold.log"
+      - name: Retain native readbacks and clean only this run
+        if: always()
+        run: |
+          if [ -z "${ATLAS_CI_PREFIX:-}" ]; then exit 0; fi
+          failed=0
+          if docker container inspect "$ATLAS_CI_PREFIX-setup" >/dev/null 2>&1; then
+            docker cp "$ATLAS_CI_PREFIX-setup:/state/evidence/." "$TMPDIR/evidence/" || failed=1
+          fi
+          for phase in setup verify cold; do
+            name="$ATLAS_CI_PREFIX-$phase"
+            if docker container inspect "$name" >/dev/null 2>&1; then
+              docker stop --time 10 "$name" || failed=1
+              docker rm "$name" || failed=1
+            fi
+          done
+          if docker volume inspect "$ATLAS_CI_PREFIX-state" >/dev/null 2>&1; then
+            docker volume rm "$ATLAS_CI_PREFIX-state" || failed=1
+          fi
+          if docker image inspect "$ATLAS_CI_PREFIX" >/dev/null 2>&1; then
+            docker image rm "$ATLAS_CI_PREFIX" || failed=1
+          fi
+          exit "$failed"
+      - name: Compact relevant logs and native evidence (no caches or installations)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-validation-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/atlas-test-scratch/evidence
+          if-no-files-found: error
+          retention-days: 7

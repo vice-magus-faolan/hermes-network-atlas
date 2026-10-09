@@ -148,6 +148,18 @@ Use networks.<name>.{cidr,discovery.{passive,ping}}, ssh.{enabled,hosts.<name>.
 the original example's timeout placement: all numerical ceilings live in limits,
 not discovery. Policy objects and nested sequences are immutable snapshots.
 
+Issue #6 adds only network-local discovery.icmp_echo (strict bool, default false)
+and discovery.tcp_ports (list of 0..4 distinct integers in 1..65535, sorted into
+an immutable tuple; default [80,443]). TCP 4403 is rejected with no override.
+ICMP requires ping authorization; active policy must select at least one method.
+No global/caller/atlas-derived method grants. Stage 1 validated these fields and
+refused nonlegacy ping before effects; stage 2 implements the approved sockets.
+Passive and legacy traffic are unchanged. Old binaries reject additive keys;
+coordinate shared readers deliberately. See host-discovery-policy.md for the
+datagram-only feasibility decision, helper rejection, combined budgets and
+schema-version-1 additive method/aggregate provenance contract. This amendment
+does not rewrite any historical batch or infer services/identity from ports.
+
 | Bound | Default/hard V1 maximum |
 | --- | --- |
 | command_timeout_seconds | 15 |
@@ -187,10 +199,13 @@ loads policy read-only and creates no database or export.
 
 ## 5. Operator attestation and native compatibility
 
-Current Hermes APIs were inspected at f42f579cf8bac4918ac9599bece71618afadd846,
+Initial Hermes APIs were inspected at f42f579cf8bac4918ac9599bece71618afadd846,
 v0.21.4+canary.20260930T070235Z. Official docs checked on 2026-09-30:
 https://hermes-agent.nousresearch.com/docs/developer-guide/plugins and
 https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins.
+Current acceptance pins public core `5645275e50d66dca04c9565634f9b5207a38aef5`;
+the original inspection coordinates below remain historical. See
+[disposable native validation](disposable-validation.md) for current gates.
 The docs advertise directory plugin discovery, register_tool, register_command,
 and register_cli_command. Installed APIs are the executable contract; docs are
 not evidence that schema validation, origin attestation, or sandboxing occurs.

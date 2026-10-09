@@ -1,5 +1,13 @@
 # Acceptance matrix
 
+The active CI path is [disposable-validation.md](disposable-validation.md): one
+online supported install AND enable, then full packet-denied canonical and cold
+same-generation checks in a run-owned Docker volume. The focused candidate needs
+fresh exact-head hosted evidence and independent review; old-SHA approval is not
+current acceptance. Baseline/product tests remain mandatory. Removed added tests
+belong only to abandoned acquisition/packing/retention/measurement/controllers;
+those experiments and historical receipts remain archived outside the merge tree.
+
 The requirements below are backed by cumulative synthetic offline tests, not
 live validation or self approval. Run `python3 scripts/verify.py` after supported
 isolated setup in [operator-guide.md](operator-guide.md). Missing native admission
@@ -29,6 +37,54 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 | A14 | `tests/test_documentation.py::DocumentationTests::test_matrix_paths_and_exact_test_symbols_exist`; `tests/test_documentation.py::DocumentationTests::test_readme_distinguishes_implementation_from_live_delivery`; `tests/test_commands.py::OperatorStatusTests::test_empty_status_has_consistent_counts_scopes_and_no_file_effects`; `tests/test_commands.py::OperatorStatusTests::test_discovery_and_inspection_are_distinct_local_qualified_summaries`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_complete_partial_failed_and_small_control_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_lowered_detail_limits_do_not_change_whole_batch_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_status_keep_distinct_complete_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_complete_and_failed_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_status_output_cap_still_refuses_without_store_changes` | `README.md`; `docs/operator-guide.md`; `docs/atlas-core.md`; `SECURITY.md`; `CONTRIBUTING.md` |
 
 ## Acceptance requirements
+
+### Complete issue-6 criterion audit
+
+The controlling amendment is host-only/datagram-only, with no helper execution or
+privilege changes. These exact tests cover each public issue criterion cumulatively;
+the final independent review must cold-read the entire change, not this stage alone.
+Green fixtures are not live validation, publication approval or target integration.
+
+| ID | Public criterion and exact executable evidence |
+| --- | --- |
+| H01 | Minimal network-local policy/compatibility and prior amendment: `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_legacy_defaults_and_explicit_defaults_preserve_exact_transport`; `docs/implementation-addendum.md`; `docs/host-discovery-policy.md` |
+| H02 | Strict policy/scope/ports, no caller destinations/flags: `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_strict_enablement_port_types_bounds_duplicates_cap_and_exclusion`; `tests/test_host_transport.py::HostTransportTests::test_scope_and_4403_caller_forgery_refuse_before_transport` |
+| H03 | Ordinary permitted datagrams, no helper/raw/elevation: `tests/test_host_discovery_policy.py::ICMPCapabilityTests::test_permission_protocol_resource_failures_are_bounded_no_retry_or_helper`; `tests/test_host_acceptance.py::CumulativeHostTests::test_sensitive_destinations_excluded_without_socket_or_helper`; `SECURITY.md` |
+| H04 | Real permission/protocol failures, no flag/executable capability fiction: `tests/test_host_discovery_policy.py::ICMPCapabilityTests::test_open_success_only_unverified_and_socket_closed_no_packet_operations`; `tests/test_host_transport.py::HostTransportTests::test_denied_missing_icmp_does_not_suppress_tcp_and_no_fallback`; `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_missing_nmap_remains_explicit_failure_without_icmp_fallback` |
+| H05 | One combined budget, every enabled method, persistence reserve/cancellation: `tests/test_host_acceptance.py::CumulativeHostTests::test_every_method_uses_combined_budget_at_each_concurrency`; `tests/test_host_acceptance.py::CumulativeHostTests::test_shared_receive_exhaustion_retains_other_method_evidence`; `tests/test_host_acceptance.py::CumulativeHostTests::test_deadline_after_open_before_send_and_unregister_failure_cleanup`; `tests/test_host_transport.py::HostTransportTests::test_persistence_failure_retains_history_and_output_receipt_rolls_back` |
+| H06 | Checks/responses/attempts/coverage kept separate: `tests/test_host_transport.py::HostTransportTests::test_mixed_duplicates_retained_address_counts_deduplicated_after_restart`; `tests/test_host_transport.py::HostTransportTests::test_all_filtered_timeouts_not_offline_or_packets_for_unstarted`; `docs/operator-guide.md` |
+| H07 | Method/port/time positives retained, no identity/service/access inference: `tests/test_host_transport.py::HostTransportTests::test_icmp_only_positive_survives_filtered_web_and_retains_times`; `tests/test_host_acceptance.py::CumulativeHostTests::test_hostile_echo_fields_and_bytes_never_qualify_response`; `tests/test_host_acceptance.py::CumulativeHostTests::test_legacy_and_new_exact_lineage_shared_read_without_apply_authority` |
+| H08 | Sensitive exclusion, no application payload and honest connection effects: `tests/test_host_transport.py::HostTransportTests::test_scope_and_4403_caller_forgery_refuse_before_transport`; `tests/test_host_transport.py::HostTransportTests::test_icmp_golden_header_and_hostile_reply_validation`; `scripts/synthetic_sockets.py`; `SECURITY.md` |
+| H09 | Profile-local authority over shared foreign knowledge: `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_network_local_immutable_snapshots_and_shared_data_do_not_grant_methods`; `tests/test_host_acceptance.py::CumulativeHostTests::test_legacy_and_new_exact_lineage_shared_read_without_apply_authority`; `tests/test_inspection.py::InspectionTests::test_disabled_revoked_shared_profile_and_ambiguous_mappings_fail_closed` |
+| H10 | Deterministic socket-denied method/bounds/tail/native acceptance: `tests/test_host_acceptance.py::CumulativeHostTests::test_sparse_late_range_each_method_and_all_filtered_control`; `tests/test_host_transport.py::HostTransportTests::test_tcp_2222_and_optional_22000_only_positives`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `scripts/native_host_acceptance.py` |
+| H11 | No-response uncertainty, historical evidence/identity conservatism: `tests/test_host_transport.py::HostTransportTests::test_all_filtered_timeouts_not_offline_or_packets_for_unstarted`; `tests/test_host_acceptance.py::CumulativeHostTests::test_legacy_and_new_exact_lineage_shared_read_without_apply_authority`; `tests/test_unresolved.py::UnresolvedEvidenceTests::test_malformed_stored_receipt_entries_fail_in_public_error_envelope` |
+| H12 | Independent exact-artifact review before separate publication; no automatic enable/live scans: `tests/test_harness.py::AcceptanceHarnessTests::test_socket_denial_is_inherited_through_exec`; `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_legacy_defaults_and_explicit_defaults_preserve_exact_transport`; `docs/delivery-plan.md`; `docs/host-discovery-policy.md` |
+
+H12's independent verdict is a delivery gate, not something a builder can certify
+with a unit test. Native candidate-bound setup/dispatch/restart is mandatory on
+the final committed artifact. Other platforms and genuinely denied ICMP remain
+honest unavailable outcomes; no optional real helper is claimed tested/enabled.
+
+Issue #6 stage-1 regressions are mandatory alongside the original chunk tests:
+`tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests` covers strict
+booleans/types/bounds/duplicates/four-port cap/4403 exclusion, dependency/scope
+rejection, immutable network-local grants, YAML unknown/duplicate keys, unchanged
+legacy fixed argv/missing-Nmap behavior and staged effect-free public tool/slash/
+CLI refusal at stage 1, now combined-count pre-effect refusal at stage 2.
+`tests/test_host_discovery_policy.py::ICMPCapabilityTests` mocks every
+socket: disabled/deadline/platform no-open, permission/protocol/resource errors,
+unverified open/close, interruption and uncached recheck. No packets or helpers.
+Contract and stage-2 combined budgets/provenance are in host-discovery-policy.md.
+`tests/test_host_transport.py::HostTransportTests` covers ICMP-only positives with
+filtered web TCP, configured 2222/22000, mixed duplicates, denied/missing ICMP,
+all-filtered outcomes, forged grants/4403 exclusions, full-range rate/concurrency,
+shared receive/host/operation budgets, interruption/socket cleanup and rollback.
+The native cumulative harness exercises nine method scenarios through installed tool,
+slash and CLI dispatch with non-forwarding sockets, then reads exact evidence
+after process restart. No real helper, packet or production migration is tested.
+`tests/test_commands.py::OperatorStatusTests::test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt`
+requires explicit applied=false/persisted=false on invalid-policy CLI refusal,
+before read/write dispatch, with absent and existing stores preserved byte-for-byte.
 
 Combined discovery/evidence regressions are mandatory in the canonical verifier:
 `tests/test_unresolved.py::UnresolvedEvidenceTests::test_chunk_evidence_partial_not_started_and_complete_bounded_pages`
@@ -106,6 +162,15 @@ explicitly refuses to run if the critical chunk/legacy regression IDs are absent
   later external publication kept behind an operator approval gate.
 
 ## Residual and unperformed checks
+
+Mandatory disposable dependency/failure/lifecycle tests exercise pinned PM
+prerequisites/import lifetime, actual shell/child failure propagation, candidate-
+bound canonical/cold proof, fresh native setup/local refusal and run-scoped cleanup.
+Native CAUTION/CI policy tests retain full scanner/default policy, changed-byte,
+external consent, DANGEROUS and nonreplacement refusals. They cannot certify actual
+admission, hosted execution or independent approval. The hosted exception is not
+local/runtime force permission. Source-only checks use retained tools and tiny
+packet-denied fixtures; full-core fixtures and native admission are hosted only.
 
 A01 setup is a real native CLI-entrypoint install/enable and PM publication in
 marked disposable homes. A13 uses real discovery/registry/command/core APIs and

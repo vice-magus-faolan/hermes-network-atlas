@@ -15,9 +15,20 @@ The bounded `network_query` unresolved view exposes original discovery evidence,
 qualification/freshness and application/identity lineage separately from devices;
 zero canonical devices can coexist with positive historical response evidence.
 Collection alone never rewrites canonical inventory.
-Ping collection uses serial fixed 16-address chunks with bounded internal
+Legacy ping collection uses serial fixed 16-address chunks with bounded internal
 parallelism/rate and distinct not-started/timeout/completed-at-boundary evidence;
 hard ceilings are unchanged and real-world /24 completion is not guaranteed.
+Issue #6 adds strict network-local ICMP/TCP policy, packet-free capability
+diagnostics and bounded opt-in echo-datagram/TCP-connect collection. All methods
+share one budget and retain contributing method/port/time evidence; address
+counts are deduplicated. Legacy TCP 80/443 traffic is unchanged. Exact native
+admission, independent review and delivery remain gates for each new artifact.
+ICMP is disabled by default; extra ports such as 2222/optional 22000 require local
+operator policy. TCP 4403 is refused. No raw sockets, helper fallback, privilege
+grants, application payloads or service/identity conclusions are introduced.
+Requested methods are not proof of transmitted packets; filtered/no-response
+results remain uncertain. See the host-discovery contract for residual connection
+effects, check/response counts and a future separately authorized live recipe.
 Supported native scratch
 install/enable and a three-alias fixture workflow/restart are exercised by the
 canonical verifier. Passing synthetic checks does not establish live-network
@@ -40,6 +51,8 @@ external database, web app, MCP server, or background service is required.
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
+- [Host-discovery policy, datagram-only transport and combined budgets](docs/host-discovery-policy.md)
+- [Disposable hosted native validation](docs/disposable-validation.md)
 - [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
 - [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)
@@ -62,8 +75,11 @@ A compatible verifier runtime, exact Hermes source, declared scratch directory a
 candidate-bound native admission fixture are prerequisites; run the separate
 online setup in docs/operator-guide.md first. Canonical tests and their children
 are socket-denied. Missing Hermes is a failure, not a silent test skip; missing or
-stale admission evidence also fails. CI uses the same setup/verifier path, but
-GitHub CI execution has not been performed on this unpushed implementation.
+stale admission evidence also fails. All CI events use one disposable Docker path:
+online native install AND enable, full network-none canonical verification, then
+cold readback using the same selected generation and run-owned volume. Explicit
+bash pipefail preserves failures through tee. The corrected merge payload needs
+fresh exact-head hosted acceptance; older-SHA approval does not cover new bytes.
 Tests must use synthetic fixtures and isolated Hermes homes. They must not scan
 a real LAN, inspect a real SSH host, or read the operator's live atlas.
 

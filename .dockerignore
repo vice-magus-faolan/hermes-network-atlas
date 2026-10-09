@@ -1,0 +1,4 @@
+# Build context is public hosted checkouts, never local evidence or bytecode.
+/.test-scratch
+**/__pycache__
+**/*.pyc

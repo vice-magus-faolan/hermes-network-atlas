@@ -20,7 +20,8 @@ local audit event, not canonical inventory. Receipts have batch_id, completion,
 per-probe names/outcomes/diagnostic codes/counts, persisted=true, applied=false.
 No raw stdout/stderr is retained. Missing tools produce executable_missing;
 they are never installed automatically. iproute2 is required for passive mode;
-Nmap is optional and ping must be explicitly enabled by the operator.
+Nmap is optional and required only for legacy ping. Active discovery must be
+explicitly enabled by the operator. Opt-in sockets need no ping/Nmap helper.
 
 `network_reconcile` takes only an optional stored batch_id. Omitting it selects
 the latest eligible unapplied LAN/SSH batch from this profile, skipping revoked scopes.
@@ -79,7 +80,7 @@ local/neighbor addresses are ignored, not imported or probed. Malformed formats,
 duplicate JSON keys, excessive records, invalid prefixes/states/MACs or scalar
 values fail that probe, not every other successful positive probe.
 
-Active discovery enumerates every address in the exact configured IPv4 CIDR,
+Legacy active discovery (ICMP disabled and TCP exactly [80,443]) enumerates every address in the exact configured IPv4 CIDR,
 including network/broadcast addresses. It splits the scope in ascending order
 into fixed /28 chunks (16 addresses); scopes smaller than /28 are one chunk.
 Exactly one owned child runs at a time, with internal Nmap outstanding probes
@@ -176,6 +177,33 @@ an unrelated group. Descendant SIGKILL scheduling is asynchronous; orphan reapin
 belongs to init. Deliberately self-detaching executables are outside the trusted
 fixed-command contract, not a claimed OS sandbox. Unsupported runners fail
 usefully without launching a child. No subprocess runs under a DB write lock.
+
+## Opt-in ICMP/TCP host discovery
+
+The network-local issue-6 amendment selects direct socket collection whenever
+icmp_echo is true or tcp_ports differs from [80,443]. It does not change old policy
+traffic or reinterpret old Nmap evidence. See [host-discovery-policy.md](host-discovery-policy.md)
+for the controlling datagram-only permission, strict four-port cap/4403 exclusion,
+shared deadline/rate/concurrency/receive/result budgets and fair scheduling.
+2222 and optional 22000 are operator examples, not global defaults or services.
+
+Each enabled method has immutable probe/port/time/diagnostic evidence. Successful
+TCP connect or refusal and a matching header-only ICMP reply qualify a host
+response; neither infers device identity, application identity, access or topology.
+Aggregate ping_<index> records count each configured address once. They contain no
+duplicate observations; contributing positives remain on method probes. Distinct
+responding_address_count is separate from address_count, method attempt count,
+total_count (including coverage) and observation count. A failed method may coexist
+with positive response evidence and a failed aggregate check. Excluded endpoints
+make opt-in /24 coverage partial even when every ordinary host responds.
+
+No response remains uncertainty: firewall policy, routing, loss and timing can
+look alike. A requested method name is not proof of transmission. Disabled methods
+are not attempted; unavailable diagnostics do not establish complete coverage.
+Neither packet-free capability open/close nor a privileged preinstalled ping
+executable proves Atlas transport. No helper, raw fallback or privilege change is
+selected. TCP connects can affect connection-limited endpoints despite no payload;
+the hard 4403 exclusion is not a guarantee that all other endpoints are harmless.
 
 ## Identity, address sets and freshness
 

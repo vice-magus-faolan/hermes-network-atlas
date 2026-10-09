@@ -10,7 +10,10 @@ own gates. Do not infer permission from these examples.
 
 Compatibility is Python >=3.11,<3.15 and Hermes >=0.21.4,<0.22; executable evidence
 uses Linux x86_64, Python 3.14.7 and exact Hermes
-f42f579cf8bac4918ac9599bece71618afadd846. Other platforms/versions are not proven.
+5645275e50d66dca04c9565634f9b5207a38aef5 from `vice-magus-faolan/hermes-agent`.
+This narrowly amended public core is source-reviewed/authenticated only; actual
+corrected native/hosted acceptance remains pending. No live core update is implied.
+Other platforms/versions are not proven. See [disposable native validation](disposable-validation.md).
 Atlas itself needs only ruamel.yaml>=0.18.16,<0.19 beyond the standard library,
 declared with the supported native plugin.yaml python_dependencies field.
 
@@ -25,7 +28,8 @@ live profile merely to verify this repository:
 Install clones/scans the exact artifact; enable uses native PM member-union
 resolution/publication, not a hand-edited enabled list. Retain security checks
 and ordinary dependency/capability consent. Do not use force or disable scanning
-to get a refused candidate through admission. No runtime activation/restart of a
+for local/runtime admission; the separate hosted-CI-only exception below is not
+local permission. No runtime activation/restart of a
 live gateway is authorized by these instructions. Native enable's restart hint
 is advice for a separately authorized deployment, not an action this test runs.
 
@@ -38,12 +42,23 @@ and revalidate URL dependencies even when a frozen core build is cached. Therefo
 setup may need the network; the Atlas test process must not have it. An incomplete
 package-intelligence warning is not a clean vulnerability verdict.
 
+Active CI performs one supported native install AND enable ONLINE, then runs
+canonical and cold network-none consumers using that exact selected generation
+in a disposable candidate-owned volume. It does not attempt a second fresh
+offline dependency-resolution installation. The optional `--offline-enable` helper
+is not the active CI path. Full
+native scanning, genuine selection/installed-byte readback and dependency consent
+remain mandatory. Source approval/local unit tests do not prove successful hosted
+enable/canonical/cold acceptance or permit a live core/profile update.
+
 ## Profile-local policy
 
 Atlas reads `<get_hermes_home()>/network-atlas/config.yaml`, separate from Hermes's
 plugin selector. No policy means empty allowlists. An existing empty/malformed file,
 unknown keys, invalid numbers, noncanonical or overbroad scopes fail closed at
-registration and every invocation. Maintain this file as an operator in a 0700
+registration and every invocation. Invalid-policy CLI refusal returns exit 2 and
+explicit applied=false/persisted=false before command dispatch or store changes.
+Maintain this file as an operator in a 0700
 directory with mode 0600; never let model tools edit it. A synthetic example:
 
 ```yaml
@@ -54,6 +69,8 @@ networks:
     discovery:
       passive: true
       ping: false
+      icmp_echo: false
+      tcp_ports: [80, 443]
 ssh:
   enabled: false
   hosts:
@@ -73,6 +90,24 @@ chosen modes and existing reviewed OpenSSH aliases during a later authorized
 activation. IPv4 ping ranges have at most 256 addresses. Stored/passive IPv6 is
 not permission for active IPv6 scanning. Numeric ceilings and selection precedence
 are detailed in [contract-decisions.md](contract-decisions.md).
+
+Issue #6 accepts network-local discovery.icmp_echo (default false) and
+discovery.tcp_ports (default [80,443], at most four distinct integer ports;
+4403 is forbidden). Nonlegacy ping uses bounded numeric-only echo datagrams and
+TCP connects with no application traffic. Passive and legacy traffic are unchanged.
+ICMP-only policy uses tcp_ports: []; ICMP requires ping: true. Socket permission
+is diagnosed honestly: unavailable ICMP does not suppress a TCP positive (or vice
+versa). A TCP refusal is positive host-response evidence, not a listening service.
+The synthetic example [80,443,2222,22000] is not a default or service claim.
+No helper, grants or fallback are enabled. Read
+[host-discovery-policy.md](host-discovery-policy.md) before selecting methods;
+old binaries reject the new keys. Query/status never opens a capability socket.
+Method outcomes retain port, UTC times and contributing positives without a schema
+migration. Status address_count/responding_address_count deduplicate hosts; total
+probe/observation counts include method evidence, not extra devices. An excluded,
+timed-out, unavailable or not-started method makes coverage absence-ineligible.
+Network/broadcast addresses (except /31 and /32 host semantics), multicast,
+loopback, unspecified and reserved destinations are excluded before transport.
 
 Policy stays local even with an explicitly configured absolute
 `store.shared_sqlite_path`. Another profile can read knowledge but cannot inherit
@@ -117,7 +152,7 @@ batch probe detail; collection returns the full bounded outcome/diagnostic recei
 See [Atlas Core](atlas-core.md) for exact field semantics. Public status still obeys
 the serialized output_bytes ceiling; a too-small ceiling refuses read-only.
 
-Ping discovery uses serial fixed 16-address chunks, preserving earlier completed
+Legacy ping discovery uses serial fixed 16-address chunks, preserving earlier completed
 evidence when a later chunk fails. New address_count/address_outcome_counts exclude
 the synthetic scope-coverage probe. not_started means the work had no child because
 its budget expired; timeout means started transport exceeded its deadline; neither
@@ -126,7 +161,14 @@ postprocessing crossing the transport boundary. Chunk failures leave all their
 addresses unknown, never absent. Legacy /24 and /25 records remain readable, but
 old timeout diagnostics remain ambiguous; upgrade shared-store readers for the
 additive outcome enum. See local-discovery.md for fixed argv, total concurrency/
-average-rate bounds and limitations. No real-world completion guarantee is made.
+average-rate bounds and limitations. Opt-in ICMP/nondefault-port policy instead
+uses one shared socket scheduler; not_started then means no send/connect began,
+not a missing child. A method name identifies requested policy, not proof of a
+transmitted packet. Check its outcome and diagnostic; unavailable can occur before
+or during transport. A timeout is an initiated attempt with no qualifying reply
+before its bound, not proof of a filtered or offline host. No real-world completion
+guarantee is made. See host-discovery-policy.md for response/check counts, helper
+permissions, residual firewall blindness and the separately authorized live recipe.
 
 The slash runtime cannot attest human origin, so `/network update` refuses.
 Use the trusted local operator CLI for user-supplied knowledge:
@@ -172,7 +214,10 @@ identity, ownership or inspection access. Foreign shared evidence remains visibl
 knowledge, not permission to apply it. See [the strict bounded evidence contract](unresolved-evidence.md)
 for pagination, all output fields, lineage limits and partial/legacy batch handling.
 
-Passive collection needs installed iproute2; ping needs optional installed Nmap;
+Passive collection needs installed iproute2; legacy ping needs optional installed Nmap;
+opt-in socket collection needs no Nmap or ping helper. ICMP requires already-
+permitted Linux echo datagrams; a preinstalled privileged helper does not grant
+Atlas permission and is not executed. No automated privilege changes are allowed.
 SSH needs a supported OpenSSH client and existing operator-managed config/keys/
 known_hosts plus remote Linux utilities. Missing executables/remote commands
 produce bounded per-probe failures, never automatic installation or weaker SSH.
@@ -183,11 +228,26 @@ guides. Inspect/query failures are not an excuse to discard the atlas.
 ## Reproduce the isolated acceptance
 
 Tests need an existing scratch directory, a compatible verifier interpreter and
-an exact public Hermes Git checkout. No live config, atlas, credentials, homes or
+an exact public Hermes Git checkout and `/usr/bin/ssh-keygen` with detached-signature
+support for the synthetic confirmation regressions. No live config, atlas, credentials, homes or
 profile selections are copied. A lean disposable verifier can be prepared with
 requirements-test.txt (setup only). Do not install into production. GitHub CI
-checks out the exact Hermes pin and uses this same path; GitHub execution itself
-remains unperformed until separately authorized publication.
+checks out the exact Hermes pin and uses this same path; complete hosted native
+acceptance remains unperformed until separate publication and exact-artifact readback.
+
+CI initializes TMPDIR from runner.temp in the prerequisite step's env, where that
+context is available, and writes the same directory to GITHUB_ENV for subsequent
+steps. Runner expressions are invalid in job-level env. Before native admission
+of a changed workflow, validate the entire definition with primary-source
+actionlint v1.7.7 (commit 03d0035246f3e81f36aed592ffb4bebf33a03106):
+
+    actionlint -shellcheck= -pyflakes= .github/workflows/verify.yml
+
+Verify its release archive against the primary release checksums when using the
+prebuilt tool. These flags disable only optional external shell/Python lint
+integrations, not workflow/expression/context/trigger checks. The canonical
+hosted-policy suite separately executes scratch initialization and export; neither
+local check proves that a hosted native install or the canonical job has run.
 
 First, ONLINE PREREQUISITE SETUP, outside the test process:
 
@@ -210,8 +270,19 @@ plugins_cmd.cmd_install(file://<synthetic-repo>, enable=False, ref=<exact-SHA>)
 and cmd_enable('network-atlas'), the entrypoints used by the supported CLI; reads
 back installed bytes/full Git tree, enabled selector, PM facts/generation, recipes/locks and
 candidate identity. No admission, scanner, registry, selection or resolver mocks.
-Only ordinary dependency consent can be answered; other warnings/refusals are
-not forced through. Explicit native enable on this runtime may not ask a separate
+Default local setup answers only ordinary dependency consent; CAUTION without
+ordinary explicit exact-byte operator confirmation still refuses. Local/runtime
+force remains prohibited. The operator-approved hosted-CI exception explicitly
+selects `--admission-mode hosted-ci-caution` only in the reviewed push/pull_request
+workflow on fresh GitHub-hosted Ubuntu VMs. It preserves complete pinned source
+scanning, DANGEROUS refusal, fresh nonreplacement fixtures, ordinary native PM and
+tree/enable readback, contents: read, pinned actions and no supplied secrets or
+deployment access. Environment diagnostics cannot prove isolation or authorize
+force on this server. No signing-controller/real keys/per-commit signed CI approval
+is required; signed consent regressions remain inactive optional code. See
+[disposable-validation.md](disposable-validation.md) for guards, full
+scan records, local consent and the publisher's real exact-head hosted check.
+Explicit native enable on this runtime may not ask a separate
 Python dependency question. This is setup evidence, NOT the acceptance result.
 
 Then, SEPARATE NETWORK-DENIED ACCEPTANCE:
@@ -235,6 +306,13 @@ A second fresh native process uses the admitted PM-selected interpreter and
 re-queries/replays with transport binaries removed. It compares complete devices,
 history, access evidence, status, maps/exports and SQLite row counts, without
 rediscovery or audit growth. No LLM/provider response is fabricated or claimed.
+Both processes also verify invalid ICMP/port/option policy refusal through native
+tool/slash/CLI with explicit no-effects receipts and unchanged files/store counts.
+The collection process exercises ICMP responses with filtered web ports, true
+ICMP-only policy, 2222-only, 22000-only, mixed ICMP/four-port positives, denied
+permission/unsupported ICMP with TCP positives and all-filtered outcomes through
+non-forwarding sockets on all three routes; restart reads the same method evidence
+without transport. The original fixture policy is restored.
 Repeated verification starts a new synthetic atlas only in this marked fixture;
 never in a live profile. Missing/stale fixture evidence fails canonical checks.
 Rebuild setup after a new candidate commit or changed plugin/selector/recipe/lock.

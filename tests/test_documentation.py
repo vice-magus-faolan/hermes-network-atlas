@@ -14,6 +14,10 @@ class DocumentationTests(unittest.TestCase):
         rows = re.findall(r"^\| (A\d{2}) \| (.+)$", text, re.MULTILINE)
         self.assertEqual({identifier for identifier, _ in rows}, {f"A{number:02d}" for number in range(1, 15)})
         self.assertEqual(len(rows), 14)
+        host_rows = re.findall(r"^\| (H\d{2}) \| (.+)$", text, re.MULTILINE)
+        self.assertEqual({identifier for identifier, _ in host_rows}, {f"H{number:02d}" for number in range(1, 13)})
+        self.assertEqual(len(host_rows), 12)
+        rows.extend(host_rows)
         for identifier, evidence in rows:
             references = re.findall(r"`([^`]+)`", evidence)
             self.assertTrue(references, identifier)
@@ -31,6 +35,30 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("scripts/prepare_acceptance.py", workflow)
         self.assertIn("python3 scripts/verify.py", workflow)
 
+    def test_host_operator_contract_and_required_canonical_coverage(self):
+        contract = (ROOT / "docs" / "host-discovery-policy.md").read_text()
+        for term in ("Future live validation recipe", "separate authorization required",
+                     "preinstalled ping helper", "not a wire-packet receipt", "4403",
+                     "responding_address_count", "address_outcome_counts.success", "2222", "22000",
+                     "no optional real helper"):
+            # The optional-helper claim is maintained in the acceptance matrix.
+            text = contract + (ROOT / "docs" / "acceptance-matrix.md").read_text()
+            self.assertIn(term, text)
+        trees = [ast.parse((ROOT / "scripts" / name).read_text())
+                 for name in ("verify.py", "acceptance_support.py")]
+        for tree in trees:
+            node = next(node for node in tree.body if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == "PLUGIN_FILES" for target in node.targets))
+            self.assertTrue({"host_discovery.py", "host_transport.py", "host_schedule.py"} <= set(ast.literal_eval(node.value)))
+        required = next(node for node in trees[0].body if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == "REQUIRED_HOST_DISCOVERY_TESTS" for target in node.targets))
+        ids = ast.literal_eval(required.value)
+        host_tree = ast.parse((ROOT / "tests" / "test_host_acceptance.py").read_text())
+        cls = next(node for node in host_tree.body if isinstance(node, ast.ClassDef))
+        for test in cls.body:
+            if isinstance(test, ast.FunctionDef) and test.name.startswith("test_"):
+                self.assertIn("test_host_acceptance.CumulativeHostTests." + test.name, ids)
+
     def test_readme_distinguishes_implementation_from_live_delivery(self):
         readme = (ROOT / "README.md").read_text()
         for term in ("V1 phases 1–3 implemented", "cumulative synthetic acceptance", "separately gated",
@@ -42,3 +70,26 @@ class DocumentationTests(unittest.TestCase):
                      "ProxyJump/ProxyCommand/Match exec", "store.shared_sqlite_path", "Missing Python dependencies",
                      "No LLM/provider response is fabricated", "socket", "unperformed"):
             self.assertIn(term, guide)
+
+    def test_confirmation_route_is_inactive_external_and_canonically_required(self):
+        workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text()
+        self.assertIn("--admission-mode hosted-ci-caution", workflow)
+        self.assertIn("tests/test_ci_admission.py", workflow)
+        self.assertIn("tests/test_caution_confirmation.py", workflow)
+        for activation in ("--approval", "--allowed-signers", "--signer", "secrets."):
+            self.assertNotIn(activation, workflow)
+        contract = " ".join((ROOT / "docs" / "disposable-validation.md").read_text().split())
+        for term in ("INACTIVE by default", "GitHub-hosted", "DANGEROUS always",
+                     "not an OS isolation", "not a signing-controller", "publication fail honestly",
+                     "approval is shipped", "changed commit/tree/scope", "not native admission or independent review"):
+            self.assertIn(term, contract)
+        verifier = ast.parse((ROOT / "scripts" / "verify.py").read_text())
+        for manifest, module, class_name in (("REQUIRED_CONFIRMATION_TESTS", "test_caution_confirmation", "CautionConfirmationTests"),
+                                             ("REQUIRED_CI_ADMISSION_TESTS", "test_ci_admission", "HostedCIAdmissionTests")):
+            required = next(node for node in verifier.body if isinstance(node, ast.Assign)
+                            and any(isinstance(target, ast.Name) and target.id == manifest for target in node.targets))
+            ids = ast.literal_eval(required.value)
+            tests = ast.parse((ROOT / "tests" / (module + ".py")).read_text())
+            cls = next(node for node in tests.body if isinstance(node, ast.ClassDef))
+            self.assertEqual(ids, {module + "." + class_name + "." + test.name
+                                   for test in cls.body if isinstance(test, ast.FunctionDef) and test.name.startswith("test_")})

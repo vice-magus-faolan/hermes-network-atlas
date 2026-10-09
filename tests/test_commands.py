@@ -1,11 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Cumulative operator/status contracts, using only synthetic isolated state."""
+import argparse
+from contextlib import redirect_stdout
 import importlib
+import io
 import json
 from pathlib import Path
 from datetime import timedelta
+import sys
 import unittest
 from unittest.mock import patch
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from offline_guard import deny_network
+    deny_network()
 
 from helpers import scratch_home
 from test_boundaries import synthetic_policy
@@ -35,8 +44,46 @@ class OperatorStatusTests(unittest.TestCase):
         self.assertEqual(result["stale_devices"], 0)
         self.assertEqual(result["authorized_devices_for_atlas_ssh_inspection"], 0)
         self.assertIsNone(result["last_discovery"])
-        self.assertEqual(result["configured_scopes"], [{"name": "lab", "cidr": "192.0.2.0/24", "passive": True, "ping": True}])
+        self.assertEqual(result["configured_scopes"], [{"name": "lab", "cidr": "192.0.2.0/24", "passive": True,
+                                                       "ping": True, "icmp_echo": False, "tcp_ports": [80, 443]}])
         self.assertEqual(set(self.home.rglob("*")), before)
+
+    def test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        routes = (["discover", "--network", "lab", "--mode", "ping"],
+                  ["status"], ["create", "--name", "Synthetic device"],
+                  ["update", "--device-id", "00000000-0000-0000-0000-000000000001",
+                   "--field", "description", "--value-json", '"Synthetic assertion"'])
+        path = self.home / "network-atlas" / "config.yaml"
+        original = path.read_bytes()
+        self.addCleanup(path.write_bytes, original)
+        for existing_store in (False, True):
+            if existing_store:
+                with storage.Store(self.policy, writable=True) as store:
+                    core.create_device(store, "Existing synthetic device", now=NOW)
+            for methods in ({"icmp_echo": 1}, {"tcp_ports": [4403]},
+                            {"icmp_echo": True, "options": "-PE"}):
+                raw = json.loads(original)
+                raw["networks"]["lab"]["discovery"].update(methods)
+                path.write_text(json.dumps(raw))
+                before = {item.relative_to(self.home): item.read_bytes()
+                          for item in self.home.rglob("*") if item.is_file()}
+                with patch.object(commands, "_read_command") as read, patch.object(commands, "_write_command") as write:
+                    for argv in routes:
+                        with self.subTest(existing_store=existing_store, methods=methods, argv=argv):
+                            output = io.StringIO()
+                            with redirect_stdout(output):
+                                code = commands.run_command(parser.parse_args(argv), self.home)
+                            result = json.loads(output.getvalue())
+                            self.assertEqual(code, 2)
+                            self.assertIn("error", result)
+                            self.assertIs(result["applied"], False)
+                            self.assertIs(result["persisted"], False)
+                            self.assertEqual({item.relative_to(self.home): item.read_bytes()
+                                              for item in self.home.rglob("*") if item.is_file()}, before)
+                    read.assert_not_called()
+                    write.assert_not_called()
 
     def test_discovery_and_inspection_are_distinct_local_qualified_summaries(self):
         old = NOW - timedelta(days=20)
@@ -90,3 +137,7 @@ class OperatorStatusTests(unittest.TestCase):
         with patch.object(self.handlers, "query", return_value="fixture-query") as read:
             self.assertEqual(self.handlers.command("show fixture-id"), "fixture-query")
             read.assert_called_once_with({"device_id": "fixture-id"})
+
+
+if __name__ == "__main__":
+    unittest.main()
