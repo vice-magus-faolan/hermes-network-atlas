@@ -24,13 +24,13 @@ from test_discovery import discovery, runner, xml
 # This child uses the same test module, but loads no operator/profile data.
 REOPEN = """
 import sys
-sys.path[:0] = [sys.argv[1], sys.argv[2]]
-from offline_guard import deny_network
+sys.path.insert(0, sys.argv[1])
+from network_guard import deny_network
 deny_network()
 from test_status_remediation import public_status
 from pathlib import Path
 import json
-print(json.dumps(public_status(Path(sys.argv[3]))))
+print(json.dumps(public_status(Path(sys.argv[2]))))
 """
 
 
@@ -96,9 +96,9 @@ class StatusBatchBoundsTests(unittest.TestCase):
             self.assert_summary(results[route]["last_collection"], receipt, limit)
             self.assertLessEqual(len(storage.response_json(results[route], self.policy.limits.output_bytes).encode()),
                                  self.policy.limits.output_bytes)
-        child = subprocess.run([sys.executable, "-c", REOPEN, str(ROOT / "tests"), str(ROOT / "scripts"), str(self.home)],
+        child = subprocess.run([sys.executable, "-c", REOPEN, str(ROOT / "tests"), str(self.home)],
                                env={"PATH": "/usr/bin:/bin", "HOME": str(self.home / "user"),
-                                    "HERMES_HOME": str(self.home), "TMPDIR": os.environ["TMPDIR"],
+                                    "HERMES_HOME": str(self.home),
                                     "PYTHONDONTWRITEBYTECODE": "1"},
                                cwd=self.home, capture_output=True, text=True, timeout=30)
         self.assertEqual(child.returncode, 0, child.stderr)

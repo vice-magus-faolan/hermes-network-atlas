@@ -74,7 +74,7 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
             children.append(child)
             return child
         def sleeping(argv, limits, deadline, **kwargs):
-            return fixture.runner.run((sys.executable, str(fixture.ROOT / "scripts" / "offline_probe.py"), "sleep"), limits, deadline, host=True)
+            return fixture.runner.run((sys.executable, str(fixture.ROOT / "tests" / "offline_probe.py"), "sleep"), limits, deadline, host=True)
         started = time.monotonic()
         with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(self.home)}), patch.object(fixture.discovery, "run", sleeping), patch.object(fixture.runner.subprocess, "Popen", record):
             receipt = fixture.discovery.collect(policy, {"network": "lab", "mode": "ping"})
@@ -153,7 +153,7 @@ class AdditionalRunnerTests(unittest.TestCase):
         with fixture.scratch_home() as directory:
             home = Path(directory)
             (home / "offline-fixture").touch()
-            argv = (sys.executable, str(fixture.ROOT / "scripts" / "offline_probe.py"))
+            argv = (sys.executable, str(fixture.ROOT / "tests" / "offline_probe.py"))
             with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(home)}):
                 unrelated = subprocess.Popen((*argv, "sleep"), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                 try:

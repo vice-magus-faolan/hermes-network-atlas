@@ -3,6 +3,7 @@
 import errno
 import importlib
 import struct
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import unittest
 
@@ -130,6 +131,7 @@ class CumulativeHostTests(unittest.TestCase):
         sock = MagicMock()
         sock.getsockname.return_value = ('0.0.0.0', 1001)
         with patch.object(transport.socket, 'socket', return_value=sock), \
+                patch.object(transport, 'sys', SimpleNamespace(platform='linux')), \
                 patch.object(transport.time, 'monotonic', side_effect=[1, 10]):
             attempt, result = transport.begin(policy.networks[0], '192.0.2.1', None, 10)
         self.assertIsNone(attempt)

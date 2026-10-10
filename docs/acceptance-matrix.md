@@ -1,28 +1,27 @@
 # Acceptance matrix
 
-The active CI path is [disposable-validation.md](disposable-validation.md): one
-online supported install AND enable, then full packet-denied canonical and cold
-same-generation checks in a run-owned Docker volume. The focused candidate needs
-fresh exact-head hosted evidence and independent review; old-SHA approval is not
-current acceptance. Baseline/product tests remain mandatory. Removed added tests
-belong only to abandoned acquisition/packing/retention/measurement/controllers;
-those experiments and historical receipts remain archived outside the merge tree.
+Build docker/validation.Dockerfile online against unmodified stock Hermes
+v0.21.6, then run actual validate, doctor and pytest with Docker's network disabled.
+The candidate needs fresh exact-head hosted evidence and independent review;
+old-SHA approval is not current acceptance. Product/security tests remain mandatory.
+Superseded core-identity, admission and acquisition/controller tests are removed
+with their harness. Historical experiments remain recoverable in Git history.
 
-The requirements below are backed by cumulative synthetic offline tests, not
-live validation or self approval. Run `python3 scripts/verify.py` after supported
-isolated setup in [operator-guide.md](operator-guide.md). Missing native admission
-evidence fails; it is never skipped. All production modules are declared/compiled
-and all test modules discovered by the same verifier and CI workflow.
+The requirements below map to cumulative synthetic tests, not live validation
+or self approval. Run `python3 -m pytest -q` with the supported dependencies in
+[operator-guide.md](operator-guide.md). Missing Hermes fails rather than skips.
+Pytest supplies scratch fixtures and discovers all test modules; CI uses the same
+suite. No native receipt, manually set TMPDIR or platform/CI predicate is required.
 
 ## Executable evidence index
 
-Each named test is discovered by the canonical verifier. The matrix/reference
-contract is checked by `tests/test_documentation.py::DocumentationTests`.
+Each named behavioral test is discovered by pytest. This index is documentation,
+not a test of documentation wording or file inventory.
 
 | ID | Exact executable evidence | Operator/contract documentation |
 | --- | --- | --- |
-| A01 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `tests/test_runtime.py::NativeRuntimeTests::test_actual_native_discovery_schemas_tools_commands_and_operator_split` | `docs/operator-guide.md`; `plugin.yaml`; `scripts/prepare_acceptance.py`; `scripts/native_install.py` |
-| A02 | `tests/test_core.py::PersistenceTests::test_fresh_process_reopen_preserves_manual_seed_query_history_access_and_map`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection` | `docs/atlas-core.md`; `docs/operator-guide.md` |
+| A01 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection`; `tests/test_runtime.py::NativeRuntimeTests::test_actual_native_discovery_schemas_tools_commands_and_operator_split` | `docs/operator-guide.md`; `plugin.yaml`; `tests/runtime_smoke.py` |
+| A02 | `tests/test_core.py::PersistenceTests::test_fresh_process_reopen_preserves_manual_seed_query_history_access_and_map`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection` | `docs/atlas-core.md`; `docs/operator-guide.md` |
 | A03 | `tests/test_boundaries.py::PolicyTests::test_cidr_scope_and_ipv6_active_boundaries`; `tests/test_boundaries.py::PolicyTests::test_each_limit_rejects_zero_negative_bool_fraction_nan_and_over_ceiling`; `tests/test_inspection.py::InspectionTests::test_exact_schema_and_request_boundary_before_any_effect` | `docs/contract-decisions.md`; `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
 | A04 | `tests/test_core.py::IdentityAndProvenanceTests::test_ip_hostname_never_merge_and_mac_anchors_interface_only`; `tests/test_discovery_remediation.py::LocalCollisionTests::test_duplicate_mac_local_rows_both_orders_are_unresolved`; `tests/test_inspection_extra.py::ExtraInspectionTests::test_duplicate_remote_macs_and_foreign_interface_preserved` | `docs/contract-decisions.md`; `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
 | A05 | `tests/test_core.py::IdentityAndProvenanceTests::test_field_precedence_assertions_preserved_and_same_source_supersession`; `tests/test_core.py::IdentityAndProvenanceTests::test_equal_rank_cross_source_disagreement_has_no_arbitrary_winner`; `tests/test_boundaries.py::BoundaryTests::test_runtime_kwargs_do_not_attest_operator_origin` | `docs/atlas-core.md`; `docs/contract-decisions.md` |
@@ -33,8 +32,8 @@ contract is checked by `tests/test_documentation.py::DocumentationTests`.
 | A10 | `tests/test_core.py::PersistenceTests::test_interrupt_rolls_back_and_busy_writer_is_bounded`; `tests/test_discovery.py::DiscoveryTests::test_passive_fixed_argv_scope_atomic_no_canonical_mutation`; `tests/test_discovery_remediation.py::ReconcileBudgetTests::test_sql_progress_interrupts_running_statement_and_rolls_back`; `tests/test_inspection_extra.py::ExtraInspectionTests::test_reconcile_deadline_after_access_write_rolls_back_and_retry_is_exact` | `docs/atlas-core.md`; `docs/local-discovery.md` |
 | A11 | `tests/test_core.py::QueryUpdateMapTests::test_golden_text_markdown_mermaid_and_negative_label_cases`; `tests/test_core.py::QueryUpdateMapTests::test_render_deterministic_escaped_isolated_stale_and_inferred_edges`; `tests/test_core.py::QueryUpdateMapTests::test_map_rejects_arbitrary_export_path_symlink_and_oversized_output` | `docs/atlas-core.md`; `docs/operator-guide.md`; `tests/fixtures/render-golden.json` |
 | A12 | `tests/test_core.py::QueryUpdateMapTests::test_shared_knowledge_never_transfers_inspection_authority`; `tests/test_inspection.py::InspectionTests::test_disabled_revoked_shared_profile_and_ambiguous_mappings_fail_closed`; `tests/test_commands.py::OperatorStatusTests::test_shared_foreign_batches_do_not_claim_local_last_discovery`; `tests/test_unresolved.py::UnresolvedEvidenceTests::test_shared_foreign_knowledge_visible_without_authority_separate_store_empty`; `tests/test_unresolved.py::UnresolvedEvidenceTests::test_foreign_same_mac_does_not_resolve_local_lineage` | `docs/atlas-core.md`; `docs/operator-guide.md`; `docs/unresolved-evidence.md`; `SECURITY.md` |
-| A13 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `tests/test_harness.py::AcceptanceHarnessTests::test_socket_denial_is_inherited_through_exec`; `tests/test_harness.py::AcceptanceHarnessTests::test_code_and_native_selection_changes_invalidate_receipt` | `docs/operator-guide.md`; `scripts/cumulative_acceptance.py`; `scripts/cumulative_transport.py`; `scripts/offline_guard.py` |
-| A14 | `tests/test_documentation.py::DocumentationTests::test_matrix_paths_and_exact_test_symbols_exist`; `tests/test_documentation.py::DocumentationTests::test_readme_distinguishes_implementation_from_live_delivery`; `tests/test_commands.py::OperatorStatusTests::test_empty_status_has_consistent_counts_scopes_and_no_file_effects`; `tests/test_commands.py::OperatorStatusTests::test_discovery_and_inspection_are_distinct_local_qualified_summaries`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_complete_partial_failed_and_small_control_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_lowered_detail_limits_do_not_change_whole_batch_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_status_keep_distinct_complete_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_complete_and_failed_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_status_output_cap_still_refuses_without_store_changes` | `README.md`; `docs/operator-guide.md`; `docs/atlas-core.md`; `SECURITY.md`; `CONTRIBUTING.md` |
+| A13 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection` | `docs/operator-guide.md`; `tests/cumulative_acceptance.py`; `tests/cumulative_transport.py` |
+| A14 | `tests/test_commands.py::OperatorStatusTests::test_empty_status_has_consistent_counts_scopes_and_no_file_effects`; `tests/test_commands.py::OperatorStatusTests::test_discovery_and_inspection_are_distinct_local_qualified_summaries`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_complete_partial_failed_and_small_control_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_full_size_ping_lowered_detail_limits_do_not_change_whole_batch_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_status_keep_distinct_complete_evidence`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_lowered_limit_passive_and_ssh_complete_and_failed_after_restart`; `tests/test_status_remediation.py::StatusBatchBoundsTests::test_status_output_cap_still_refuses_without_store_changes` | `README.md`; `docs/operator-guide.md`; `docs/atlas-core.md`; `SECURITY.md`; `CONTRIBUTING.md` |
 
 ## Acceptance requirements
 
@@ -54,14 +53,14 @@ Green fixtures are not live validation, publication approval or target integrati
 | H05 | One combined budget, every enabled method, persistence reserve/cancellation: `tests/test_host_acceptance.py::CumulativeHostTests::test_every_method_uses_combined_budget_at_each_concurrency`; `tests/test_host_acceptance.py::CumulativeHostTests::test_shared_receive_exhaustion_retains_other_method_evidence`; `tests/test_host_acceptance.py::CumulativeHostTests::test_deadline_after_open_before_send_and_unregister_failure_cleanup`; `tests/test_host_transport.py::HostTransportTests::test_persistence_failure_retains_history_and_output_receipt_rolls_back` |
 | H06 | Checks/responses/attempts/coverage kept separate: `tests/test_host_transport.py::HostTransportTests::test_mixed_duplicates_retained_address_counts_deduplicated_after_restart`; `tests/test_host_transport.py::HostTransportTests::test_all_filtered_timeouts_not_offline_or_packets_for_unstarted`; `docs/operator-guide.md` |
 | H07 | Method/port/time positives retained, no identity/service/access inference: `tests/test_host_transport.py::HostTransportTests::test_icmp_only_positive_survives_filtered_web_and_retains_times`; `tests/test_host_acceptance.py::CumulativeHostTests::test_hostile_echo_fields_and_bytes_never_qualify_response`; `tests/test_host_acceptance.py::CumulativeHostTests::test_legacy_and_new_exact_lineage_shared_read_without_apply_authority` |
-| H08 | Sensitive exclusion, no application payload and honest connection effects: `tests/test_host_transport.py::HostTransportTests::test_scope_and_4403_caller_forgery_refuse_before_transport`; `tests/test_host_transport.py::HostTransportTests::test_icmp_golden_header_and_hostile_reply_validation`; `scripts/synthetic_sockets.py`; `SECURITY.md` |
+| H08 | Sensitive exclusion, no application payload and honest connection effects: `tests/test_host_transport.py::HostTransportTests::test_scope_and_4403_caller_forgery_refuse_before_transport`; `tests/test_host_transport.py::HostTransportTests::test_icmp_golden_header_and_hostile_reply_validation`; `tests/synthetic_sockets.py`; `SECURITY.md` |
 | H09 | Profile-local authority over shared foreign knowledge: `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_network_local_immutable_snapshots_and_shared_data_do_not_grant_methods`; `tests/test_host_acceptance.py::CumulativeHostTests::test_legacy_and_new_exact_lineage_shared_read_without_apply_authority`; `tests/test_inspection.py::InspectionTests::test_disabled_revoked_shared_profile_and_ambiguous_mappings_fail_closed` |
-| H10 | Deterministic socket-denied method/bounds/tail/native acceptance: `tests/test_host_acceptance.py::CumulativeHostTests::test_sparse_late_range_each_method_and_all_filtered_control`; `tests/test_host_transport.py::HostTransportTests::test_tcp_2222_and_optional_22000_only_positives`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_supported_admission_three_aliases_and_fresh_process_without_collection`; `scripts/native_host_acceptance.py` |
+| H10 | Deterministic synthetic method/bounds/tail/native acceptance: `tests/test_host_acceptance.py::CumulativeHostTests::test_sparse_late_range_each_method_and_all_filtered_control`; `tests/test_host_transport.py::HostTransportTests::test_tcp_2222_and_optional_22000_only_positives`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection`; `tests/native_host_acceptance.py` |
 | H11 | No-response uncertainty, historical evidence/identity conservatism: `tests/test_host_transport.py::HostTransportTests::test_all_filtered_timeouts_not_offline_or_packets_for_unstarted`; `tests/test_host_acceptance.py::CumulativeHostTests::test_legacy_and_new_exact_lineage_shared_read_without_apply_authority`; `tests/test_unresolved.py::UnresolvedEvidenceTests::test_malformed_stored_receipt_entries_fail_in_public_error_envelope` |
-| H12 | Independent exact-artifact review before separate publication; no automatic enable/live scans: `tests/test_harness.py::AcceptanceHarnessTests::test_socket_denial_is_inherited_through_exec`; `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_legacy_defaults_and_explicit_defaults_preserve_exact_transport`; `docs/delivery-plan.md`; `docs/host-discovery-policy.md` |
+| H12 | Independent exact-artifact review before separate publication; no automatic enable/live scans: `tests/test_host_discovery_policy.py::HostDiscoveryPolicyTests::test_legacy_defaults_and_explicit_defaults_preserve_exact_transport`; `docs/delivery-plan.md`; `docs/host-discovery-policy.md` |
 
 H12's independent verdict is a delivery gate, not something a builder can certify
-with a unit test. Native candidate-bound setup/dispatch/restart is mandatory on
+with a unit test. Native directory-plugin registration/dispatch/restart is required on
 the final committed artifact. Other platforms and genuinely denied ICMP remain
 honest unavailable outcomes; no optional real helper is claimed tested/enabled.
 
@@ -95,8 +94,7 @@ preserves original/later identity and foreign read visibility without authority;
 `tests/test_unresolved.py::UnresolvedEvidenceTests::test_malformed_stored_receipt_entries_fail_in_public_error_envelope`
 proves malformed identity receipts refuse read-only in the public error envelope.
 
-Issue #2 bounded-coverage regressions are discovered by the same verifier; it
-explicitly refuses to run if the critical chunk/legacy regression IDs are absent:
+Issue #2 bounded-coverage regressions are discovered by the same pytest suite:
 
 - A07: `tests/test_discovery_chunks.py::ChunkDiscoveryTests::test_sparse_24_startup_budget_reaches_last_address_and_reconciles_exact_batch`
   proves startup-cost RED/GREEN, complete sparse /24 tail coverage and exact-batch retry.
@@ -118,8 +116,9 @@ explicitly refuses to run if the critical chunk/legacy regression IDs are absent
   no SSH capability or permissions changed. Exact fixed-argv/collector-contract
   amendment and real-world timing caveats are in local-discovery.md and addendum §6.
 
-- **A01 Native plugin**: supported install/enable, discovery, schemas, actual
-  tool invocation, and operator commands under a temporary Hermes home.
+- **A01 Native plugin**: stock validate/doctor, directory-plugin discovery, schemas,
+  actual tool invocation and operator commands under a temporary Hermes home.
+  Package-manager install/enable is not exercised by this source test path.
 - **A02 Persistence**: reopen/fresh process retains IDs, facts, relations,
   observation history, access evidence, and map output without discovery.
 - **A03 Config/authorization**: malformed/out-of-policy CIDRs, excessive ranges,
@@ -163,20 +162,15 @@ explicitly refuses to run if the critical chunk/legacy regression IDs are absent
 
 ## Residual and unperformed checks
 
-Mandatory disposable dependency/failure/lifecycle tests exercise pinned PM
-prerequisites/import lifetime, actual shell/child failure propagation, candidate-
-bound canonical/cold proof, fresh native setup/local refusal and run-scoped cleanup.
-Native CAUTION/CI policy tests retain full scanner/default policy, changed-byte,
-external consent, DANGEROUS and nonreplacement refusals. They cannot certify actual
-admission, hosted execution or independent approval. The hosted exception is not
-local/runtime force permission. Source-only checks use retained tools and tiny
-packet-denied fixtures; full-core fixtures and native admission are hosted only.
-
-A01 setup is a real native CLI-entrypoint install/enable and PM publication in
-marked disposable homes. A13 uses real discovery/registry/command/core APIs and
-the admitted selected Python, but transport is deliberately synthetic. Neither
-proves a live host key, real reachability or provider chat behavior. All subprocesses
-in canonical acceptance inherit socket denial; setup runs separately online.
+Stock validate must report no security caution; doctor runs normally with --ci,
+without force or an admission exception. A01/A13 use real discovery/registry/
+command/core APIs, but their transports are deliberately synthetic. Tests use
+pytest-owned isolated homes and non-forwarding fixture executables/sockets, not
+the operator's config or atlas. The Python audit tripwire is regression protection,
+not an OS sandbox; Docker's --network none independently isolates product runs.
+Neither fixture success nor doctor proves a live host key, real reachability or
+provider chat behavior. Package-manager install/enable remains separate from
+directory registration and is not a prerequisite for this test path.
 
 Other OS/OpenSSH/Hermes versions, GitHub CI execution, production installation,
 private seeding, LAN scans, actual SSH and gateway restart remain unperformed.

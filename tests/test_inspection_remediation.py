@@ -111,9 +111,9 @@ class InspectionReachabilityTests(AtlasFixture):
         (self.home / "synthetic-phase1-home").touch()
         expected_query = query.query(self.policy, {}, now=NOW)
         expected_map = render.render_map(self.policy, now=NOW)
-        child = subprocess.run([sys.executable, str(ROOT / "scripts/phase1_reopen.py"), str(self.home)],
+        child = subprocess.run([sys.executable, str(ROOT / "tests/phase1_reopen.py"), str(self.home)],
                                cwd=self.home, env={"PATH": str(self.home / "no-executables"),
-                               "TMPDIR": os.environ["TMPDIR"], "HOME": str(self.home / "user"),
+                               "HOME": str(self.home / "user"),
                                "HERMES_HOME": str(self.home), "PYTHONDONTWRITEBYTECODE": "1"},
                                capture_output=True, text=True, timeout=30)
         self.assertEqual(child.returncode, 0, child.stdout + child.stderr)

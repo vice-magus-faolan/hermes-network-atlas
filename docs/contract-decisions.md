@@ -203,9 +203,10 @@ Initial Hermes APIs were inspected at f42f579cf8bac4918ac9599bece71618afadd846,
 v0.21.4+canary.20260930T070235Z. Official docs checked on 2026-09-30:
 https://hermes-agent.nousresearch.com/docs/developer-guide/plugins and
 https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins.
-Current acceptance pins public core `5645275e50d66dca04c9565634f9b5207a38aef5`;
-the original inspection coordinates below remain historical. See
-[disposable native validation](disposable-validation.md) for current gates.
+Current Docker/CI checks use the official unmodified NousResearch/hermes-agent
+release v0.21.6, within the existing compatibility range. Tests do not check core
+identity, source digests or Git trees. The inspection coordinates below remain
+historical; use [operator-guide.md](operator-guide.md) for current stock setup.
 The docs advertise directory plugin discovery, register_tool, register_command,
 and register_cli_command. Installed APIs are the executable contract; docs are
 not evidence that schema validation, origin attestation, or sandboxing occurs.
@@ -242,17 +243,19 @@ or attestation tokens enter model arguments. If stronger origin isolation is lat
 required, it needs a steward decision, not a caller-selected flag.
 
 Supported plugin syntax: Python >=3.11,<3.15; declared Hermes >=0.21.4,<0.22.
-Real native smoke has been exercised on the exact canary above with Python 3.14.7;
-other runtime versions are not claimed tested. Keep this narrow compatibility
-range until additional exact-runtime checks pass. Native dependency declaration:
+Historical native smoke used the canary above with Python 3.14.7; the current
+verification path selects official v0.21.6 without modifying core. Do not infer
+matrix-wide coverage from one release. Keep this compatibility range unchanged.
+Native dependency declaration:
 ruamel.yaml>=0.18.16,<0.19 (already present in tested Hermes). This upper-bounded
 range accommodates Hermes's exact host pin without adding another YAML package.
-Use supported plugin dependency admission/PM in an isolated test installation;
-never pip-edit the production runtime. Discovery does not install dependencies.
+Use stock Hermes's declared dependencies and requirements-test.txt in an isolated
+development environment; never pip-edit production. Discovery does not install
+dependencies. Operator installation uses supported native dependency handling.
 
 ## 6. Evidence and remaining gates
 
-Canonical verifier requires behavioral tests AND actual isolated Hermes discovery,
+Pytest requires behavioral tests AND actual isolated Hermes discovery,
 real registry/schema/dispatch, native slash/CLI registration and attestation split,
 disabled selection, invalid-config registration refusal, reload rejection, and
 unload cleanup. The runtime smoke copies only plugin source into a synthetic
@@ -263,7 +266,8 @@ No live profile data or actual atlas is copied. No fake registry acceptance.
 This is supported directory installation plus native loader opt-in behavior,
 not a claim that the PM-managed `hermes plugins install/enable` command cycle has
 been exercised. Those commands can resolve/publish dependency environments;
-full isolated admission/CLI command-cycle testing remains an explicit A01 gate
-for cumulative V1 acceptance. Do not weaken that gate or count these smoke checks
-as final installation/restart acceptance. Persistence, collectors, reconciliation,
-map, and A02–A13 cumulative scenario still belong to subsequent cards.
+full package-manager install/enable command-cycle acceptance remains a separate
+unperformed installation check, not a prerequisite for portable product pytest.
+Do not count directory fixtures as package-manager lifecycle proof. Persistence,
+collectors, reconciliation, maps and the three-alias restart scenario now have
+behavioral tests indexed in acceptance-matrix.md.

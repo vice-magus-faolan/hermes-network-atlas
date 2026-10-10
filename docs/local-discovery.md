@@ -261,13 +261,12 @@ batch provides no new sightings; failure itself is not evidence of absence.
 
 ## Verification and remaining gates
 
-Use a compatible verifier interpreter and declared scratch TMPDIR. Prepare the
-candidate-bound native fixture separately as documented in operator-guide.md.
-No live home/config/atlas is a test fixture. Canonical command:
+Use stock supported Hermes and requirements-test.txt as documented in
+operator-guide.md. Pytest supplies scratch fixtures; no live home/config/atlas
+is a test fixture. Canonical and focused commands:
 
-    python3 scripts/verify.py
-    python3 -m unittest discover -s tests -p 'test_discovery*.py' -v
-    python3 -m unittest discover -s tests -p test_runtime.py -v
+    python3 -m pytest -q
+    python3 -m pytest -q tests/test_discovery*.py tests/test_runtime.py
 
 A03: current allowlists/modes, no raw targets/options/policy inputs, configuration
 CIDR/IPv4/IPv6 and lowered bounds. A07: immutable new/changed/unchanged/missing/
@@ -290,14 +289,14 @@ mid-chunk, completed-at-boundary work, lowered intensity, failed chunk and persi
 rollback. tests/test_status_remediation.py additionally preserves legacy per-address
 /24 and /25 totals across native public read surfaces and fresh-process restart.
 These are tests/test_discovery.py, tests/test_discovery_extra.py and the actual
-native fixture in tests/test_runtime.py / scripts/runtime_smoke.py. The native
+native fixture in tests/test_runtime.py / tests/runtime_smoke.py. The native
 loader/registry/handlers are real; transport is a scratch-only executable fixture
-scripts/offline_probe.py, never the host's real ip/Nmap. Reopen removes that fake
+tests/offline_probe.py, never the host's real ip/Nmap. Reopen removes that fake
 binary and uses a fixture-only PATH to prove stored querying/replay without
 collection. Synthetic output is explicitly a fixture, not reported live evidence.
 
 Phase 1 checks remain in the same verifier. Existing schema version 1 is retained.
-Supported PM-managed install/enable and three-alias A13 cumulative evidence are
+Native directory-plugin registration and three-alias A13 cumulative evidence are
 indexed in acceptance-matrix.md and operator-guide.md. GitHub CI execution,
 other runtime combinations, real network
 reachability, publication, main advancement and live activation are unperformed.

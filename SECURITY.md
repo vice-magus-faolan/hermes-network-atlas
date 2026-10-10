@@ -55,20 +55,16 @@ sandboxed jump path; killing local SSH cannot guarantee remote descendant
 cancellation. No runtime tool can supply or modify a command or SSH option.
 
 Configuration examples and fixtures are synthetic, never live authorization.
-Supported isolated native install/enable may acquire dependencies during explicit
-scratch-only setup. Canonical Atlas acceptance is a separate socket-denied process
-with non-forwarding synthetic transports. Admission evidence is candidate-bound;
-security scan/refusal/consent controls are not mocked or disabled. This test guard
-is not a production sandbox. See docs/operator-guide.md for the exact boundary.
-Only the reviewed workflow on fresh GitHub-hosted Ubuntu CI permits the supported
-CAUTION-only force exception after full pinned core/candidate scans. DANGEROUS
-always refuses. Fresh nonreplacement fixtures, real tree/enable/PM readback,
-pinned actions, contents: read and no supplied secrets remain mandatory.
-Environment strings are diagnostics, not isolation or local operator authority;
-local/runtime force is prohibited. Candidate containers run non-root/capless;
-canonical and cold runs are network-none with admitted source mounted read-only.
-No local Docker/native setup is authorized by source review. See
-docs/disposable-validation.md for the lifecycle and residual consent boundary.
+Stock Hermes and declared dependencies are acquired during online image setup.
+Product checks run separately with Docker's network disabled, non-root and capless,
+without host homes or the Docker socket. Pytest fixtures additionally refuse Python
+connect/bind/DNS attempts and use non-forwarding synthetic transports. The Python
+tripwire is not an OS sandbox for executable children; Docker provides that network
+boundary. Neither mechanism is a production sandbox. Tests exercise native directory
+registration, not package-manager install/enable or live activation. Actual stock
+validate/doctor use normal scanning without force or an admission exception.
+Keep ordinary security/refusal/consent controls for operator installation.
+See docs/operator-guide.md for setup and residual limitations.
 No live scan, SSH inspection, private device seeding, or plugin deployment is
 part of repository bootstrap or default CI. Never attach a real atlas database,
 private exports, SSH keys, passwords, tokens, or live config to a public issue.

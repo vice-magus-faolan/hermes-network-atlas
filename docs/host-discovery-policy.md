@@ -5,7 +5,7 @@ The original charter remains intact. Stage 1 validated policy and implemented a
 packet-free ICMP capability diagnostic, refusing new transport before effects.
 Stage 2 implements the independently approved datagram/connect contract below.
 Passive requests and legacy TCP 80/443 discovery are unchanged. Each candidate
-still needs genuine native admission, independent exact-artifact review and
+still needs genuine native validation, independent exact-artifact review and
 separate delivery authorization; synthetic transport checks are not live validation.
 
 ## Operator authority and schema
@@ -47,8 +47,8 @@ binaries reject these additive config keys; deliberately update readers first.
 The permitted implementation uses Linux `AF_INET/SOCK_DGRAM/IPPROTO_ICMP` echo
 sockets only, under the process's already-existing kernel/security permission.
 No raw sockets, new capabilities, sudo, sysctl/kernel/firewall changes, capability
-installer, setuid activation or Nmap `-PE` fallback. An unavailable ICMP method
-must not suppress a permitted TCP method. ICMP-only unavailable collection is an
+installer, execution with an elevated file-owner identity or Nmap `-PE` fallback.
+An unavailable ICMP method must not suppress a permitted TCP method. ICMP-only unavailable collection is an
 honest failed/partial attempt, not a reason to weaken permission.
 
 `host_discovery.icmp_capability(network, deadline)` is internal, not a registered
@@ -81,8 +81,10 @@ No dependency on an external ping executable is introduced.
 
 ### Assessed and rejected OS helper route
 
-An already-installed iputils ping may carry CAP_NET_RAW or setuid privilege and
-can fall back from datagram to raw sockets when datagram permission is denied.
+An already-installed iputils ping may carry CAP_NET_RAW or the executable's
+owner-identity mode bit (04000), which changes the effective user ID on execution.
+Either privilege mechanism is outside this contract. The helper can fall back
+from datagram to raw sockets when datagram permission is denied.
 Finding a binary, checking its version or adding Nmap -PE proves neither effective
 permission nor that privilege stays within this contract. This lane therefore
 **does not rely on or execute a capability-bearing helper**. Independent review
@@ -239,21 +241,21 @@ Do not use production state as an acceptance fixture or widen to routes/VPNs.
 Stage-1 regressions are in `tests/test_host_discovery_policy.py`, required by the
 canonical verifier alongside all original chunk regressions. Capability tests
 are deterministic socket mocks with no raw sockets, helper execution or packets.
-The supported native candidate-bound fixture remains mandatory; schema/unit
-checks do not substitute for admission/dispatch/fresh-process restart acceptance.
+The isolated native directory-plugin fixture remains mandatory; schema/unit
+checks do not substitute for native registration/dispatch/restart acceptance.
 The native harness exercises invalid policy refusal through real tool/slash/CLI,
 and nine synthetic method scenarios retain evidence on all three routes: ICMP
 responses with filtered web ports, true ICMP-only, TCP 2222-only and 22000-only,
 mixed three/five methods, denied/unsupported ICMP with TCP positives and all-
 filtered collection. The restarted process reads the same batch/port/time/identity evidence
-without transport. Candidate-bound admission is never replaced by socket mocks.
+without transport. Actual native registration is never replaced by socket mocks.
 `tests/test_host_acceptance.py` adds the every-method/every-concurrency combined
 budget matrix, sparse tail response by each of five methods and default all-
 filtered exhaustion control, sensitive destinations, hostile echo fields/bytes,
 shared receive exhaustion, deadline-before-send/unregister cleanup and exact
 legacy/new lineage with shared read visibility but no application authority.
-Critical test IDs are mandatory in scripts/verify.py alongside all prior chunk,
-unresolved and malformed-receipt controls; CI runs that same canonical command.
+Pytest discovers these tests alongside all prior chunk, unresolved and
+malformed-receipt controls; CI runs the same `python3 -m pytest -q` suite.
 
 References assessed for this decision:
 - https://man7.org/linux/man-pages/man7/icmp.7.html (Linux echo socket permissions)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Admitted installed module transport fixtures via REAL native public dispatch."""
+"""Directory-plugin transport fixtures via real native public dispatch."""
 from __future__ import annotations
 
 import errno

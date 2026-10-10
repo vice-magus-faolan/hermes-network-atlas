@@ -372,7 +372,7 @@ class RunnerTests(unittest.TestCase):
         self.limits = replace(config.Limits(), command_timeout_seconds=1, host_timeout_seconds=1)
 
     def run_probe(self, mode, limits=None, deadline=None):
-        return runner.run((sys.executable, str(ROOT / "scripts" / "offline_probe.py"), mode),
+        return runner.run((sys.executable, str(ROOT / "tests" / "offline_probe.py"), mode),
                           limits or self.limits, deadline or time.monotonic() + 10, host=True)
 
     def test_actual_stream_combined_output_limit_and_success(self):

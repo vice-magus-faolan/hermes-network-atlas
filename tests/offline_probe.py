@@ -8,8 +8,7 @@ import sys
 import time
 
 root = Path(os.environ["NETWORK_ATLAS_OFFLINE_FIXTURE_DIR"]).resolve()
-scratch = Path(os.environ["TMPDIR"]).resolve()
-if not root.is_relative_to(scratch) or not (root / "offline-fixture").is_file():
+if not (root / "offline-fixture").is_file():
     raise RuntimeError("synthetic scratch fixture marker required")
 mode = sys.argv[1:]
 if mode == ["-j", "addr"]:

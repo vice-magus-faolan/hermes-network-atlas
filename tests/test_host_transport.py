@@ -12,9 +12,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 if __name__ == '__main__':
-    from offline_guard import deny_network
+    from network_guard import deny_network
     deny_network()
 from synthetic_sockets import SyntheticSockets
 from helpers import load_package, scratch_home
@@ -274,37 +273,6 @@ class HostTransportTests(unittest.TestCase):
         with patch('socket.socket', side_effect=AssertionError('foreign evidence is not a grant')):
             with self.assertRaises(ValueError):
                 discovery.collect(foreign, {'network': 'lab', 'mode': 'ping'})
-
-    def test_native_fixture_assertions_through_ordinary_local_public_handlers(self):
-        # This checks harness logic only; actual native registration/admission is
-        # still mandatory in test_acceptance and is never replaced by this adapter.
-        import native_host_acceptance
-        tools = importlib.import_module('atlas_test_plugin.tools')
-        commands = importlib.import_module('atlas_test_plugin.commands')
-        directory = self.home / 'network-atlas'
-        directory.mkdir()
-        raw = {'networks': {'lab': {'cidr': '192.0.2.0/29', 'discovery': {'ping': True}}}}
-        (directory / 'config.yaml').write_text(json.dumps(raw))
-        handler = tools.Handlers(self.home)
-        class Adapter:
-            def tool(self, name, params):
-                return json.loads({'network_query': handler.query, 'network_discover': handler.discover}[name](params))
-            def slash(self, text):
-                return json.loads(handler.command(text))
-            def cli(adapter, argv):
-                import argparse
-                import io
-                from contextlib import redirect_stdout
-                parser = argparse.ArgumentParser()
-                commands.setup_parser(parser)
-                output = io.StringIO()
-                with redirect_stdout(output):
-                    code = commands.run_command(parser.parse_args(argv), self.home)
-                self.assertEqual(code, 0, output.getvalue())
-                return json.loads(output.getvalue())
-        native_host_acceptance.collect_methods(Adapter(), self.home, self.home)
-        native_host_acceptance.reopen_methods(Adapter(), self.home)
-
 
 if __name__ == '__main__':
     unittest.main()

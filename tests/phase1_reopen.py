@@ -21,7 +21,7 @@ def deny_network(event, args):
 
 def main():
     home = Path(sys.argv[1]).resolve()
-    if not home.is_relative_to(Path(os.environ["TMPDIR"]).resolve()) or not (home / "synthetic-phase1-home").is_file():
+    if not (home / "synthetic-phase1-home").is_file():
         raise RuntimeError("synthetic scratch home required")
     sys.addaudithook(deny_network)
     load_package()

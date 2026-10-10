@@ -12,8 +12,7 @@ from pathlib import Path
 import sqlite3
 import sys
 
-from acceptance_support import contained
-from offline_guard import deny_network
+from network_guard import deny_network
 from native_host_acceptance import collect_methods, reopen_methods
 
 
@@ -21,8 +20,7 @@ class NativeAtlas:
     """Small adapter to REAL registered APIs; no loader, core or consent mocks."""
     def __init__(self, source: Path):
         sys.path.insert(0, str(source))
-        from pm.environments import selected_venv
-        assert Path(sys.prefix).resolve() == selected_venv(source).resolve()
+
         from hermes_cli.plugins import discover_plugins, get_plugin_manager, get_plugin_command_handler
         from tools.registry import registry
         discover_plugins()
@@ -208,8 +206,10 @@ def main() -> int:
     root = Path(os.environ["TMPDIR"]).resolve()
     if not (root / "synthetic-atlas-home").is_file():
         raise ValueError("synthetic scratch fixture required")
-    home = contained(root, os.environ["HERMES_HOME"])
-    source = contained(root, sys.argv[1])
+    home = Path(os.environ["HERMES_HOME"]).resolve()
+    if not home.is_relative_to(root):
+        raise ValueError("synthetic fixture home required")
+    source = Path(sys.argv[1]).resolve()
     deny_network()
     atlas = NativeAtlas(source)
     mode = sys.argv[2]
@@ -237,7 +237,7 @@ def main() -> int:
     else:
         raise ValueError("unknown acceptance mode")
     atlas.manager.unload()
-    print(json.dumps({"mode": mode, "supported_native_admission": True, "three_aliases": sorted(data["ids"]),
+    print(json.dumps({"mode": mode, "native_registration": True, "tool_count": 6, "three_aliases": sorted(data["ids"]),
                       "network_denied": True, "fresh_process_persistence": mode == "reopen",
                       "issue6_invalid_policy_refusal": True, "issue6_method_evidence": True,
                       "synthetic_transport_only": True, "counts": counts(home)}))

@@ -10,14 +10,8 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, scratch_home
+from helpers import ROOT, copy_plugin, scratch_home
 from test_boundaries import synthetic_policy
-
-PLUGIN_FILES = ("plugin.yaml", "__init__.py", "config.py", "schemas.py", "updates.py", "tools.py", "commands.py",
-                "storage.py", "storage_schema.sql", "facts.py", "identity.py", "core.py", "query.py", "batches.py", "render.py",
-                "probes.py", "discovery_parse.py", "discovery.py", "reconcile.py", "inspection.py",
-                "inspection_parse.py", "inspection_evidence.py", "ssh_identity.py", "unresolved.py", "host_discovery.py",
-                "host_transport.py", "host_schedule.py")
 
 
 def runtime_root() -> Path:
@@ -40,9 +34,7 @@ class NativeRuntimeTests(unittest.TestCase):
             (scratch / "synthetic-atlas-home").touch()
             home = scratch / "hermes"
             plugin = home / "plugins" / "network-atlas"
-            plugin.mkdir(parents=True)
-            for name in PLUGIN_FILES:
-                shutil.copy2(ROOT / name, plugin / name)
+            copy_plugin(plugin)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
             (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
@@ -61,11 +53,11 @@ class NativeRuntimeTests(unittest.TestCase):
                 fixture_bin.mkdir()
                 (fixture_bin / "offline-fixture").touch()
                 source = "offline_probe.py" if binary == "ip" else "offline_ssh.py"
-                shutil.copy2(ROOT / "scripts" / source, fixture_bin / binary)
+                shutil.copy2(ROOT / "tests" / source, fixture_bin / binary)
                 (fixture_bin / binary).chmod(0o700)
                 env["PATH"] = str(fixture_bin) + os.pathsep + env["PATH"]
                 env["NETWORK_ATLAS_OFFLINE_FIXTURE_DIR"] = str(fixture_bin)
-            child = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), mode],
+            child = subprocess.run([sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
@@ -78,7 +70,7 @@ class NativeRuntimeTests(unittest.TestCase):
                     # may be resolved, never the host's actual ip/nmap commands.
                     (fixture_bin / binary).unlink()
                     env["PATH"] = str(fixture_bin)
-                restarted = subprocess.run([sys.executable, str(ROOT / "scripts" / "runtime_smoke.py"), str(root), reopen_mode],
+                restarted = subprocess.run([sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), reopen_mode],
                                            env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
                 self.assertEqual(restarted.returncode, 0, restarted.stdout + restarted.stderr)
                 persistence = json.loads(restarted.stdout.strip().splitlines()[-1])

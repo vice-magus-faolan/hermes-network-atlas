@@ -50,6 +50,10 @@ class SyntheticSockets:
         stack.enter_context(patch.object(schedule.selectors, 'DefaultSelector', lambda: SyntheticSelector(self)))
         for module in (schedule, transport, capability):
             stack.enter_context(patch.object(module, 'time', self.clock))
+        # Fake sockets exercise Linux echo semantics on any test host. Replace
+        # only Atlas's platform dependency, never the Hermes runtime.
+        for module in (transport, capability):
+            stack.enter_context(patch.object(module, 'sys', SimpleNamespace(platform='linux')))
         return stack
 
 

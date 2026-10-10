@@ -210,7 +210,7 @@ class ActualInspectionBoundsTests(AtlasFixture):
             spawned.append(child)
             return child
         def fake(argv, limits, deadline, **kwargs):
-            return runner.run((sys.executable, str(ROOT / "scripts/offline_probe.py"), "sleep"), limits, deadline, **kwargs)
+            return runner.run((sys.executable, str(ROOT / "tests/offline_probe.py"), "sleep"), limits, deadline, **kwargs)
         policy = replace(self.policy, limits=replace(self.policy.limits, host_timeout_seconds=1, operation_timeout_seconds=4))
         with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}), patch.object(inspection, "run", fake), patch.object(runner.subprocess, "Popen", own):
             receipt = inspection.collect(policy, {"target": ALIAS})
@@ -227,7 +227,7 @@ class ActualInspectionBoundsTests(AtlasFixture):
         fixture.mkdir()
         (fixture / "offline-fixture").touch()
         def fake(argv, limits, deadline, **kwargs):
-            return runner.run((sys.executable, str(ROOT / "scripts/offline_probe.py"), "flood"), limits, deadline, **kwargs)
+            return runner.run((sys.executable, str(ROOT / "tests/offline_probe.py"), "flood"), limits, deadline, **kwargs)
         policy = replace(self.policy, limits=replace(self.policy.limits, output_bytes=4096))
         with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}), patch.object(inspection, "run", fake):
             receipt = inspection.collect(policy, {"target": ALIAS})

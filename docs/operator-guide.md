@@ -1,6 +1,6 @@
 # Operator guide and cumulative V1 verification
 
-V1 phases 1–3 are implemented. Native supported scratch installation/admission,
+V1 phases 1–3 are implemented. Stock native directory-plugin registration,
 synthetic collection and fresh-process persistence are tested. This does NOT
 validate a real network, host key, deployment, gateway restart or provider chat.
 Final independent approval, local target integration and publication have their
@@ -8,12 +8,11 @@ own gates. Do not infer permission from these examples.
 
 ## Supported installation (only after separate operator authorization)
 
-Compatibility is Python >=3.11,<3.15 and Hermes >=0.21.4,<0.22; executable evidence
-uses Linux x86_64, Python 3.14.7 and exact Hermes
-5645275e50d66dca04c9565634f9b5207a38aef5 from `vice-magus-faolan/hermes-agent`.
-This narrowly amended public core is source-reviewed/authenticated only; actual
-corrected native/hosted acceptance remains pending. No live core update is implied.
-Other platforms/versions are not proven. See [disposable native validation](disposable-validation.md).
+Compatibility is Python >=3.11,<3.15 and Hermes >=0.21.4,<0.22. Use stock
+NousResearch/hermes-agent; no fork, core patch or runtime monkeypatch is needed.
+Docker and CI select its verified official release v0.21.6. Other releases and
+platforms are not proven by that selection alone. The Linux arm64 CI job must
+actually pass before it establishes portability. No live core update is implied.
 Atlas itself needs only ruamel.yaml>=0.18.16,<0.19 beyond the standard library,
 declared with the supported native plugin.yaml python_dependencies field.
 
@@ -28,8 +27,7 @@ live profile merely to verify this repository:
 Install clones/scans the exact artifact; enable uses native PM member-union
 resolution/publication, not a hand-edited enabled list. Retain security checks
 and ordinary dependency/capability consent. Do not use force or disable scanning
-for local/runtime admission; the separate hosted-CI-only exception below is not
-local permission. No runtime activation/restart of a
+for installation or CI. No runtime activation/restart of a
 live gateway is authorized by these instructions. Native enable's restart hint
 is advice for a separately authorized deployment, not an action this test runs.
 
@@ -42,14 +40,12 @@ and revalidate URL dependencies even when a frozen core build is cached. Therefo
 setup may need the network; the Atlas test process must not have it. An incomplete
 package-intelligence warning is not a clean vulnerability verdict.
 
-Active CI performs one supported native install AND enable ONLINE, then runs
-canonical and cold network-none consumers using that exact selected generation
-in a disposable candidate-owned volume. It does not attempt a second fresh
-offline dependency-resolution installation. The optional `--offline-enable` helper
-is not the active CI path. Full
-native scanning, genuine selection/installed-byte readback and dependency consent
-remain mandatory. Source approval/local unit tests do not prove successful hosted
-enable/canonical/cold acceptance or permit a live core/profile update.
+Active CI installs stock Hermes and its declared dependencies ONLINE while building
+the image. Product execution is separate: normal validate, doctor and pytest run
+with Docker's network disabled. No install/enable admission helper, force mode,
+retained receipt or offline-enable core extension is used. The suite exercises real
+directory-plugin registration and restart, not the PM install/enable lifecycle.
+Source approval/local tests do not prove hosted acceptance or permit activation.
 
 ## Profile-local policy
 
@@ -227,82 +223,44 @@ guides. Inspect/query failures are not an excuse to discard the atlas.
 
 ## Reproduce the isolated acceptance
 
-Tests need an existing scratch directory, a compatible verifier interpreter and
-an exact public Hermes Git checkout and `/usr/bin/ssh-keygen` with detached-signature
-support for the synthetic confirmation regressions. No live config, atlas, credentials, homes or
-profile selections are copied. A lean disposable verifier can be prepared with
-requirements-test.txt (setup only). Do not install into production. GitHub CI
-checks out the exact Hermes pin and uses this same path; complete hosted native
-acceptance remains unperformed until separate publication and exact-artifact readback.
+Tests require a stock supported Hermes runtime with its declared dependencies
+and requirements-test.txt. In an owned development environment, install those
+dependencies online. If Hermes is already importable, no source-root setting is
+needed; otherwise set NETWORK_ATLAS_HERMES_ROOT to its stock checkout. Pytest
+creates scratch homes automatically. No manual TMPDIR, receipts, Git metadata,
+GitHub/ref, UID, container or architecture predicates are prerequisites. No live
+config, atlas, credentials, homes or profile selections are copied.
 
-CI initializes TMPDIR from runner.temp in the prerequisite step's env, where that
-context is available, and writes the same directory to GITHUB_ENV for subsequent
-steps. Runner expressions are invalid in job-level env. Before native admission
-of a changed workflow, validate the entire definition with primary-source
-actionlint v1.7.7 (commit 03d0035246f3e81f36aed592ffb4bebf33a03106):
+    python3 -m pip install -r requirements-test.txt
+    hermes plugins validate .
+    hermes plugins doctor . --ci
+    python3 -m pytest -q
 
-    actionlint -shellcheck= -pyflakes= .github/workflows/verify.yml
+For reproducible Docker setup and network-denied product execution:
 
-Verify its release archive against the primary release checksums when using the
-prebuilt tool. These flags disable only optional external shell/Python lint
-integrations, not workflow/expression/context/trigger checks. The canonical
-hosted-policy suite separately executes scratch initialization and export; neither
-local check proves that a hosted native install or the canonical job has run.
+    docker build -f docker/validation.Dockerfile -t hermes-network-atlas-tests:local .
+    docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local
 
-First, ONLINE PREREQUISITE SETUP, outside the test process:
+Build is online; the image contains unmodified official Hermes v0.21.6 and public
+Atlas source only. Run is non-root and network-none, with no host mounts, Docker
+socket, credentials or live state. The image command propagates validate, doctor
+and pytest failures. `.github/workflows/ci.yml` runs this same path on x86_64 and
+arm64 Linux runners. Configuring a job is not executed portability evidence;
+publication owner must read back actual exact-head results after review.
 
-    export TMPDIR=<existing-absolute-scratch-directory>
-    export NETWORK_ATLAS_HERMES_ROOT=<public-Hermes-Git-checkout-at-exact-pin>
-    python3 scripts/prepare_acceptance.py --hermes-source "$NETWORK_ATLAS_HERMES_ROOT"
+The portable Python audit tripwire refuses connect/bind/DNS before plugin imports.
+It is not inherited by arbitrary executable children; Docker supplies OS-level
+network isolation. Native child tests install their own Python tripwire. Synthetic
+transport executables never forward to real ip/Nmap/SSH. Tests do not mock Hermes
+registry, schemas, dispatch or provenance. Package-manager install/enable, resolver
+publication and provider chat remain distinct unperformed checks, not pytest setup.
 
-Optionally `--software-seed <authorized-disposable-directory>` copies public
-pinned tools from tools/; it never copies homes or state. Setup intentionally uses
-a fresh uv cache: flattened/dereferenced links in older recovery caches can fail
-native cache revalidation. Do not mutate a production cache to repair that.
-Setup has bounded subprocess/log budgets and requires at least 1 GiB free; a full
-fresh tool/core/source/cache closure may need more. Never delete unrelated state
-to manufacture capacity. Preserve the printed marked fixture root.
-
-Commit the candidate first; tracked changes fail setup. Setup snapshots the ENTIRE
-committed candidate tree (including tests/docs/harnesses) and public Hermes source
-with git archive; invokes actual
-plugins_cmd.cmd_install(file://<synthetic-repo>, enable=False, ref=<exact-SHA>)
-and cmd_enable('network-atlas'), the entrypoints used by the supported CLI; reads
-back installed bytes/full Git tree, enabled selector, PM facts/generation, recipes/locks and
-candidate identity. No admission, scanner, registry, selection or resolver mocks.
-Default local setup answers only ordinary dependency consent; CAUTION without
-ordinary explicit exact-byte operator confirmation still refuses. Local/runtime
-force remains prohibited. The operator-approved hosted-CI exception explicitly
-selects `--admission-mode hosted-ci-caution` only in the reviewed push/pull_request
-workflow on fresh GitHub-hosted Ubuntu VMs. It preserves complete pinned source
-scanning, DANGEROUS refusal, fresh nonreplacement fixtures, ordinary native PM and
-tree/enable readback, contents: read, pinned actions and no supplied secrets or
-deployment access. Environment diagnostics cannot prove isolation or authorize
-force on this server. No signing-controller/real keys/per-commit signed CI approval
-is required; signed consent regressions remain inactive optional code. See
-[disposable-validation.md](disposable-validation.md) for guards, full
-scan records, local consent and the publisher's real exact-head hosted check.
-Explicit native enable on this runtime may not ask a separate
-Python dependency question. This is setup evidence, NOT the acceptance result.
-
-Then, SEPARATE NETWORK-DENIED ACCEPTANCE:
-
-    export NETWORK_ATLAS_ACCEPTANCE_FIXTURE=<printed-marked-fixture-root>
-    python3 scripts/verify.py
-
-Canonical verification installs inherited Linux x86_64 seccomp socket/connect/bind
-refusal plus Python socket/DNS audit refusal before loading tests. fork/exec children
-inherit refusal. The guard self-test checks parent and exec-child socket syscalls
-without sending a packet. Unsupported guard platforms fail, not skip/weaken.
-The synthetic transport PATH contains only non-forwarding ip/Nmap/SSH fixtures
-and Python. It cannot fall back to real network executables.
-
-`tests/test_acceptance.py::CumulativeAcceptanceTests` validates candidate/installed
-bytes/selection evidence, configures three synthetic SSH aliases, performs bounded
+`tests/test_acceptance.py::CumulativeAcceptanceTests` configures three synthetic
+SSH aliases in a pytest-owned directory-plugin home, performs bounded
 passive/ping discovery and all three fixed inspections, operator alias association,
 new/changed/missing/conflict/unresolved reconciliation, operator/inference/direct
 source separation, synthetic host-key refusal, query/status and escaped maps/exports.
-A second fresh native process uses the admitted PM-selected interpreter and
+A second fresh native process uses the same stock test interpreter and
 re-queries/replays with transport binaries removed. It compares complete devices,
 history, access evidence, status, maps/exports and SQLite row counts, without
 rediscovery or audit growth. No LLM/provider response is fabricated or claimed.
@@ -313,9 +271,9 @@ ICMP-only policy, 2222-only, 22000-only, mixed ICMP/four-port positives, denied
 permission/unsupported ICMP with TCP positives and all-filtered outcomes through
 non-forwarding sockets on all three routes; restart reads the same method evidence
 without transport. The original fixture policy is restored.
-Repeated verification starts a new synthetic atlas only in this marked fixture;
-never in a live profile. Missing/stale fixture evidence fails canonical checks.
-Rebuild setup after a new candidate commit or changed plugin/selector/recipe/lock.
+Each test starts a new synthetic atlas in ordinary pytest scratch, never in a live
+profile. No retained fixture receipt is required. Rebuild the image after source
+changes so validation scans and tests cover the actual candidate bytes.
 
 `docs/acceptance-matrix.md` indexes A01–A14 to exact tests and documentation;
 A15 remains the delivery owner. No self approval, main advancement, push, release,

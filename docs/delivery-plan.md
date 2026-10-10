@@ -44,11 +44,12 @@ operator docs. Each stage requires same-card independent exact-SHA approval
 before the next starts; component approval is not main integration/publication.
 The reviewed-branch PR-only publication owner is separate. No main advancement,
 runtime promotion or live probes are implied. See host-discovery-policy.md.
-The active CI contract is disposable-validation.md: one online native install/
-enable followed by full network-none canonical and cold same-generation checks.
-Builder scope correction and independent exact-SHA SOURCE-ONLY review stay on the
-original card; review covers the whole net diff against main. Local native setup,
-Docker or full-core fixtures are not source-review prerequisites or authorization.
+The current #8/#10 test path uses unmodified stock Hermes v0.21.6. Build the
+ordinary Docker image online, then run validate, doctor and pytest with Docker's
+network disabled. Test helpers live under tests; no install/enable controller,
+native admission receipt or core-identity pin is a test prerequisite.
+Builder remediation and exact-SHA independent review stay on the original card;
+review covers correctness and necessity of the whole net diff against main.
 Faolan owns updating existing draft PR #7 non-force, fresh hosted evidence and
 final independent/human review. Old-SHA acceptance does not cover corrected bytes.
 
@@ -63,13 +64,15 @@ parent in addition to local-delivery dependencies.
 ## Verification contract
 
 ```sh
-python3 scripts/verify.py
+python3 -m pytest -q
 ```
 
-At bootstrap this verifies only repository contract tests. The first component
-must extend the same command for implemented code, isolated Hermes integration,
-and negative tests. Subsequent modules must be represented in that verifier in
-the same change that introduces them. No passing status may disguise omitted
-plugin tests. Complexity: soft warning near 10, justify/refactor above 15 unless
+Pytest discovers behavioral module tests, isolated native registration/dispatch/
+restart acceptance, and negative tests. Documentation wording is not executable
+acceptance. Use a stock supported Hermes environment with requirements-test.txt;
+pytest supplies scratch fixtures without a manual TMPDIR. CI runs this same suite
+on x86_64 and arm64; hosted evidence remains pending until actually executed.
+No passing status may disguise omitted plugin tests.
+Complexity: soft warning near 10, justify/refactor above 15 unless
 an explicit tighter repo rule applies. Standard-library Python is preferred;
 declare necessary dependencies through supported native plugin packaging.
