@@ -64,7 +64,7 @@ def run_command(args: argparse.Namespace, home: Path) -> int:
         print(response_json(result, policy.limits.output_bytes), end="")
         return 2 if "error" in result else 0
     except (OSError, ConfigError, ValueError, RecursionError, sqlite3.Error):
-        print(json.dumps({"error": "invalid operator update or local policy", "applied": False}))
+        print(json.dumps({"error": "invalid operator update or local policy", "applied": False, "persisted": False}))
         return 2
 
 

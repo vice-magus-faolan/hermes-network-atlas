@@ -5,11 +5,11 @@ implementation addendum together before coding; the addendum resolves conflicts.
 Keep V1 limited to phases 1–3. Prefer simple standard-library Python and small,
 typed boundaries. Explain non-obvious intent and failure behavior.
 
-Run `python3 scripts/verify.py` with the prerequisites in
-docs/operator-guide.md (real Hermes/dependencies, scratch and native admission
-fixture prepared separately online). Canonical tests inherit socket denial. Extend it
-when adding real plugin behavior so
-that every delivered module is canonically tested. A bootstrap green check is
+Run `python3 -m pytest -q` with stock supported Hermes and its declared dependencies,
+plus requirements-test.txt; see docs/operator-guide.md. Pytest provides scratch,
+and fixtures refuse Python network connections. Docker adds network isolation for
+executable children. Add behavioral tests when adding real plugin behavior so
+that every delivered module is tested. A bootstrap green check is
 not implementation acceptance. Regression tests should prove the prior failure
 where practical. Tests never use live network/device/config/credential data.
 

@@ -245,16 +245,15 @@ Regenerate both from SQLite to recover. Symlink export destinations are refused.
 
 Follow current cumulative setup prerequisites in operator-guide.md, then:
 
-    python3 -m unittest discover -s tests -p test_core.py -v
-    python3 -m unittest discover -s tests -p test_runtime.py -v
-    python3 scripts/verify.py
+    python3 -m pytest -q tests/test_core.py tests/test_runtime.py
+    python3 -m pytest -q
 
 Tests use synthetic scratch homes and never live data/networks. Native smoke
 exercises supported directory discovery, all six registered tools, actual native
 slash/CLI handlers, applying operator/inference persistence, policy revocation,
 exports, and a second native process re-query/map without discovery. Independent
 fresh-process storage tests also retain IDs, assignments, relations, history and
-failed access evidence. The cumulative A01/A13 supported PM install/enable and
+failed access evidence. The cumulative A01/A13 native directory-plugin and
 three-alias fixture scenario are now in tests/test_acceptance.py; see
 operator-guide.md. Provider chat/live network validation is not claimed.
 
@@ -270,10 +269,8 @@ A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
 A07/A08 discovery/reconciliation separately; Phase 3 documents A09 inspection
 evidence. A13 is indexed in acceptance-matrix.md, not proved by Phase 1 alone.
 
-Native source remains the inspected f42f579cf8bac4918ac9599bece71618afadd846.
-Phase 1 local execution uses its existing admitted Python 3.11.15 environment
-with ruamel.yaml 0.18.17; parent scaffold evidence exercised Python 3.14.7 with
-0.18.16. No production dependency installation/modification is part of these
-checks. GitHub CI, publication, target integration, live activation/scans and SSH
-are unperformed. No function above the conservative verifier threshold of 15 is
-accepted; schema/payload validators and the simple renderer may warn near 10–14.
+The current Docker path uses unmodified official Hermes v0.21.6 and Python 3.14.7
+within the declared compatibility range. It does not modify production dependencies.
+Exact-head hosted CI, other platforms, publication, target integration and live
+activation/scans/SSH remain unperformed. Complexity warns near 10 and requires
+justification or refactoring above 15; tests are not a complexity waiver.

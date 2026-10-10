@@ -20,7 +20,8 @@ local audit event, not canonical inventory. Receipts have batch_id, completion,
 per-probe names/outcomes/diagnostic codes/counts, persisted=true, applied=false.
 No raw stdout/stderr is retained. Missing tools produce executable_missing;
 they are never installed automatically. iproute2 is required for passive mode;
-Nmap is optional and ping must be explicitly enabled by the operator.
+Nmap is optional and required only for legacy ping. Active discovery must be
+explicitly enabled by the operator. Opt-in sockets need no ping/Nmap helper.
 
 `network_reconcile` takes only an optional stored batch_id. Omitting it selects
 the latest eligible unapplied LAN/SSH batch from this profile, skipping revoked scopes.
@@ -79,7 +80,7 @@ local/neighbor addresses are ignored, not imported or probed. Malformed formats,
 duplicate JSON keys, excessive records, invalid prefixes/states/MACs or scalar
 values fail that probe, not every other successful positive probe.
 
-Active discovery enumerates every address in the exact configured IPv4 CIDR,
+Legacy active discovery (ICMP disabled and TCP exactly [80,443]) enumerates every address in the exact configured IPv4 CIDR,
 including network/broadcast addresses. It splits the scope in ascending order
 into fixed /28 chunks (16 addresses); scopes smaller than /28 are one chunk.
 Exactly one owned child runs at a time, with internal Nmap outstanding probes
@@ -177,6 +178,33 @@ belongs to init. Deliberately self-detaching executables are outside the trusted
 fixed-command contract, not a claimed OS sandbox. Unsupported runners fail
 usefully without launching a child. No subprocess runs under a DB write lock.
 
+## Opt-in ICMP/TCP host discovery
+
+The network-local issue-6 amendment selects direct socket collection whenever
+icmp_echo is true or tcp_ports differs from [80,443]. It does not change old policy
+traffic or reinterpret old Nmap evidence. See [host-discovery-policy.md](host-discovery-policy.md)
+for the controlling datagram-only permission, strict four-port cap/4403 exclusion,
+shared deadline/rate/concurrency/receive/result budgets and fair scheduling.
+2222 and optional 22000 are operator examples, not global defaults or services.
+
+Each enabled method has immutable probe/port/time/diagnostic evidence. Successful
+TCP connect or refusal and a matching header-only ICMP reply qualify a host
+response; neither infers device identity, application identity, access or topology.
+Aggregate ping_<index> records count each configured address once. They contain no
+duplicate observations; contributing positives remain on method probes. Distinct
+responding_address_count is separate from address_count, method attempt count,
+total_count (including coverage) and observation count. A failed method may coexist
+with positive response evidence and a failed aggregate check. Excluded endpoints
+make opt-in /24 coverage partial even when every ordinary host responds.
+
+No response remains uncertainty: firewall policy, routing, loss and timing can
+look alike. A requested method name is not proof of transmission. Disabled methods
+are not attempted; unavailable diagnostics do not establish complete coverage.
+Neither packet-free capability open/close nor a privileged preinstalled ping
+executable proves Atlas transport. No helper, raw fallback or privilege change is
+selected. TCP connects can affect connection-limited endpoints despite no payload;
+the hard 4403 exclusion is not a guarantee that all other endpoints are harmless.
+
 ## Identity, address sets and freshness
 
 A unique stable MAC resolves an interface, then its owner. A previously unknown
@@ -233,13 +261,12 @@ batch provides no new sightings; failure itself is not evidence of absence.
 
 ## Verification and remaining gates
 
-Use a compatible verifier interpreter and declared scratch TMPDIR. Prepare the
-candidate-bound native fixture separately as documented in operator-guide.md.
-No live home/config/atlas is a test fixture. Canonical command:
+Use stock supported Hermes and requirements-test.txt as documented in
+operator-guide.md. Pytest supplies scratch fixtures; no live home/config/atlas
+is a test fixture. Canonical and focused commands:
 
-    python3 scripts/verify.py
-    python3 -m unittest discover -s tests -p 'test_discovery*.py' -v
-    python3 -m unittest discover -s tests -p test_runtime.py -v
+    python3 -m pytest -q
+    python3 -m pytest -q tests/test_discovery*.py tests/test_runtime.py
 
 A03: current allowlists/modes, no raw targets/options/policy inputs, configuration
 CIDR/IPv4/IPv6 and lowered bounds. A07: immutable new/changed/unchanged/missing/
@@ -262,14 +289,14 @@ mid-chunk, completed-at-boundary work, lowered intensity, failed chunk and persi
 rollback. tests/test_status_remediation.py additionally preserves legacy per-address
 /24 and /25 totals across native public read surfaces and fresh-process restart.
 These are tests/test_discovery.py, tests/test_discovery_extra.py and the actual
-native fixture in tests/test_runtime.py / scripts/runtime_smoke.py. The native
+native fixture in tests/test_runtime.py / tests/runtime_smoke.py. The native
 loader/registry/handlers are real; transport is a scratch-only executable fixture
-scripts/offline_probe.py, never the host's real ip/Nmap. Reopen removes that fake
+tests/offline_probe.py, never the host's real ip/Nmap. Reopen removes that fake
 binary and uses a fixture-only PATH to prove stored querying/replay without
 collection. Synthetic output is explicitly a fixture, not reported live evidence.
 
 Phase 1 checks remain in the same verifier. Existing schema version 1 is retained.
-Supported PM-managed install/enable and three-alias A13 cumulative evidence are
+Native directory-plugin registration and three-alias A13 cumulative evidence are
 indexed in acceptance-matrix.md and operator-guide.md. GitHub CI execution,
 other runtime combinations, real network
 reachability, publication, main advancement and live activation are unperformed.

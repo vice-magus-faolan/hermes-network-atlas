@@ -1,0 +1,7 @@
+# Build context is source, never live state, historical evidence or bytecode.
+/.test-scratch
+/.git
+/.pytest_cache
+/.venv
+**/__pycache__
+**/*.pyc

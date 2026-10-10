@@ -222,12 +222,11 @@ Maps still use only stored supported relationships; no edges are fabricated.
 
 ## Offline verification and remaining gates
 
-Use a compatible verifier and candidate-bound native fixture prepared separately
-as documented in operator-guide.md:
+Use stock supported Hermes and requirements-test.txt as documented in
+operator-guide.md; pytest supplies isolated scratch fixtures:
 
-    python3 -m unittest discover -s tests -p 'test_inspection*.py' -v
-    python3 -m unittest discover -s tests -p test_runtime.py -v
-    python3 scripts/verify.py
+    python3 -m pytest -q tests/test_inspection*.py tests/test_runtime.py
+    python3 -m pytest -q
 
 `tests/test_inspection.py` covers A03/A05/A08/A09/A12 exact schema/handler rejection,
 fixed argv/host keys/config channels, alias/device resolution, partial/failure
@@ -243,14 +242,14 @@ with network/process execution refused, and deterministic maps/fixed exports.
 The canonical verifier discovers these regressions with the other module tests.
 Existing Phase 2 tests exercise the shared runner/SQLite whole-operation boundary.
 
-`tests/test_runtime.py` and `scripts/runtime_smoke.py` exercise actual native
+`tests/test_runtime.py` and `tests/runtime_smoke.py` exercise actual native
 Hermes registration/schema/tool/slash/CLI dispatch with six tools. Transport is
-ONLY `scripts/offline_ssh.py`, a scratch-marker-guarded synthetic executable which
+ONLY `tests/offline_ssh.py`, a scratch-marker-guarded synthetic executable which
 validates fixed argv and cannot run SSH. It simulates valid output and a client
 refusal; a fresh native process replays/queries/maps with that executable removed
 and a fixture-only PATH. No live host key or real reachability is claimed tested.
 
-Supported PM-managed install/enable and three-alias cumulative V1 evidence are
+Native directory-plugin registration and three-alias cumulative V1 evidence are
 indexed in acceptance-matrix.md. GitHub CI execution, other OS/OpenSSH/runtime
 versions, integration/publication and live installation,
 private seeding, scans/SSH or gateway restarts remain unperformed/downstream.

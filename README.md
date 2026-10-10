@@ -15,12 +15,22 @@ The bounded `network_query` unresolved view exposes original discovery evidence,
 qualification/freshness and application/identity lineage separately from devices;
 zero canonical devices can coexist with positive historical response evidence.
 Collection alone never rewrites canonical inventory.
-Ping collection uses serial fixed 16-address chunks with bounded internal
+Legacy ping collection uses serial fixed 16-address chunks with bounded internal
 parallelism/rate and distinct not-started/timeout/completed-at-boundary evidence;
 hard ceilings are unchanged and real-world /24 completion is not guaranteed.
-Supported native scratch
-install/enable and a three-alias fixture workflow/restart are exercised by the
-canonical verifier. Passing synthetic checks does not establish live-network
+Issue #6 adds strict network-local ICMP/TCP policy, packet-free capability
+diagnostics and bounded opt-in echo-datagram/TCP-connect collection. All methods
+share one budget and retain contributing method/port/time evidence; address
+counts are deduplicated. Legacy TCP 80/443 traffic is unchanged. Native validation,
+independent review and delivery remain separate checks for each new artifact.
+ICMP is disabled by default; extra ports such as 2222/optional 22000 require local
+operator policy. TCP 4403 is refused. No raw sockets, helper fallback, privilege
+grants, application payloads or service/identity conclusions are introduced.
+Requested methods are not proof of transmitted packets; filtered/no-response
+results remain uncertain. See the host-discovery contract for residual connection
+effects, check/response counts and a future separately authorized live recipe.
+Stock native directory-plugin registration and a three-alias fixture workflow/
+restart are exercised by pytest. Passing synthetic checks does not establish live-network
 readiness, reviewer approval, target integration or publication.
 
 Network Atlas observes and remembers infrastructure. It does not administer it.
@@ -40,6 +50,7 @@ external database, web app, MCP server, or background service is required.
 - [Atlas Core usage and verification](docs/atlas-core.md)
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
+- [Host-discovery policy, datagram-only transport and combined budgets](docs/host-discovery-policy.md)
 - [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
 - [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)
@@ -52,29 +63,39 @@ later work, not prerequisites. Unknown topology stays unknown.
 ## Verification
 
 ```sh
-python3 scripts/verify.py
+python3 -m pytest -q
 ```
 
-This runs repository contracts, core persistence/identity/provenance/query/map,
-offline LAN/SSH collection/reconciliation/bounds, and mandatory isolated native Hermes
-runtime dispatch and restart tests, including the complete three-alias scenario.
-A compatible verifier runtime, exact Hermes source, declared scratch directory and
-candidate-bound native admission fixture are prerequisites; run the separate
-online setup in docs/operator-guide.md first. Canonical tests and their children
-are socket-denied. Missing Hermes is a failure, not a silent test skip; missing or
-stale admission evidence also fails. CI uses the same setup/verifier path, but
-GitHub CI execution has not been performed on this unpushed implementation.
+Use a stock supported Hermes runtime and its declared dependencies, plus
+requirements-test.txt. If Hermes is not importable, point
+NETWORK_ATLAS_HERMES_ROOT at its source checkout. Pytest owns scratch fixtures;
+no manual TMPDIR, native receipt, core identity or GitHub environment is required.
+The suite covers persistence/identity/provenance/query/map, synthetic LAN/SSH
+collection/reconciliation/bounds, real native registration/dispatch and restart,
+including the three-alias scenario. Missing Hermes fails rather than skips.
+For ordinary Docker validation, build dependencies online, then run product checks
+with the network disabled:
+
+```sh
+docker build -f docker/validation.Dockerfile -t hermes-network-atlas-tests:local .
+docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local
+```
+
+The image uses unmodified NousResearch/hermes-agent v0.21.6 and runs actual
+`hermes plugins validate .`, `hermes plugins doctor . --ci` and pytest. CI uses
+the same checks on Linux x86_64 and arm64 runners; a configured job is not proof
+it has passed. The successor still needs exact-head hosted evidence and review.
 Tests must use synthetic fixtures and isolated Hermes homes. They must not scan
 a real LAN, inspect a real SSH host, or read the operator's live atlas.
 
 ## Installation
 
 The repository root is a normal plugin.yaml/__init__.py native directory plugin.
-The isolated setup uses real supported install/enable entrypoints, exact synthetic
-candidate pinning, native security scanning and PM member-union admission, then
-reads back installed bytes and selected dependency generations. Acceptance runs
-separately with synthetic non-forwarding transports through real native discovery,
-registration/tool/slash/CLI dispatch and fresh-process restart queries/maps.
+Install a reviewed Atlas revision using stock Hermes's supported plugin commands.
+Keep scanning, consent and dependency handling enabled. Tests use synthetic
+directory-plugin homes and non-forwarding transports through real native discovery,
+registration/tool/slash/CLI dispatch and fresh-process restart queries/maps; they
+do not exercise the package manager's install/enable lifecycle.
 See docs/operator-guide.md for reproducible setup, dependency failure handling,
 shared-state trust boundaries and operator updates. It is not a released atlas.
 Live installation/activation, LAN discovery, actual SSH and gateway restart remain

@@ -168,9 +168,9 @@ class PersistenceTests(AtlasFixture):
         expected = query.query(self.policy, {}, now=NOW)
         self.assertEqual(len(expected["devices"]), 3)
         expected_map = render.render_map(self.policy, now=NOW)
-        child = subprocess.run([sys.executable, str(ROOT / "scripts" / "phase1_reopen.py"), str(self.home)],
+        child = subprocess.run([sys.executable, str(ROOT / "tests" / "phase1_reopen.py"), str(self.home)],
                                cwd=self.home, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                                                   "TMPDIR": os.environ["TMPDIR"], "HOME": str(self.home / "user"),
+                                                   "HOME": str(self.home / "user"),
                                                    "HERMES_HOME": str(self.home), "PYTHONDONTWRITEBYTECODE": "1"},
                                capture_output=True, text=True, timeout=30)
         self.assertEqual(child.returncode, 0, child.stdout + child.stderr)

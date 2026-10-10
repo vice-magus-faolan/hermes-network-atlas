@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import os
+
 from pathlib import Path
 import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRATCH_ROOT: Path | None = None
 
 
 def load_package():
@@ -25,8 +26,14 @@ def load_package():
 
 
 def scratch_home():
-    """Require declared scratch rather than falling back to the system temp directory."""
-    scratch = os.environ.get("TMPDIR")
-    if not scratch or not Path(scratch).is_dir():
-        raise RuntimeError("Set TMPDIR to an existing local scratch directory")
-    return tempfile.TemporaryDirectory(prefix="network-atlas-test-", dir=scratch)
+    """Create disposable synthetic state under pytest's per-test tmp_path."""
+    return tempfile.TemporaryDirectory(prefix="network-atlas-test-", dir=SCRATCH_ROOT)
+
+
+def copy_plugin(destination: Path) -> None:
+    """Copy runtime modules and manifest, without development or live state."""
+    import shutil
+    destination.mkdir(parents=True)
+    for pattern in ("*.py", "*.sql", "plugin.yaml"):
+        for source in ROOT.glob(pattern):
+            shutil.copy2(source, destination / source.name)

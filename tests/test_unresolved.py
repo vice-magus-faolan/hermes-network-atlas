@@ -19,8 +19,7 @@ from test_core import NOW
 from test_boundaries import synthetic_policy
 
 load_package()
-sys.path.insert(0, str(ROOT / "scripts"))
-from offline_guard import deny_network
+from network_guard import deny_network
 deny_network()
 batches = importlib.import_module("atlas_test_plugin.batches")
 config = importlib.import_module("atlas_test_plugin.config")

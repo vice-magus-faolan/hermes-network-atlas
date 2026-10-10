@@ -1,0 +1,42 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: atlas-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build with stock NousResearch/hermes-agent v0.21.6
+        run: docker build --file docker/validation.Dockerfile --tag hermes-network-atlas-tests:local .
+      - name: Validate, doctor and pytest without network
+        shell: bash
+        run: |
+          name=atlas-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          cleanup() {
+            rc=$?; trap - EXIT; failed=0
+            if docker container inspect "$name" >/dev/null 2>&1; then
+              docker stop --time 10 "$name" || failed=1
+            fi
+            for kind in container volume network; do
+              remaining=$(docker "$kind" ls -q --filter "label=atlas.test-run=$name") || failed=1
+              test -z "$remaining" || failed=1
+            done
+            if [ "$failed" -ne 0 ]; then printf 'Owned-resource cleanup failed\n' >&2; [ "$rc" -ne 0 ] || rc=1; fi
+            exit "$rc"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' HUP INT TERM
+          docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local

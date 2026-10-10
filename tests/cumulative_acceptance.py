@@ -12,16 +12,15 @@ from pathlib import Path
 import sqlite3
 import sys
 
-from acceptance_support import contained
-from offline_guard import deny_network
+from network_guard import deny_network
+from native_host_acceptance import collect_methods, reopen_methods
 
 
 class NativeAtlas:
     """Small adapter to REAL registered APIs; no loader, core or consent mocks."""
     def __init__(self, source: Path):
         sys.path.insert(0, str(source))
-        from pm.environments import selected_venv
-        assert Path(sys.prefix).resolve() == selected_venv(source).resolve()
+
         from hermes_cli.plugins import discover_plugins, get_plugin_manager, get_plugin_command_handler
         from tools.registry import registry
         discover_plugins()
@@ -50,12 +49,12 @@ class NativeAtlas:
         assert self.command is not None
         return json.loads(self.command(text))
 
-    def cli(self, argv: list[str]) -> dict:
+    def cli(self, argv: list[str], *, expected_code: int = 0) -> dict:
         output = io.StringIO()
         with redirect_stdout(output):
             code = self.entry["handler_fn"](self.parser.parse_args(argv))
         result = json.loads(output.getvalue())
-        assert code == 0, result
+        assert code == expected_code, result
         return result
 
     def update(self, device: str, field: str, value: object) -> dict:
@@ -69,6 +68,32 @@ def counts(home: Path) -> dict:
     with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
         return {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in
                 ("devices", "interfaces", "observations", "batches", "applications", "audit_events", "access_evidence")}
+
+
+def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
+    """Refuse hostile method grants on real tool/slash/CLI before any effects."""
+    path = home / "network-atlas" / "config.yaml"
+    original = path.read_bytes()
+    before = counts(home) if (path.parent / "atlas.sqlite3").exists() else None
+    files = set(path.parent.rglob("*"))
+    calls_path = root / "fixture-bin" / "calls.jsonl"
+    calls = calls_path.read_bytes()
+    try:
+        for methods in ({"icmp_echo": 1}, {"tcp_ports": [4403]}, {"icmp_echo": True, "options": "-PE"}):
+            raw = json.loads(original)
+            raw["networks"]["lab"]["discovery"].update(methods)
+            path.write_text(json.dumps(raw))
+
+            results = (atlas.tool("network_discover", {"network": "lab", "mode": "ping"}),
+                       atlas.slash("discover lab ping"),
+                       atlas.cli(["discover", "--network", "lab", "--mode", "ping"], expected_code=2))
+            for result in results:
+                assert "error" in result, result
+                assert not result["applied"] and not result["persisted"], result
+            assert files == set(path.parent.rglob("*")) and calls_path.read_bytes() == calls
+            assert before == (counts(home) if (path.parent / "atlas.sqlite3").exists() else None)
+    finally:
+        path.write_bytes(original)
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:
@@ -181,15 +206,19 @@ def main() -> int:
     root = Path(os.environ["TMPDIR"]).resolve()
     if not (root / "synthetic-atlas-home").is_file():
         raise ValueError("synthetic scratch fixture required")
-    home = contained(root, os.environ["HERMES_HOME"])
-    source = contained(root, sys.argv[1])
+    home = Path(os.environ["HERMES_HOME"]).resolve()
+    if not home.is_relative_to(root):
+        raise ValueError("synthetic fixture home required")
+    source = Path(sys.argv[1]).resolve()
     deny_network()
     atlas = NativeAtlas(source)
     mode = sys.argv[2]
     saved = root / "cumulative.json"
     if mode == "collect":
+        invalid_policy_refusal(atlas, home, root)
         data = collect(atlas, root)
         sources_and_failure(atlas, root, data)
+        collect_methods(atlas, home, root)
         negatives(atlas, home, root)
         exported = atlas.tool("network_map", {"format": "mermaid", "export": True})
         assert {Path(path).name for path in exported["exports"]} == {"network_map.md", "network_map.mmd"}
@@ -203,11 +232,14 @@ def main() -> int:
         assert counts(home) == before
         for kind, name in (("markdown", "network_map.md"), ("mermaid", "network_map.mmd")):
             assert (home / "network-atlas" / "exports" / name).read_text() == data["snapshot"]["maps"][kind]["content"]
+        invalid_policy_refusal(atlas, home, root)
+        reopen_methods(atlas, root)
     else:
         raise ValueError("unknown acceptance mode")
     atlas.manager.unload()
-    print(json.dumps({"mode": mode, "supported_native_admission": True, "three_aliases": sorted(data["ids"]),
+    print(json.dumps({"mode": mode, "native_registration": True, "tool_count": 6, "three_aliases": sorted(data["ids"]),
                       "network_denied": True, "fresh_process_persistence": mode == "reopen",
+                      "issue6_invalid_policy_refusal": True, "issue6_method_evidence": True,
                       "synthetic_transport_only": True, "counts": counts(home)}))
     return 0
 

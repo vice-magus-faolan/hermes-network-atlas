@@ -4,8 +4,8 @@ Read README.md, docs/project-specification.md, docs/implementation-addendum.md,
 docs/delivery-plan.md, and docs/acceptance-matrix.md before work. The addendum
 controls conflicts. Do not expand beyond V1 phases 1–3.
 
-Canonical verification: `python3 scripts/verify.py`. Bootstrap checks do not
-prove implemented behavior; extend this verifier as implementation lands.
+Canonical verification: `python3 -m pytest -q` on stock supported Hermes.
+Add behavioral tests as implementation lands; documentation checks are not proof.
 Tests are fixture-based, isolated, and network-free. Never read live atlas data
 or use another profile's home/config as a test fixture.
 
