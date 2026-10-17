@@ -13,6 +13,7 @@ from .updates import DEVICE_TYPES, _text
 from .inspection_evidence import latest_inspection, most_recent_inspection
 from .batches import OUTCOMES
 from .unresolved import query_evidence
+from .endpoints import endpoint_counts, query_endpoints
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
               "relationship", "related_to", "text", "limit", "offset", "batch_id"}
@@ -27,7 +28,7 @@ def validate_query(params: object, policy: Policy) -> dict:
     for key, value in result.items():
         if key not in {"limit", "offset"}:
             _text(value, policy.limits.input_chars)
-    _enum(result, "view", ("devices", "status", "history", "unresolved"))
+    _enum(result, "view", ("devices", "status", "history", "unresolved", "endpoints"))
     _enum(result, "device_type", DEVICE_TYPES)
     _enum(result, "status", STATUSES)
     _enum(result, "access_method", ("ssh",))
@@ -47,6 +48,7 @@ def _validate_view(params: dict) -> None:
     view = params.get("view", "devices")
     allowed = {"status": {"view"}, "history": {"view", "device_id", "limit", "offset"},
                "unresolved": {"view", "address", "batch_id", "limit", "offset"},
+               "endpoints": {"view", "address", "batch_id", "limit", "offset"},
                "devices": QUERY_KEYS - {"batch_id"}}
     if not set(params) <= allowed[view]:
         raise ValueError("unsupported filters for query view")
@@ -312,6 +314,7 @@ def summary(store: Store, now: datetime) -> dict:
                                          "ORDER BY checked_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
     attempt = latest_inspection(store)
     return {"known_devices": sum(counts.values()), "status_counts": counts,
+            "endpoint_query_available": True, **endpoint_counts(store),
             "observed_devices": counts.get("observed", 0), "stale_devices": counts.get("stale", 0),
             "authorized_devices_for_atlas_ssh_inspection": accessible,
             "last_collection": _last_collection(store), "last_discovery": _last_collection(store, discovery_only=True),
@@ -335,12 +338,17 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
     clock = now or utc_now()
     if args.get("view") == "unresolved":
         return query_evidence(policy, args, clock)
+    if args.get("view") == "endpoints":
+        return query_endpoints(policy, args)
     if not policy.database.exists():
         if args.get("view") == "history":
             raise ValueError("unknown atlas entity")
         return {"devices": [], "has_more": False, "discovery_performed": False,
                 "known_devices": 0, "observed_devices": 0, "stale_devices": 0, "status_counts": {},
                 "authorized_devices_for_atlas_ssh_inspection": 0,
+                "endpoint_query_available": True, "endpoint_count": 0,
+                "responding_endpoint_count": 0,
+                "endpoint_observation_count": 0, "endpoint_evidence_batches": 0, "unprojected_endpoint_batches": 0,
                 "last_collection": None, "last_discovery": None, "last_inspection": None}
     with Store(policy) as store, store.snapshot():
         if args.get("view") == "status":

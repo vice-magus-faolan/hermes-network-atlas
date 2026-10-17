@@ -16,9 +16,10 @@ from .storage import Store, response_json
 from .discovery import collect
 from .reconcile import reconcile
 from .inspection import collect as inspect_host
+from .endpoints import check as check_endpoints
 
 COMMAND_USAGE = ("status|show <id>|map [text|markdown|mermaid]|discover <network> <passive|ping>|"
-                 "inspect <alias-or-id>|reconcile [batch-id]|help")
+                 "inspect <alias-or-id>|reconcile [batch-id]|check-endpoints <network>|resume-endpoints <batch-id>|help")
 
 
 def update_receipt(update: Update) -> str:
@@ -108,6 +109,16 @@ class Handlers:
         except (OSError, ConfigError, ValueError, sqlite3.Error):
             return json.dumps({"error": "invalid stored batch, bounds, store, or local policy", "applied": False})
 
+    def check_endpoints(self, params: object, **runtime_context: object) -> str:
+        """Primary durable endpoint operation; post-persistence failures retain ID/stages."""
+        del runtime_context
+        try:
+            policy = load_policy(self.home)
+            return response_json(check_endpoints(policy, params), policy.limits.output_bytes)
+        except (OSError, ConfigError, ValueError, sqlite3.Error):
+            return json.dumps({"error": "invalid endpoint request, bounds, store, or local policy",
+                               "persisted": False, "applied": False, "projected": False, "queryable": False})
+
     def inspect(self, params: object, **runtime_context: object) -> str:
         """Fixed probes only; runtime kwargs cannot supply target policy or commands."""
         del runtime_context
@@ -137,6 +148,8 @@ class Handlers:
 
     def _collection_command(self, parts: list[str]) -> str | None:
         """Exact slash collection arities route through the same validated handlers."""
+        if len(parts) == 2 and parts[0] in {"check-endpoints", "resume-endpoints"}:
+            return self.check_endpoints({"network" if parts[0] == "check-endpoints" else "batch_id": parts[1]})
         if len(parts) == 2 and parts[0] == "inspect":
             return self.inspect({"target": parts[1]})
         if len(parts) == 3 and parts[0] == "discover":

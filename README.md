@@ -33,6 +33,13 @@ Stock native directory-plugin registration and a three-alias fixture workflow/
 restart are exercised by pytest. Passing synthetic checks does not establish live-network
 readiness, reviewer approval, target integration or publication.
 
+The narrow issue-1 endpoint slice adds separately enabled named-policy TCP checks
+that persist, project and read back historical endpoint evidence in one operation.
+Exact-batch resume never recollects. Shared readers can query endpoints even with
+zero identified devices, without gaining collection or SSH permission. At most
+four operator-selected TCP ports; 4403 remains excluded. No greeting reads,
+service identification or application payloads. See [endpoint checks](docs/endpoint-checks.md).
+
 Network Atlas observes and remembers infrastructure. It does not administer it.
 The implementation uses local SQLite, bounded allowlisted discovery,
 fixed read-only SSH probes, and deterministic Markdown/Mermaid exports. No
@@ -51,6 +58,7 @@ external database, web app, MCP server, or background service is required.
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
 - [Host-discovery policy, datagram-only transport and combined budgets](docs/host-discovery-policy.md)
+- [Durable native TCP endpoint checks, recovery and shared queries](docs/endpoint-checks.md)
 - [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
 - [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)
@@ -59,6 +67,7 @@ external database, web app, MCP server, or background service is required.
 V1 encompasses Atlas Core, Local Discovery, and Authorized SSH Inspection.
 Proxmox API, richer infrastructure integrations, and service enumeration are
 later work, not prerequisites. Unknown topology stays unknown.
+The endpoint slice records connect outcomes only; it is not general service enumeration.
 
 ## Verification
 

@@ -98,6 +98,34 @@ class NativeRuntimeTests(unittest.TestCase):
     def test_native_plugin_remains_disabled_without_explicit_opt_in(self):
         self.assertTrue(self.run_smoke("disabled")["registration_refused"])
 
+    def test_native_endpoints_fresh_profiles_shared_physical_store_and_isolated_control(self):
+        root = runtime_root()
+        with scratch_home() as directory:
+            scratch = Path(directory)
+            (scratch / 'synthetic-atlas-home').touch()
+            shared = scratch / 'shared.sqlite3'
+            for mode in ('collect', 'reader', 'isolated'):
+                home = scratch / mode
+                copy_plugin(home / 'plugins' / 'network-atlas')
+                (home / 'network-atlas').mkdir()
+                raw: dict = {} if mode == 'isolated' else {'store': {'shared_sqlite_path': str(shared)}}
+                if mode == 'collect':
+                    raw['networks'] = {'lab': {'cidr': '192.0.2.8/31', 'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
+                (home / 'network-atlas' / 'config.yaml').write_text(json.dumps(raw))
+                (home / 'config.yaml').write_text(json.dumps({'plugins': {'enabled': ['network-atlas']}}))
+                env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(scratch / 'user'),
+                       'HERMES_HOME': str(home), 'TMPDIR': str(scratch), 'PYTHONDONTWRITEBYTECODE': '1',
+                       'HERMES_BUNDLED_PLUGINS': str(scratch / 'empty-bundled'), 'HERMES_ENABLE_PROJECT_PLUGINS': '0',
+                       'HERMES_DISABLE_LAZY_INSTALLS': '1', 'HERMES_MANAGED': 'false',
+                       'XDG_CONFIG_HOME': str(scratch / 'xdg-config'), 'XDG_CACHE_HOME': str(scratch / 'xdg-cache'),
+                       'XDG_DATA_HOME': str(scratch / 'xdg-data')}
+                policy_before = (home / 'network-atlas' / 'config.yaml').read_bytes()
+                child = subprocess.run([sys.executable, str(ROOT / 'tests' / 'native_endpoints.py'), str(root), mode],
+                                       env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
+                self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+                self.assertEqual((home / 'network-atlas' / 'config.yaml').read_bytes(), policy_before)
+                self.assertTrue(json.loads(child.stdout.strip().splitlines()[-1])['native_dispatch'])
+
     def test_missing_native_runtime_is_failure_not_skipped_coverage(self):
         with scratch_home() as directory, patch.dict(os.environ, {"NETWORK_ATLAS_HERMES_ROOT": directory}):
             with self.assertRaises(AssertionError):

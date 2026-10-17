@@ -23,11 +23,12 @@ reading that shared store. Ambiguous alias associations authorize no device.
 Authorization is always current local policy, not an access result or atlas fact.
 No database read creates a second profile directory or changes its configuration.
 
-Schema version 1 is in `storage_schema.sql`; `storage.py` initializes an empty
-file transactionally under a bounded write lock. A nonempty unversioned database
-or future version is refused without repair/downgrade. There is no migration
-from a prior persisted atlas: the parent scaffold never created one. Future
-versions must add an explicit reviewed migration. Foreign keys are enabled for
+The original schema is in `storage_schema.sql`; store schema 2 adds the
+endpoint projection through `storage_endpoints.sql`. `storage.py` initializes or
+additively upgrades schema 1 transactionally under a bounded write lock. Read-only
+opens support schema 1 without migration. A nonempty unversioned database or
+future version is refused without repair/downgrade. See endpoint-checks.md for
+upgrade compatibility. Foreign keys are enabled for
 every connection. Write transactions use BEGIN IMMEDIATE, bounded busy waits,
 and rollback even on interruption. WAL supports simultaneous readers. SQLite
 may maintain private WAL/shared-memory coordination files; queries do not mutate

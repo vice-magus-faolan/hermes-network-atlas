@@ -26,6 +26,19 @@ and additive method evidence under that independently approved contract.
 Independent exact-artifact approval still gates descendants and delivery.
 Legacy policy retains TCP 80/443 behavior.
 
+Issue #1 narrowly amends this deferral with a separately opt-in native TCP
+endpoint check and durable endpoint-evidence queries. Each named IPv4 network's
+`endpoints.enabled` and at most four `endpoints.tcp_ports` grant only bounded
+connect checks; host-discovery ports/ICMP/SSH grants do not authorize them.
+4403 is excluded at policy and transport boundaries. One supported operation
+collects, persists, projects without device identity and performs fresh readback;
+genuine batch-ID resume never recollects. Shared knowledge transfers no local
+collection/reconciliation/SSH authority. Additive transactional store schema 2
+preserves shipped schema-1 records; read-only schema-1 opens never migrate.
+No greeting/banner reader, payloads, generic importer, service/version/OS/NSE/UDP
+or vulnerability scanning is included. See [endpoint-checks.md](endpoint-checks.md)
+for outcomes, budgets, recovery, upgrade and operator examples.
+
 ## 2. Collection and reconciliation lifecycle
 
 Collectors append bounded observation batches; they do not silently rewrite

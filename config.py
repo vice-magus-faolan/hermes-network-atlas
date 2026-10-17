@@ -49,6 +49,7 @@ class Network:
     ping: bool
     icmp_echo: bool = False
     tcp_ports: tuple[int, ...] = LEGACY_TCP_PORTS
+    endpoint_ports: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,7 @@ def _tcp_ports(value: object) -> tuple[int, ...]:
 
 
 def _network(name: str, raw: object) -> Network:
-    data = _object(raw, {"cidr", "discovery"}, "network")
+    data = _object(raw, {"cidr", "discovery", "endpoints"}, "network")
     network = _scope(data.get("cidr"))
     modes = _object(data.get("discovery", {}), {"passive", "ping", "icmp_echo", "tcp_ports"}, "network.discovery")
     passive = _bool(modes.get("passive", False), "passive")
@@ -157,14 +158,24 @@ def _network(name: str, raw: object) -> Network:
         raise ConfigError("icmp_echo requires ping authorization")
     if ping and not (icmp_echo or ports):
         raise ConfigError("active discovery requires at least one method")
-    return Network(name, str(network), passive, ping, icmp_echo, ports)
+    endpoints = _object(data.get("endpoints", {}), {"enabled", "tcp_ports"}, "network.endpoints")
+    enabled = _bool(endpoints.get("enabled", False), "endpoints.enabled")
+    endpoint_ports = _tcp_ports(endpoints.get("tcp_ports", []))
+    if enabled != bool(endpoint_ports):
+        raise ConfigError("endpoint ports require explicit enablement and a nonempty list")
+    if enabled and network.version != 4:
+        raise ConfigError("V1 endpoint checks are IPv4 only")
+    return Network(name, str(network), passive, ping, icmp_echo, ports, endpoint_ports)
 
 
 def validate_network(network: Network) -> None:
     """Revalidate native snapshots before invocation, not just YAML at startup."""
     if type(network.tcp_ports) is not tuple or len(network.tcp_ports) > MAX_TCP_DISCOVERY_PORTS:
         raise ConfigError("invalid immutable TCP discovery ports")
-    _network(_name(network.name), {"cidr": network.cidr, "discovery": {
+    if type(network.endpoint_ports) is not tuple:
+        raise ConfigError("invalid immutable endpoint ports")
+    _network(_name(network.name), {"cidr": network.cidr,
+        "endpoints": {"enabled": bool(network.endpoint_ports), "tcp_ports": list(network.endpoint_ports)}, "discovery": {
         "passive": network.passive, "ping": network.ping, "icmp_echo": network.icmp_echo,
         "tcp_ports": list(network.tcp_ports)}})
 

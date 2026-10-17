@@ -42,6 +42,18 @@ diagnose a firewall, prove offline state, or transfer foreign profile authority.
 Any future live validation needs a separately approved exact scope and read-only
 recipe; it is never a CI test or a reason to weaken firewall/kernel settings.
 
+The narrow endpoint slice uses separate network-local `endpoints` enablement and
+ports, never host-discovery or SSH grants. Numeric-only TCP connects share the
+existing bounded owned-socket scheduler and still exclude 4403 at both boundaries.
+No TCP application bytes or SSH greetings are read/sent. Open/refused/timeout,
+unavailable and unstarted outcomes retain original batch/probe/profile/time scope;
+they never identify a service/device or grant access. Endpoint projection cannot
+change canonical identities, address ownership, topology or absence. Durable
+batch-ID resume performs no collection and is restricted to the originating
+profile's still-matching local policy; shared readers receive knowledge only.
+Schema-1 upgrade is additive and transactional; historical evidence remains
+immutable, and read-only opens do not upgrade. See docs/endpoint-checks.md.
+
 Phase 3 resolves only a current profile-authorized alias or uniquely mapped
 device ID. All seven remote commands are code-owned read-only Linux probes.
 BatchMode/strict host keys, no PTY/forwarding/LocalCommand/multiplex reuse/key

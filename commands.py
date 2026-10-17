@@ -50,6 +50,10 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     reconcile_parser.add_argument("--batch-id")
     inspect_parser = commands.add_parser("inspect", allow_abbrev=False)
     inspect_parser.add_argument("--target", required=True)
+    endpoints = commands.add_parser("check-endpoints", allow_abbrev=False)
+    selection = endpoints.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--network")
+    selection.add_argument("--batch-id", help="Resume stored local endpoint evidence; never collects")
 
 
 def run_command(args: argparse.Namespace, home: Path) -> int:
@@ -75,6 +79,8 @@ def _decode(text: str, policy: Policy) -> object:
 
 
 def _read_command(args: argparse.Namespace, home: Path, policy: Policy) -> dict | None:
+    if args.atlas_action == "check-endpoints":
+        return json.loads(Handlers(home).check_endpoints({"network": args.network} if args.network else {"batch_id": args.batch_id}))
     if args.atlas_action == "inspect":
         return json.loads(Handlers(home).inspect({"target": args.target}))
     if args.atlas_action == "discover":

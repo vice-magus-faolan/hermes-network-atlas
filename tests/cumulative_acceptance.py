@@ -33,7 +33,7 @@ class NativeAtlas:
         self.entry = self.manager._cli_commands["network-atlas"]
         self.parser = argparse.ArgumentParser(allow_abbrev=False)
         self.entry["setup_fn"](self.parser)
-        names = {"network_query", "network_update", "network_map", "network_discover", "network_inspect", "network_reconcile"}
+        names = {"network_query", "network_update", "network_map", "network_discover", "network_inspect", "network_reconcile", "network_check_endpoints"}
         definitions = self.registry.get_definitions(names)
         assert {d["function"]["name"] for d in definitions} == names
         for definition in definitions:
@@ -237,7 +237,7 @@ def main() -> int:
     else:
         raise ValueError("unknown acceptance mode")
     atlas.manager.unload()
-    print(json.dumps({"mode": mode, "native_registration": True, "tool_count": 6, "three_aliases": sorted(data["ids"]),
+    print(json.dumps({"mode": mode, "native_registration": True, "tool_count": 7, "three_aliases": sorted(data["ids"]),
                       "network_denied": True, "fresh_process_persistence": mode == "reopen",
                       "issue6_invalid_policy_refusal": True, "issue6_method_evidence": True,
                       "synthetic_transport_only": True, "counts": counts(home)}))

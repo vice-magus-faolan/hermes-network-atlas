@@ -58,5 +58,5 @@ class CumulativeAcceptanceTests(unittest.TestCase):
                 result = json.loads(output.splitlines()[-1])
                 self.assertTrue(result["issue6_invalid_policy_refusal"])
                 self.assertTrue(result["issue6_method_evidence"])
-                self.assertEqual(result["tool_count"], 6)
+                self.assertEqual(result["tool_count"], 7)
                 print("Cumulative native acceptance: " + output.splitlines()[-1], flush=True)

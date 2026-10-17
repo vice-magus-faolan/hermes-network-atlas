@@ -153,7 +153,8 @@ closes owned sockets and leaves explicit output_limit outcomes. TCP does no
 application write/read; Linux kernel handshake/retransmission behavior is not
 claimed under instantaneous application control.
 
-Keep schema version 1 and immutable historical batches unchanged. New method
+Keep schema-1 collector envelopes and immutable historical batches unchanged
+(the endpoint amendment adds store schema 2; see endpoint-checks.md). New method
 probes use `icmp_<address-index>` and `tcp_<port>_<address-index>`; contributing
 positive observations live on those method probes with their own UTC times,
 `ping_response` evidence and existing unresolved address anchors. Method/port is

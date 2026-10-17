@@ -61,7 +61,21 @@ def _tcp_result(code: int) -> tuple[str, str, bool]:
         return 'success', 'tcp_connected_response', True
     if code == errno.ECONNREFUSED:
         return 'success', 'tcp_refused_response', True
+    if code == errno.ETIMEDOUT:
+        return 'timeout', 'effective_transport_deadline', False
     return _error(OSError(code, ''))
+
+
+def begin_endpoint(network: Network, address: str, port: int | None, deadline: float) -> tuple[Attempt | None, Outcome | None]:
+    """Separate endpoint grant, checked at the actual socket-effect boundary."""
+    validate_network(network)
+    if excluded(network, address) or type(port) is not int or port not in network.endpoint_ports or port in EXCLUDED_TCP_PORTS:
+        raise ValueError('endpoint destination/port not authorized')
+    if not math.isfinite(deadline):
+        raise ValueError('finite endpoint deadline required')
+    if time.monotonic() >= deadline:
+        return None, ('not_started', 'effective_deadline_before_start', False)
+    return _open(address, port, deadline)
 
 
 def begin(network: Network, address: str, port: int | None, deadline: float) -> tuple[Attempt | None, Outcome | None]:

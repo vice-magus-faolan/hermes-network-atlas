@@ -211,7 +211,8 @@ and events. Ambiguous aliases remain explicit conflicts; failures never assert
 absence. Access records are appended only when a device can be resolved. The raw
 attempt remains queryable even when no device exists. Exact batch-ID replay adds
 no rows/events and returns the original result. Deadline/audit/SQL/receipt failure
-leaves the immutable batch retryable. Existing schema version 1 is retained.
+leaves the immutable batch retryable. Existing schema-1 records are retained
+through the additive endpoint store upgrade (see endpoint-checks.md).
 
 Query `access_method=ssh` means authorized for Network Atlas inspection, NOT
 administration/development access or currently connected. Device details expose
@@ -243,7 +244,7 @@ The canonical verifier discovers these regressions with the other module tests.
 Existing Phase 2 tests exercise the shared runner/SQLite whole-operation boundary.
 
 `tests/test_runtime.py` and `tests/runtime_smoke.py` exercise actual native
-Hermes registration/schema/tool/slash/CLI dispatch with six tools. Transport is
+Hermes registration/schema/tool/slash/CLI dispatch. SSH transport is
 ONLY `tests/offline_ssh.py`, a scratch-marker-guarded synthetic executable which
 validates fixed argv and cannot run SSH. It simulates valid output and a client
 refusal; a fresh native process replays/queries/maps with that executable removed

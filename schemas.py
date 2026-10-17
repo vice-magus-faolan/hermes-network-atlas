@@ -6,13 +6,13 @@ TOOL_UPDATE_FIELDS = tuple(field for field in UPDATE_FIELDS if field != "retired
 
 QUERY_SCHEMA = {
     "name": "network_query",
-    "description": "Read stored devices, relations, provenance, status or original unresolved evidence with identity lineage. Historical evidence does not establish current reachability or access. Never performs discovery.",
+    "description": "Read stored devices, endpoints, relations, provenance, status or original unresolved evidence with identity lineage. Historical evidence does not establish current reachability or access. Never performs discovery.",
     "parameters": {
         "type": "object", "additionalProperties": False,
         "properties": {
-            "view": {"type": "string", "enum": ["devices", "status", "history", "unresolved"]},
+            "view": {"type": "string", "enum": ["devices", "status", "history", "unresolved", "endpoints"]},
             "batch_id": {"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
-                         "description": "Optional exact stored batch filter for unresolved view only; foreign origin remains read-only knowledge."},
+                         "description": "Optional exact stored batch filter for unresolved/endpoints views; foreign origin remains read-only knowledge."},
             **{key: {"type": "string", "maxLength": 4096} for key in
                ("device_id", "name", "address", "device_type", "status", "access_method", "relationship", "related_to", "text")},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100},
@@ -74,4 +74,13 @@ INSPECT_SCHEMA = {
                    "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 64,
                                               "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}},
                    "required": ["target"]},
+}
+
+ENDPOINT_SCHEMA = {
+    "name": "network_check_endpoints",
+    "description": "Check separately enabled configured TCP endpoints, persist, project and read back historical evidence. Select network OR resume exact batch_id without collecting again. No service identity, greetings or SSH authority.",
+    "parameters": {"type": "object", "additionalProperties": False,
+                   "properties": {key: {"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}
+                                  for key in ("network", "batch_id")},
+                   "oneOf": [{"required": ["network"]}, {"required": ["batch_id"]}]},
 }

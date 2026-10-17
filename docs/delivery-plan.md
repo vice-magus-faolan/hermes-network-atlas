@@ -55,6 +55,15 @@ final independent/human review. Old-SHA acceptance does not cover corrected byte
 
 ## Gates
 
+The narrow issue-1 endpoint slice uses the same serial lane and same-card
+exact-SHA review, not another workflow service. Its native named-policy operation
+must demonstrate collection -> immutable persistence -> identity-independent
+projection -> fresh readback, plus batch-ID resume and fresh shared-profile
+queries without authority transfer. [endpoint-checks.md](endpoint-checks.md)
+defines the bounded product amendment. General service enumeration and the rest
+of issue #1 remain deferred. Component review is not publication, merge or live
+activation; the current task's PR-only delivery contract controls those effects.
+
 Seed every card behind an inert construction gate before any can run. Verify
 idempotency keys, exact edges, worktree lineage, reviewer policy, and dry-run.
 Release only the first serial root after construction; actual spawn may wait
