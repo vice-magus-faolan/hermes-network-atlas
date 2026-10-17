@@ -210,12 +210,12 @@ def _validate_probes(store: Store, collector: str, kind: str, scope: str, start:
                      completion: str, probes: tuple[Probe, ...]) -> None:
     if not isinstance(probes, tuple) or not 1 <= len(probes) <= store.policy.limits.observations:
         raise ValueError("invalid/bounded probe count")
-    successes = sum(probe.outcome == "success" for probe in probes)
-    expected = "complete" if successes == len(probes) else "partial" if successes else "failed"
-    if collector == "tcp_endpoint" and completion != expected:
-        # Retain conservative immutable receipts from before eligible-only counting.
+    if collector == "tcp_endpoint":
         from .endpoints import collection_completion
         expected = collection_completion(probes)
+    else:
+        successes = sum(probe.outcome == "success" for probe in probes)
+        expected = "complete" if successes == len(probes) else "partial" if successes else "failed"
     if completion != expected or len({probe.probe_name for probe in probes}) != len(probes):
         raise ValueError("inconsistent completion or duplicate probe")
     if sum(len(probe.observations) for probe in probes) > store.policy.limits.observations:

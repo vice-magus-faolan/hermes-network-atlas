@@ -155,6 +155,14 @@ class EndpointTests(unittest.TestCase):
                 self.assertEqual(sum(row['diagnostic_code'] == 'destination_excluded' for row in rows), excluded)
                 self.assertTrue(all(row['completion'] == 'complete' for row in rows))
         policy = self.policy(cidr='192.0.2.8/30')
+        fixture = SyntheticSockets()
+        started = storage.timestamp(storage.utc_now())
+        with fixture.install(schedule, transport, capability):
+            probes = schedule.Scheduler(policy.networks[0], policy, fixture.clock.now + 10, endpoints=True).run()
+        with storage.Store(policy, writable=True) as store:
+            with self.assertRaisesRegex(ValueError, 'inconsistent completion'):
+                batches.store_batch(store, 'tcp_endpoint', 'lab', started,
+                                    storage.timestamp(storage.utc_now()), 'partial', probes)
         for state in ('filtered', 'unavailable', 'not_started'):
             with self.subTest(state=state):
                 fixture = SyntheticSockets(lambda address, port: 'positive' if port == 22 else 'filtered')
@@ -174,23 +182,6 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(result['completion'], 'failed')
         self.assertEqual(result['state_counts']['unavailable'], 2)
         self.assertTrue(result['queryable'])
-
-    def test_conservative_saved_completion_resumes_without_rewriting_history(self):
-        policy = self.policy(cidr='192.0.2.8/30')
-        fixture = SyntheticSockets()
-        started = storage.timestamp(storage.utc_now())
-        with fixture.install(schedule, transport, capability):
-            probes = schedule.Scheduler(policy.networks[0], policy, fixture.clock.now + 10, endpoints=True).run()
-        with storage.Store(policy, writable=True) as store:
-            # The predecessor counted excluded destinations against completion.
-            batch_id = batches.store_batch(store, 'tcp_endpoint', 'lab', started,
-                                           storage.timestamp(storage.utc_now()), 'partial', probes)
-        with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('resume collected')):
-            result = endpoints.check(policy, {'batch_id': batch_id})
-        self.assertTrue(result['queryable'])
-        self.assertEqual(result['completion'], 'partial')
-        self.assertEqual(result['observation_count'], 8)
-        self.assertEqual({row['completion'] for row in self.rows(policy)['endpoints']}, {'partial'})
 
     def test_persistence_failure_rolls_back_and_readback_failure_retains_exact_resume(self):
         policy = self.policy()

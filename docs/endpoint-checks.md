@@ -1,6 +1,6 @@
 # Durable native TCP endpoint checks
 
-Illustrative receipt for a two-address, two-port check (not a live result):
+Illustrative receipt for a two-address, two-port check:
 
 ```json
 {"batch_id":"<returned-id>","persisted":true,"applied":true,"projected":true,
@@ -24,8 +24,7 @@ The receipt's `stage` and flags retain the actual committed progress on failure.
 
 Endpoint checking has its own opt-in grant on each named IPv4 network. Existing
 `discovery.ping`, `discovery.tcp_ports`, ICMP and SSH permissions do not enable it.
-No policy means no endpoint traffic. This documentation-only example is not live
-authorization:
+No policy means no endpoint traffic.
 
 ```yaml
 version: 1
@@ -150,11 +149,3 @@ SSH greeting/banner reading is not supported; those inputs fail closed. No
 application bytes are sent/read, no credentials or host keys are touched, and an
 open customary port does not grant SSH access. Service/version/OS/NSE/UDP and
 vulnerability scanning or external scan imports are outside this feature.
-
-## Synthetic verification
-
-Run the existing `python3 -m pytest -q` suite on stock supported Hermes. The normal
-Docker verifier runs native validate/doctor and that suite with networking disabled.
-Tests exercise policy, outcomes, budgets, durable recovery, shared-profile reads
-and native tool/slash/CLI dispatch using non-forwarding fixtures. They do not
-establish live reachability or exercise production migration/activation.
