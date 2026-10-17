@@ -314,7 +314,7 @@ def summary(store: Store, now: datetime) -> dict:
                                          "ORDER BY checked_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
     attempt = latest_inspection(store)
     return {"known_devices": sum(counts.values()), "status_counts": counts,
-            "endpoint_query_available": True, **endpoint_counts(store),
+            **endpoint_counts(store),
             "observed_devices": counts.get("observed", 0), "stale_devices": counts.get("stale", 0),
             "authorized_devices_for_atlas_ssh_inspection": accessible,
             "last_collection": _last_collection(store), "last_discovery": _last_collection(store, discovery_only=True),
@@ -346,7 +346,7 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
         return {"devices": [], "has_more": False, "discovery_performed": False,
                 "known_devices": 0, "observed_devices": 0, "stale_devices": 0, "status_counts": {},
                 "authorized_devices_for_atlas_ssh_inspection": 0,
-                "endpoint_query_available": True, "endpoint_count": 0,
+                "endpoint_count": 0,
                 "responding_endpoint_count": 0,
                 "endpoint_observation_count": 0, "endpoint_evidence_batches": 0, "unprojected_endpoint_batches": 0,
                 "last_collection": None, "last_discovery": None, "last_inspection": None}

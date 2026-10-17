@@ -295,8 +295,7 @@ tests/offline_probe.py, never the host's real ip/Nmap. Reopen removes that fake
 binary and uses a fixture-only PATH to prove stored querying/replay without
 collection. Synthetic output is explicitly a fixture, not reported live evidence.
 
-Phase 1 checks remain in the same verifier. Existing schema-1 collector records
-are retained through the additive endpoint store upgrade (see endpoint-checks.md).
+Phase 1 checks remain in the same verifier. Existing schema version 1 is retained.
 Native directory-plugin registration and three-alias A13 cumulative evidence are
 indexed in acceptance-matrix.md and operator-guide.md. GitHub CI execution,
 other runtime combinations, real network

@@ -1,10 +1,24 @@
 # Durable native TCP endpoint checks
 
-This narrow part of issue #1 adds historical address/port evidence, not service
-identification or a general scanner. A fixed numeric TCP connect is sufficient to
-record connected/open, refused/closed and no-response outcomes without Nmap
-service detection, ICMP prerequisites, application traffic or a new scanning
-framework. Device identity may remain completely unresolved.
+Illustrative receipt for a two-address, two-port check (not a live result):
+
+```json
+{"batch_id":"<returned-id>","persisted":true,"applied":true,"projected":true,
+ "queryable":true,"stage":"queryable","collection_performed":true,
+ "completion":"complete","observation_count":4,
+ "state_counts":{"open":2,"closed":2,"no_response":0,"unavailable":0,"not_started":0}}
+```
+
+`persisted` means the immutable batch is saved; `applied`/`projected` mean its
+endpoint rows committed; `queryable` means fresh readback verified the batch.
+Collection completion is separate: failed checks can still be saved and queried.
+These are historical TCP outcomes, not service identification or device identity.
+
+If `persisted=true` but `queryable=false`, save the returned batch ID and run
+`hermes network-atlas resume-endpoints <returned-id>` (or
+`/network resume-endpoints <returned-id>`). Do not rescan to finish projection or
+readback. Resume never recollects and cannot duplicate rows or audit events.
+The receipt's `stage` and flags retain the actual committed progress on failure.
 
 ## Operator policy
 
@@ -29,33 +43,29 @@ The list must contain one to four distinct integer ports in 1..65535, excluding
 4403. Both `enabled: true` and the nonempty list are required; omitted endpoints
 are disabled. IPv4 ranges have at most 256 addresses. Network/broadcast and
 special destinations are recorded as excluded, not contacted. Host-discovery
-TCP defaults and existing collectors are unchanged. Older Atlas versions reject
-these new policy keys rather than silently permitting them.
+TCP defaults remain unchanged. Older Atlas versions reject these new policy keys.
 
-Callers select a configured network name, never addresses, ports, commands,
-provenance, Nmap flags or bounds. Operator limits may only lower the existing V1
-ceilings. The shared nonblocking socket scheduler enforces one operation deadline,
-one concurrency ceiling, at most 8 starts/second per concurrency slot (32 maximum),
-and one nonrenewing per-host deadline. Attempts get a fair reduced time slice so
-one filtered port cannot consume every later port's allowance. There are no
-retries. A part of the operation deadline is reserved for durable storage,
-projection and readback. Every owned socket closes on completion or interruption;
-no child process, raw socket, privilege change, DNS or ICMP check is needed.
+Callers select a configured name, never addresses, ports, commands or bounds.
+Operator limits can only lower V1 ceilings. Checks share one operation deadline,
+concurrency/rate limit (at most 32 starts/second) and nonrenewing per-host budget;
+fair reduced attempt deadlines leave time for later ports and durable storage.
+There are no retries, helper processes, DNS/ICMP prerequisites or raw sockets.
+Owned sockets close on completion or interruption.
 
 The TCP handshake itself may consume connection slots or cause remote logs and
 kernel retransmissions. This is not a zero-effect probe. 4403 is excluded at both
 policy and socket boundaries because connection contention can affect radio
 clients. Other sensitive endpoints remain an operator selection risk.
 
-## One operation, durable completion
+## Commands and recovery
 
 The model tool is `network_check_endpoints` with exactly one selection:
 `{"network":"lab"}` to collect, or `{"batch_id":"<returned-id>"}` to resume.
 The same operation is exposed through the native local CLI and slash command:
 
 ```sh
-hermes network-atlas check-endpoints --network lab
-hermes network-atlas check-endpoints --batch-id <returned-id>
+hermes network-atlas check-endpoints lab
+hermes network-atlas resume-endpoints <returned-id>
 ```
 
 ```text
@@ -63,35 +73,17 @@ hermes network-atlas check-endpoints --batch-id <returned-id>
 /network resume-endpoints <returned-id>
 ```
 
-A normal receipt reports:
+`collection_performed` is false on resume. `completion` is complete only when
+every eligible check connected or was refused, partial when some succeeded, and
+failed when none succeeded (including zero eligible work). Excluded destinations
+do not prevent completion; they remain in immutable history and final
+`state_counts`/`observation_count` alongside every failed or unstarted check.
 
-- `persisted`: immutable batch and all per-address/port outcomes committed;
-- `applied` / `projected`: endpoint evidence and its application marker committed;
-- `queryable`: a fresh read connection successfully verified the exact batch count;
-- `stage`: the current or completed stage (`projection`, `readback`, `queryable`);
-- `collection_performed`: false on resume, true after a new collection;
-- `completion`: complete, partial or failed collection, independent of durable
-  lifecycle success; a failed check can still be durably recorded and queried;
-- final `state_counts` / `observation_count`: all planned checks, not only positives.
-
-Only connected/refused count as successful TCP response checks. Timeout,
-unavailable and not-started remain separate, so complete does not mean all ports
-open. Partial collection preserves earlier valid results and accounts for the
-unexamined tail; no outcome asserts offline state or absence.
-
-After persistence, a projection/readback/output failure returns an error with the
-same durable batch ID and honest stage flags. Resume that ID; do not issue a new
-network selection merely to finish applying it. Projection is one transaction
-using the existing unique-per-batch application marker; simultaneous or repeated
-resumes cannot duplicate rows or audit events. Resume needs the original profile
-and still-matching local network/port policy. Revoked policy leaves the historical
-batch queryable as knowledge but cannot authorize projection. A failed local
-resume retains the actual previously committed applied/projected state; it does
-not claim a new successful readback merely because a projection already exists.
-If lowered record/output limits prevent recovery, the operator must restore
-sufficient limits within the existing ceilings. No automatic policy expansion
-or recollection occurs. Before-persistence failure cannot promise a recoverable
-batch; retrying collection is a new explicitly requested check.
+Resume requires the original profile and matching local network/port policy.
+Revocation preserves historical query access but cannot authorize projection.
+If lowered record/output limits prevent recovery, restore sufficient limits
+within existing ceilings. No automatic policy expansion occurs. A failure before
+persistence cannot promise a recoverable ID; another collection is a new check.
 
 `network_reconcile` remains the identity-oriented LAN/SSH route and rejects
 endpoint batches. Endpoint projection creates no devices, interfaces, address
@@ -115,16 +107,22 @@ collection completion. Qualified means an actual historical TCP response only:
 
 - `open`: TCP connected; it does not prove which service or device answered;
 - `closed`: TCP refused; it is not a listening service;
-- `no_response`: a started attempt timed out; firewall/offline conclusions unknown;
+- `no_response`: connect timed out or reported host unreachable (`tcp_host_unreachable`);
 - `unavailable`: excluded destination or unavailable local transport;
 - `not_started`: no check began before its applicable budget expired.
 
-Coverage says attempted address/port or not checked, never complete host inventory.
+Host unreachable is a timeout-style result of connect/SO_ERROR, not a local
+socket-setup failure. It does not prove a SYN was sent or a host is absent.
+The shared host-discovery transport reports this same diagnostic without
+creating positive response evidence. Permission, protocol and other local socket
+failures remain distinct unavailable diagnostics.
+
+Coverage says connect attempted or not checked, never complete host inventory.
 All rows are historical; current reachability and identity remain not established.
 `device_id` is always null. Existing or conflicting address assignments cannot
 attach this evidence to either old or new owners after DHCP/address reuse.
 
-Normal status exposes endpoint-query availability, distinct recorded endpoint
+Normal status exposes distinct recorded endpoint
 address/port tuples (`endpoint_count`), all historical outcomes
 (`endpoint_observation_count`), distinct tuples with at least one historical
 response (`responding_endpoint_count`), evidence batches and unprojected batches.
@@ -146,24 +144,17 @@ original rows and their immutable triggers. Batch/application envelope versions
 remain 1. Read-only opens support schema 1 without migration and report no new
 endpoint rows. Upgrade failure rolls back DDL and the version together. New
 schema-2 stores are not writable by older Atlas binaries; retain backups and use
-a compatible reader rather than attempting a downgrade. No production migration
-or live scan is part of the test suite.
+a compatible reader rather than attempting a downgrade.
 
-SSH greeting/banner reading is deliberately not implemented or enabled in this
-slice. Greeting/banner policy or tool arguments, including malformed/oversized
-values, fail closed. No application bytes are sent or read, no credentials or
-host keys are touched, and an open customary port is not advertised as SSH access.
-General service/version/OS/NSE/UDP/vulnerability scanning and external scan-import
-pipelines remain deferred.
+SSH greeting/banner reading is not supported; those inputs fail closed. No
+application bytes are sent/read, no credentials or host keys are touched, and an
+open customary port does not grant SSH access. Service/version/OS/NSE/UDP and
+vulnerability scanning or external scan imports are outside this feature.
 
 ## Synthetic verification
 
 Run the existing `python3 -m pytest -q` suite on stock supported Hermes. The normal
 Docker verifier runs native validate/doctor and that suite with networking disabled.
-`tests/test_endpoints.py` covers independent policy, transport outcomes/budgets,
-projection and persistence failure/recovery, concurrent resume, query bounds,
-address reuse and transactional schema-1 upgrades. The native runtime test runs
-actual registered tool/slash/CLI handlers in three fresh fixture-profile processes:
-writer A, shared reader B with no grants, and isolated reader C. All socket
-transports are non-forwarding synthetic fixtures. This is not live-network,
-installation/activation, hosted CI or independent-review acceptance.
+Tests exercise policy, outcomes, budgets, durable recovery, shared-profile reads
+and native tool/slash/CLI dispatch using non-forwarding fixtures. They do not
+establish live reachability or exercise production migration/activation.

@@ -47,13 +47,7 @@ keys. IP/hostname alone never merges records. New MAC at an existing address is 
 ownership conflict. Remote neighbor entries represent neighbors, not the inspected
 host's own interfaces. Retain aliases, ambiguous candidate IDs, and conflicts.
 
-## 2. Immutable collector and reconciliation records (envelope version 1)
-
-Store schema 2 adds the identity-independent endpoint projection. Existing
-collector envelopes stay at version 1; `tcp_endpoint` is the native endpoint
-collector, with `tcp_endpoint` probe evidence and no identity observations or
-absence eligibility. Its exact contract and additive upgrade are documented in
-[endpoint-checks.md](endpoint-checks.md).
+## 2. Immutable collector and reconciliation records (schema version 1)
 
 Implement these as small SQLite tables/typed records, not event sourcing. All
 record IDs below are generated UUIDs; references are validated foreign keys. Times
@@ -61,7 +55,7 @@ are timezone-aware UTC serialized as RFC3339 with Z. IDs and evidence are code-o
 not an LLM-import API. The following is the normative field contract:
 
     Batch
-      id, schema_version=1, collector=[local_passive,ping,ssh,tcp_endpoint]
+      id, schema_version=1, collector=[local_passive,ping,ssh]
       source (code-owned collector or ssh:<configured-alias>)
       policy_context (profile home identity; not transferable authority)
       scope_kind=[network,ssh_alias], scope_name, scope_value

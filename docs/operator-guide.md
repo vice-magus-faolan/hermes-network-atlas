@@ -49,13 +49,7 @@ Source approval/local tests do not prove hosted acceptance or permit activation.
 
 ## Profile-local policy
 
-For the separately opt-in TCP endpoint slice, use the
-[endpoint-check guide](endpoint-checks.md): one named operation persists,
-projects and reads back historical evidence, with exact-batch recovery and an
-identity-independent `network_query` endpoints view. Normal status includes
-endpoint counts even when no device identity is resolved. It does not enable
-service detection or SSH access. Existing discovery/inspection commands below
-retain their collect-then-reconcile lifecycle.
+See [endpoint checks](endpoint-checks.md) for opt-in TCP checks, durable recovery and shared queries.
 
 Atlas reads `<get_hermes_home()>/network-atlas/config.yaml`, separate from Hermes's
 plugin selector. No policy means empty allowlists. An existing empty/malformed file,

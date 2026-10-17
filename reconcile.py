@@ -75,7 +75,7 @@ def _select(store: Store, batch_id: str | None):
     else:
         row = store.require("batches", batch_id)
     if row["collector"] == "tcp_endpoint":
-        raise ValueError("endpoint evidence requires check-endpoints resume, not identity reconciliation")
+        raise ValueError("endpoint evidence requires resume-endpoints, not identity reconciliation")
     if row["policy_context"] != str(store.policy.home):
         raise ValueError("batch is not this profile's evidence")
     kind, scope, _ = _scope(store, row["collector"], row["scope_name"])

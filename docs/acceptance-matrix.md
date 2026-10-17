@@ -37,21 +37,6 @@ not a test of documentation wording or file inventory.
 
 ## Acceptance requirements
 
-### Narrow issue-1 endpoint slice
-
-These cases run in the same network-none stock-Hermes verifier; they do not close
-the rest of issue #1 or attest any live endpoint. See endpoint-checks.md.
-
-| ID | Exact executable evidence |
-| --- | --- |
-| E01 | `tests/test_endpoints.py::EndpointTests::test_primary_durable_open_closed_timestamp_provenance_overview_no_identity` |
-| E02 | `tests/test_endpoints.py::EndpointTests::test_policy_separate_opt_in_and_strict_ports_and_no_greeting_surface`; `tests/test_endpoints.py::EndpointTests::test_all_public_request_injections_refuse_before_effects` |
-| E03 | `tests/test_endpoints.py::EndpointTests::test_closed_timeout_unavailable_not_started_partial_and_aggregate_budget`; `tests/test_endpoints.py::EndpointTests::test_owned_socket_cleanup_on_registration_failure_and_interrupt` |
-| E04 | `tests/test_endpoints.py::EndpointTests::test_persistence_failure_rolls_back_and_readback_failure_retains_exact_resume`; `tests/test_endpoints.py::EndpointTests::test_projection_rollback_and_concurrent_resume_no_duplicates_or_new_events` |
-| E05 | `tests/test_endpoints.py::EndpointTests::test_query_bounds_pagination_history_and_address_reuse_never_attributed`; `tests/test_endpoints.py::EndpointTests::test_shared_knowledge_no_foreign_resume_or_revoked_policy_and_isolated_store` |
-| E06 | `tests/test_endpoints.py::EndpointTests::test_additive_v1_migration_read_only_no_effects_rollback_and_immutable_history` |
-| E07 | `tests/test_runtime.py::NativeRuntimeTests::test_native_endpoints_fresh_profiles_shared_physical_store_and_isolated_control` exercises real native tool/slash/CLI registration and handlers in writer A, fresh shared reader B and isolated reader C. |
-
 ### Complete issue-6 criterion audit
 
 The controlling amendment is host-only/datagram-only, with no helper execution or

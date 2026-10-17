@@ -22,6 +22,7 @@ RESULTS = {
     ('success', 'tcp_connected_response'): ('open', True),
     ('success', 'tcp_refused_response'): ('closed', True),
     ('timeout', 'effective_transport_deadline'): ('no_response', False),
+    ('timeout', 'tcp_host_unreachable'): ('no_response', False),
     ('not_started', 'effective_deadline_before_start'): ('not_started', False),
     ('not_started', 'operation_deadline_exceeded'): ('not_started', False),
     ('not_started', 'host_deadline_before_start'): ('not_started', False),
@@ -108,6 +109,15 @@ def _receipt(batch: str | None = None) -> dict:
             'queryable': False, 'stage': 'collection', 'collection_performed': False}
 
 
+def collection_completion(probes: tuple[Probe, ...]) -> str:
+    """Exclude ineligible destinations, not genuine failed or unstarted work."""
+    eligible = [probe for probe in probes if probe.diagnostic_code != 'destination_excluded']
+    successes = sum(probe.outcome == 'success' for probe in eligible)
+    if not successes:
+        return 'failed'
+    return 'complete' if successes == len(eligible) else 'partial'
+
+
 def check(policy: Policy, params: object) -> dict:
     """Collect once, or resume a genuine local batch without any network effects."""
     if not isinstance(params, dict) or set(params) not in ({'network'}, {'batch_id'}):
@@ -127,11 +137,11 @@ def check(policy: Policy, params: object) -> dict:
         started = timestamp(utc_now())
         reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
         probes = Scheduler(network, policy, deadline - reserve, endpoints=True).run()
-        successes = sum(probe.outcome == 'success' for probe in probes)
-        completion = 'complete' if successes == len(probes) else 'partial' if successes else 'failed'
+        completion = collection_completion(probes)
         with Store(policy, writable=True, deadline=deadline) as store:
             batch_id = store_batch(store, 'tcp_endpoint', value, started, timestamp(utc_now()), completion, probes, deadline=deadline)
-            assert isinstance(batch_id, str)
+            if not isinstance(batch_id, str):
+                raise ValueError('endpoint persistence did not return a batch ID')
         receipt = {**_receipt(batch_id), 'collection_performed': True, 'completion': completion}
     else:
         # Validate ID/ownership before claiming anything persisted. Never create

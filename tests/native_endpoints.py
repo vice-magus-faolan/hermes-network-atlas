@@ -33,16 +33,19 @@ def main():
                 elif route == 'slash':
                     receipt = atlas.slash('check-endpoints lab')
                 else:
-                    receipt = atlas.cli(['check-endpoints', '--network', 'lab'])
+                    receipt = atlas.cli(['check-endpoints', 'lab'])
             assert receipt['queryable'] and receipt['persisted'] and receipt['projected'], receipt
             assert all(sock.closed for sock in fixture.sockets)
-            assert atlas.slash('resume-endpoints ' + receipt['batch_id'])['queryable']
-            assert atlas.cli(['check-endpoints', '--batch-id', receipt['batch_id']])['queryable']
+            for resumed in (atlas.tool('network_check_endpoints', {'batch_id': receipt['batch_id']}),
+                            atlas.slash('resume-endpoints ' + receipt['batch_id']),
+                            atlas.cli(['resume-endpoints', receipt['batch_id']])):
+                assert resumed['queryable'] and not resumed['collection_performed']
             receipts.append(receipt)
         page = atlas.cli(['query', '--query-json', '{"view":"endpoints"}'])
         assert page['total_count'] == 12 and not page['has_more'], page
         assert {row['state'] for row in page['endpoints']} == {'open', 'closed'}
-        for params in ({'network': 'lab', 'port': 4403}, {'network': 'lab', 'source': 'user'},
+        for params in ({'network': 'lab', 'batch_id': receipts[0]['batch_id']},
+                       {'network': 'lab', 'port': 4403}, {'network': 'lab', 'source': 'user'},
                        {'network': 'lab', 'ssh_greeting': 'SSH-2.0-hostile\n' * 4096}):
             assert 'error' in atlas.tool('network_check_endpoints', params)
         snapshot.write_text(json.dumps({'page': page, 'batches': [receipt['batch_id'] for receipt in receipts]}))
@@ -54,7 +57,7 @@ def main():
         assert status['known_devices'] == 0 and status['endpoint_count'] == 4 and status['endpoint_observation_count'] == 12
         assert status['authorized_for_atlas_ssh_inspection'] == [] and status['configured_networks'] == []
         for batch in data['batches']:
-            result = atlas.cli(['check-endpoints', '--batch-id', batch], expected_code=2)
+            result = atlas.cli(['resume-endpoints', batch], expected_code=2)
             assert 'error' in result and not result['applied']
         assert 'error' in atlas.tool('network_check_endpoints', {'network': 'lab'})
         assert 'error' in atlas.tool('network_inspect', {'target': 'lab'})

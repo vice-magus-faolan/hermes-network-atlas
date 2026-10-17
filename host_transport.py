@@ -63,6 +63,8 @@ def _tcp_result(code: int) -> tuple[str, str, bool]:
         return 'success', 'tcp_refused_response', True
     if code == errno.ETIMEDOUT:
         return 'timeout', 'effective_transport_deadline', False
+    if code == errno.EHOSTUNREACH:
+        return 'timeout', 'tcp_host_unreachable', False
     return _error(OSError(code, ''))
 
 

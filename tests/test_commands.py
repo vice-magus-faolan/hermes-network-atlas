@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Cumulative operator/status contracts, using only synthetic isolated state."""
 import argparse
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import importlib
 import io
 import json
@@ -136,6 +136,24 @@ class OperatorStatusTests(unittest.TestCase):
         with patch.object(self.handlers, "query", return_value="fixture-query") as read:
             self.assertEqual(self.handlers.command("show fixture-id"), "fixture-query")
             read.assert_called_once_with({"device_id": "fixture-id"})
+
+    def test_endpoint_cli_exact_positional_selection_before_dispatch(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        for argv, selection in ((['check-endpoints', 'lab'], {'network': 'lab'}),
+                                (['resume-endpoints', 'saved-batch'], {'batch_id': 'saved-batch'})):
+            with patch.object(tools.Handlers, 'check_endpoints', return_value='{}') as check, redirect_stdout(io.StringIO()):
+                self.assertEqual(commands.run_command(parser.parse_args(argv), self.home), 0)
+                check.assert_called_once_with(selection)
+        with patch.object(tools.Handlers, 'check_endpoints') as check, redirect_stderr(io.StringIO()):
+            for argv in (['check-endpoints'], ['resume-endpoints'], ['check-endpoints', 'lab', 'extra'],
+                         ['resume-endpoints', 'saved-batch', 'extra'],
+                         ['check-endpoints', '--network', 'lab', '--batch-id', 'saved-batch'],
+                         ['resume-endpoints', 'saved-batch', '--network', 'lab']):
+                with self.subTest(argv=argv), self.assertRaises(SystemExit) as rejected:
+                    parser.parse_args(argv)
+                self.assertEqual(rejected.exception.code, 2)
+            check.assert_not_called()
 
 
 if __name__ == "__main__":

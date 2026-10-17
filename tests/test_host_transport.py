@@ -70,6 +70,21 @@ class HostTransportTests(unittest.TestCase):
             self.assertEqual({call[2] for call in fixture.calls}, {port})
             self.assertEqual(result['completion'], 'partial')  # excluded network/broadcast, never absence
 
+    def test_host_unreachable_is_not_a_response_or_local_setup_failure(self):
+        policy = self.policy(cidr='192.0.2.8/31', icmp_echo=False, tcp_ports=[2222])
+        fixture = SyntheticSockets()
+        with patch('synthetic_sockets.SyntheticSocket.getsockopt', return_value=errno.EHOSTUNREACH):
+            result = self.collect(policy, fixture)
+        methods = [probe for probe in result['probes'] if probe['name'].startswith('tcp_')]
+        self.assertEqual({(probe['outcome'], probe['diagnostic_code']) for probe in methods},
+                         {('timeout', 'tcp_host_unreachable')})
+        self.assertEqual(self.evidence(policy, result), [])
+        self.assertEqual(result['completion'], 'failed')
+        self.assertFalse(reconcile.reconcile(policy, {'batch_id': result['batch_id']})['missing'])
+        with patch.object(transport.socket, 'socket', side_effect=OSError(errno.EHOSTUNREACH, 'setup failure')):
+            self.assertEqual(transport.begin(policy.networks[0], '192.0.2.8', 2222, 1e20),
+                             (None, ('unavailable', 'transport_socket_failed', False)))
+
     def test_mixed_duplicates_retained_address_counts_deduplicated_after_restart(self):
         policy = self.policy(cidr='192.0.2.8/31')
         result = self.collect(policy, SyntheticSockets())
