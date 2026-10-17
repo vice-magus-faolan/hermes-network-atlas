@@ -49,6 +49,8 @@ Source approval/local tests do not prove hosted acceptance or permit activation.
 
 ## Profile-local policy
 
+See [endpoint checks](endpoint-checks.md) for opt-in TCP checks, durable recovery and shared queries.
+
 Atlas reads `<get_hermes_home()>/network-atlas/config.yaml`, separate from Hermes's
 plugin selector. No policy means empty allowlists. An existing empty/malformed file,
 unknown keys, invalid numbers, noncanonical or overbroad scopes fail closed at

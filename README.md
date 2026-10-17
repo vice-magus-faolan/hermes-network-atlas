@@ -51,6 +51,7 @@ external database, web app, MCP server, or background service is required.
 - [Bounded unresolved discovery evidence and identity lineage](docs/unresolved-evidence.md)
 - [Local discovery, reconciliation and offline verification](docs/local-discovery.md)
 - [Host-discovery policy, datagram-only transport and combined budgets](docs/host-discovery-policy.md)
+- [Durable native TCP endpoint checks, recovery and shared queries](docs/endpoint-checks.md)
 - [Authorized SSH inspection, trust boundaries and offline verification](docs/authorized-ssh-inspection.md)
 - [Historical scaffold compatibility and verification](docs/scaffold-verification.md)
 - [Contributor instructions](CONTRIBUTING.md)

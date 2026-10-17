@@ -19,7 +19,7 @@ from collections.abc import Iterator
 
 from .config import Policy
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 IMMUTABLE_TABLES = ("batches", "probes", "observations", "applications", "audit_events", "access_evidence")
 
 
@@ -102,6 +102,9 @@ def _initialize_locked(connection: sqlite3.Connection) -> None:
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
+    if version == 1:
+        _migrate_endpoints(connection)
+        return
     if version != 0 or connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
         raise ValueError("unsupported or unversioned atlas schema; no automatic downgrade")
     schema = Path(__file__).with_name("storage_schema.sql").read_text(encoding="utf-8")
@@ -112,6 +115,18 @@ def _initialize_locked(connection: sqlite3.Connection) -> None:
         for action in ("UPDATE", "DELETE"):
             connection.execute(f"CREATE TRIGGER immutable_{table}_{action} BEFORE {action} ON {table} "
                                "BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
+    _migrate_endpoints(connection)
+
+
+def _migrate_endpoints(connection: sqlite3.Connection) -> None:
+    """Run inside the initialization write transaction, including version/triggers."""
+    schema = Path(__file__).with_name("storage_endpoints.sql").read_text(encoding="utf-8")
+    for statement in schema.split(";"):
+        if statement.strip():
+            connection.execute(statement)
+    for action in ("UPDATE", "DELETE"):
+        connection.execute(f"CREATE TRIGGER immutable_endpoint_observations_{action} BEFORE {action} "
+                           "ON endpoint_observations BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
 
 
 class _DeadlineConnection(sqlite3.Connection):
@@ -174,10 +189,11 @@ class Store:
                 _initialize(self.connection)
                 os.chmod(policy.database, 0o600)
                 self.connection.execute("PRAGMA journal_mode=WAL")
-            elif self.connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
                 raise ValueError("unsupported atlas schema")
             else:
                 self.connection.execute("PRAGMA query_only=ON")
+            self.schema_version = self.connection.execute("PRAGMA user_version").fetchone()[0]
         except BaseException:
             self.connection.close()
             raise

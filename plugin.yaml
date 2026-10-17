@@ -16,4 +16,5 @@ provides_tools:
   - network_discover
   - network_reconcile
   - network_inspect
+  - network_check_endpoints
 provides_hooks: []

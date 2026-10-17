@@ -20,7 +20,7 @@ from .updates import DEVICE_TYPES, _text
 from .core import INTERFACE_TYPES
 
 OUTCOMES = ("success", "unavailable", "timeout", "output_limit", "command_failed", "parse_failed", "not_started")
-EVIDENCE_KINDS = ("local_interface", "cached_neighbor", "ping_response", "ssh_response", "none")
+EVIDENCE_KINDS = ("local_interface", "cached_neighbor", "ping_response", "ssh_response", "tcp_endpoint", "none")
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str
         if scope_name not in store.policy.authorized_aliases:
             raise ValueError("unauthorized SSH scope")
         return "ssh_alias", scope_name, "ssh:" + scope_name
-    mode = {"local_passive": "passive", "ping": "ping"}.get(collector)
+    mode = {"local_passive": "passive", "ping": "ping", "tcp_endpoint": "endpoint_ports"}.get(collector)
     if mode is None:
         raise ValueError("unknown collector")
     network = next((net for net in store.policy.networks if net.name == scope_name), None)
@@ -90,14 +90,14 @@ def _probe(probe: Probe, collector: str, scope: str, start: str, end: str) -> No
     _times(probe.started_at, probe.ended_at, start, end)
     if probe.outcome not in OUTCOMES or probe.evidence_kind not in EVIDENCE_KINDS:
         raise ValueError("invalid probe outcome/evidence")
-    permitted = {"local_passive": {"local_host", "none"}, "ping": {"exact_network", "none"}, "ssh": {"exact_target", "none"}}
+    permitted = {"local_passive": {"local_host", "none"}, "ping": {"exact_network", "none"}, "ssh": {"exact_target", "none"}, "tcp_endpoint": {"none"}}
     if probe.coverage_kind not in permitted[collector]:
         raise ValueError("invalid collector coverage")
     if probe.coverage_kind != "none" and probe.coverage_value != scope:
         raise ValueError("out-of-scope probe")
     if probe.coverage_kind == "none" and probe.coverage_value != "":
         raise ValueError("unexamined coverage must be empty")
-    expected = {"local_passive": {"local_interface", "cached_neighbor", "none"}, "ping": {"ping_response", "none"}, "ssh": {"ssh_response", "none"}}
+    expected = {"local_passive": {"local_interface", "cached_neighbor", "none"}, "ping": {"ping_response", "none"}, "ssh": {"ssh_response", "none"}, "tcp_endpoint": {"tcp_endpoint"}}
     if probe.evidence_kind not in expected[collector]:
         raise ValueError("inconsistent collector evidence")
     if probe.outcome != "success" and probe.observations:
@@ -175,6 +175,9 @@ def store_batch(store: Store, collector: str, scope_name: str, started_at: str, 
     kind, scope, source = _scope(store, collector, scope_name)
     _times(started_at, ended_at, started_at, ended_at)
     _validate_probes(store, collector, kind, scope, started_at, ended_at, completion, probes)
+    if collector == "tcp_endpoint":
+        from .endpoints import validate_probes
+        validate_probes(store.policy, scope_name, probes)
     batch, operation = identifier(), identifier()
     with store.transaction():
         if inspection_target is not None:
@@ -207,8 +210,12 @@ def _validate_probes(store: Store, collector: str, kind: str, scope: str, start:
                      completion: str, probes: tuple[Probe, ...]) -> None:
     if not isinstance(probes, tuple) or not 1 <= len(probes) <= store.policy.limits.observations:
         raise ValueError("invalid/bounded probe count")
-    successes = sum(probe.outcome == "success" for probe in probes)
-    expected = "complete" if successes == len(probes) else "partial" if successes else "failed"
+    if collector == "tcp_endpoint":
+        from .endpoints import collection_completion
+        expected = collection_completion(probes)
+    else:
+        successes = sum(probe.outcome == "success" for probe in probes)
+        expected = "complete" if successes == len(probes) else "partial" if successes else "failed"
     if completion != expected or len({probe.probe_name for probe in probes}) != len(probes):
         raise ValueError("inconsistent completion or duplicate probe")
     if sum(len(probe.observations) for probe in probes) > store.policy.limits.observations:
