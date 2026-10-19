@@ -3,20 +3,20 @@
 Durable network knowledge for Hermes: devices, interfaces, addresses, relations,
 and historical evidence in profile-aware SQLite. Query what is already known,
 render Markdown/Mermaid maps, or explicitly collect bounded LAN, TCP endpoint,
-and authorized SSH observations. Atlas observes and remembers; it does not
+and configured SSH observations. Atlas observes and remembers; it does not
 administer infrastructure. No external database or background service is needed.
 
-## Installation
+## Requirements and installation
 
-Requires Python >=3.11,<3.15 and stock Hermes >=0.21.4,<0.22. The repository's
-validation uses unmodified NousResearch/hermes-agent v0.21.6 and synthetic,
-network-isolated fixtures, including native directory-plugin registration and
-restart. This does not establish package-manager install/enable, live-network,
-latest-Hermes, or every-platform compatibility. See the
-[operator guide](docs/operator-guide.md#installation-and-support) for details.
+Requires stock Hermes **>=0.21.4,<0.22** and Python >=3.11,<3.15.
+Tested with Hermes v0.21.6 on Linux x86_64 and arm64. The current manifest refuses
+Hermes 0.22.x, including v0.22.2, with:
+`Plugin 'network-atlas' requires hermes >=0.21.4,<0.22, running 0.22.2`.
+[Issue #15](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/15)
+tracks newer-Hermes compatibility and the CI runtime-version detection defect.
 
-For an operator-approved installation, replace PROFILE and REVIEWED_SHA with
-the intended existing profile and an immutable reviewed 40-character commit:
+Replace PROFILE with your existing profile (`default` for the default profile)
+and REVIEWED_SHA with the Atlas revision's immutable 40-character commit:
 
 ```sh
 hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref REVIEWED_SHA --no-enable
@@ -24,9 +24,10 @@ hermes -p PROFILE plugins enable network-atlas
 hermes -p PROFILE plugins show network-atlas
 ```
 
-Keep native security scanning and dependency/capability consent enabled. Enabling
-affects the selected profile; restarting a running gateway is a separate operator
-decision. These examples do not authorize installation, probing, or restart.
+Installation scans the plugin and resolves its declared dependency. Enabling
+changes the selected profile's plugin selection. Hermes 0.21.6 can hot-reload a
+responding gateway's commands; Atlas's Python tools appear in a new session.
+If no gateway responds, follow the CLI's `hermes gateway restart` hint.
 
 ## Find policy and stored knowledge
 
@@ -38,24 +39,12 @@ An explicit `HERMES_HOME` can override the home. See
 [profile-local configuration](docs/operator-guide.md#profile-local-configuration)
 before editing anything. An optional shared database never shares permissions.
 
-A minimal policy for reading existing inventory (no collection grants) is:
-
-```yaml
-version: 1
-networks: {}
-ssh:
-  enabled: false
-  hosts: {}
-retention:
-  stale_after_days: 14
-```
-
 Keep policy private (0600 in a 0700 directory). A missing file grants nothing;
 an existing empty, malformed, or unknown-key policy fails closed.
 
 ## Read existing inventory — no scan
 
-With Atlas installed/enabled in PROFILE, these commands only read stored data:
+With Atlas installed and enabled in PROFILE, these commands only read stored data:
 
 ```sh
 hermes -p PROFILE network-atlas status
@@ -63,35 +52,80 @@ hermes -p PROFILE network-atlas query --query-json '{"limit":10,"offset":0}'
 hermes -p PROFILE network-atlas map --format markdown
 ```
 
-Equivalent model tools are `network_query` with `{"limit":10,"offset":0}` and
-`network_map` with `{"format":"markdown","export":false}`. In that profile's
-Hermes session, `/network status` and `/network map markdown` use the same core.
-Query/map do not collect, schedule, initialize, or migrate the atlas. Map export
+In that profile's Hermes session, `/network status` and `/network map markdown`
+read the same knowledge. Model-tool examples are listed below.
+Query and map do not collect, schedule, initialize, or migrate the atlas. Map export
 is a separate opt-in write. Empty inventory is not proof that no devices exist.
 
 Read provenance and timestamps before interpreting results: operator assertions,
 direct observations, and explained inference remain distinct. Stale is age-based;
-unknown, partial, failed, or no-response evidence never means offline/deleted.
+unknown, partial, failed, or no-response evidence never means offline or deleted.
 Even fresh historical evidence does not prove reachability now. Device identity
 is not inferred from an IP or hostname alone; unknown topology stays unknown.
 See the [read-only workflow](docs/operator-guide.md#read-existing-knowledge) for
 pagination, unidentified responses, endpoint history, and shared-store queries.
 
-## Collection and safety
+## Collect your LAN, reconcile, then map
 
-Collection is explicit and policy-bound: `network_discover` selects a configured
-network/mode, and `network_inspect` selects an authorized SSH alias/device.
-They store immutable batches; `network_reconcile` applies eligible local batches
-separately. `network_check_endpoints` has its own opt-in policy and durable
-collect/project/readback route; it creates no device identity or service claim.
+Install iproute2 (the `ip` utility) for passive collection. In the selected home's
+`network-atlas/config.yaml`, use this policy, replacing `192.168.1.0/24` with your
+actual LAN's canonical network. It enables passive collection only, not scanning:
 
-Active IPv4 scopes have at most 256 addresses; time, concurrency, output, and
-pagination ceilings are code-enforced. No arbitrary ranges/commands, privilege
-grants, raw-socket fallback, service enumeration, or automatic deletion. TCP
-connects can consume slots and generate logs even without application payloads;
-port 4403 is refused. SSH requires existing keys/config and strict host-key checks.
-Same-UID code, installed executables, and operator SSH configuration are trusted,
-not sandboxed. Never publish private policy, SQLite/WAL, exports, or credentials.
+```yaml
+version: 1
+networks:
+  home:
+    cidr: 192.168.1.0/24
+    discovery:
+      passive: true
+      ping: false
+ssh:
+  enabled: false
+  hosts: {}
+```
+
+```sh
+hermes -p PROFILE network-atlas discover --network home --mode passive
+hermes -p PROFILE network-atlas reconcile --batch-id BATCH_ID
+hermes -p PROFILE network-atlas map --format markdown
+```
+
+Replace BATCH_ID with the returned `batch_id`. Discovery stores evidence;
+reconciliation applies it to inventory. Neighbor caches can be empty or partial,
+not a complete LAN census. IPs alone never establish device identity.
+
+## Model tools
+
+Replace DEVICE_ID and BATCH_ID with returned IDs; collection examples require
+matching local policy (the quick start enables only passive discovery).
+
+- `network_query` — read stored inventory, status or history; never discover.
+  Example: `{"limit":10,"offset":0}`.
+- `network_map` — render stored relations; export is an optional file write.
+  Example: `{"format":"markdown","export":false}`.
+- `network_discover` — store a bounded LAN observation batch without applying it.
+  Example: `{"network":"home","mode":"passive"}`.
+- `network_reconcile` — apply an eligible local LAN or SSH batch, with safe retries.
+  Example: `{"batch_id":"BATCH_ID"}`.
+- `network_inspect` — collect fixed Linux inventory from a configured SSH alias.
+  Example: `{"target":"lab-a"}`.
+- `network_check_endpoints` — collect and persist separately enabled TCP evidence.
+  Example: `{"network":"home"}`; no device or service identity is created.
+- `network_update` — persist explained inference, never operator facts or access.
+  Example: `{"device_id":"DEVICE_ID","field":"description","value":"Possible NAS","explanation":"Name suggests storage; unconfirmed"}`.
+
+## Security boundaries
+
+- Local subprocesses use fixed argv without a shell or caller commands; no sudo.
+- Time and output limits terminate and reap owned local process groups.
+- SSH uses existing keys and strict host-key checks, BatchMode, no PTY, forwarding,
+  LocalCommand or multiplex reuse. Local cleanup cannot guarantee remote cleanup.
+- Configured IPv4 scopes have at most 256 addresses; budgets are code-enforced.
+  No raw-socket fallback, service enumeration or absence-based deletion.
+- TCP connects can consume slots and generate logs without application payloads;
+  port 4403 is refused. Same-UID code, executables and SSH config are trusted.
+- Keep policy, SQLite, WAL, exports and credentials private; use a consistent SQLite
+  backup before upgrades. See the runbook for recovery without deleting history.
 
 ## Guides
 
