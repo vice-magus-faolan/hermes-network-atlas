@@ -19,26 +19,30 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Build and check native installers online with stock Hermes v0.22.2
-        run: docker build --file docker/validation.Dockerfile --tag hermes-network-atlas-tests:local .
-      - name: Validate, doctor and Atlas pytest without network
+      - name: Verify stock Hermes v0.21.7 and v0.22.2
         shell: bash
         run: |
-          name=atlas-tests-${{ github.run_id }}-${{ github.run_attempt }}
-          cleanup() {
-            rc=$?; trap - EXIT; failed=0
-            if docker container inspect "$name" >/dev/null 2>&1; then
-              docker stop --time 10 "$name" || failed=1
-            fi
-            remaining=$(docker container ls -aq --filter "label=atlas.test-run=$name") || failed=1
-            test -z "$remaining" || failed=1
-            for kind in volume network; do
-              remaining=$(docker "$kind" ls -q --filter "label=atlas.test-run=$name") || failed=1
-              test -z "$remaining" || failed=1
-            done
-            if [ "$failed" -ne 0 ]; then printf 'Owned-resource cleanup failed\n' >&2; [ "$rc" -ne 0 ] || rc=1; fi
-            exit "$rc"
-          }
-          trap cleanup EXIT
-          trap 'exit 130' HUP INT TERM
-          docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local
+          set -eu
+          for ref in v0.21.7 v0.22.2; do
+            (
+              name=atlas-tests-${{ github.run_id }}-${{ github.run_attempt }}-$ref
+              cleanup() {
+                rc=$?; trap - EXIT; failed=0
+                if docker container inspect "$name" >/dev/null 2>&1; then
+                  docker stop --time 10 "$name" || failed=1
+                fi
+                remaining=$(docker container ls -aq --filter "label=atlas.test-run=$name") || failed=1
+                test -z "$remaining" || failed=1
+                for kind in volume network; do
+                  remaining=$(docker "$kind" ls -q --filter "label=atlas.test-run=$name") || failed=1
+                  test -z "$remaining" || failed=1
+                done
+                if [ "$failed" -ne 0 ]; then printf 'Owned-resource cleanup failed\n' >&2; [ "$rc" -ne 0 ] || rc=1; fi
+                exit "$rc"
+              }
+              trap cleanup EXIT
+              trap 'exit 130' HUP INT TERM
+              docker build --build-arg HERMES_REF="$ref" --file docker/validation.Dockerfile --tag hermes-network-atlas-tests:local .
+              docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local
+            )
+          done

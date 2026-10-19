@@ -44,9 +44,9 @@ operator docs. Each stage requires same-card independent exact-SHA approval
 before the next starts; component approval is not main integration/publication.
 The reviewed-branch PR-only publication owner is separate. No main advancement,
 runtime promotion or live probes are implied. See host-discovery-policy.md.
-The current test path uses unmodified stock Hermes v0.22.2. Build the
-ordinary Docker image online, requiring native fresh-home enable/status and
-version-rejection tests during the build. Then run validate, doctor and all
+The current test path checks unmodified stock Hermes v0.21.7 and v0.22.2.
+Build each ordinary Docker image online, requiring native fresh-home enable/status
+during the build. Then run validate, doctor and all
 remaining pytest modules with Docker's network disabled. Offline installation
 is not an acceptance claim.
 Test helpers live under tests; no install/enable controller,

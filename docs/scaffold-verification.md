@@ -9,8 +9,9 @@ Historical artifact evidence remains in Git history, not a separate setup harnes
 ## Current verification
 
 Use stock supported Hermes (>=0.21.4), Python >=3.11,<3.15, and
-requirements-test.txt. The current Docker path selects official unmodified v0.22.2;
-the earlier v0.21.6 results remain baseline evidence, not a current version-gate test.
+requirements-test.txt. The current Docker path checks official unmodified v0.21.7
+and v0.22.2; CI requires both on Linux x86_64 and arm64. Platform coverage depends
+on successful exact-head jobs, not an earlier commit's results.
 If Hermes is not importable, NETWORK_ATLAS_HERMES_ROOT may point to its checkout.
 Pytest supplies scratch directories; no manual TMPDIR, native receipt or
 core-identity pin is required. Never pip-edit the production Hermes runtime.
@@ -39,8 +40,8 @@ surface, not cryptographic human attestation or a same-UID sandbox. Native code
 and the local operator are trusted. No test reads a live profile or atlas.
 
 Directory discovery/opt-in is not native enablement. The additional
-tests/test_compatibility.py exercises real CLI enable/status and incompatible
-released-manifest rejection on known non-root v0.22.2 in fresh synthetic homes
+tests/test_compatibility.py exercises real CLI enable/status on known non-root
+v0.21.7 and v0.22.2 in fresh synthetic homes
 during the required online image build. It is excluded only from the subsequent
 network-denied application suite; offline installation is not claimed.
 Three-alias collection/reconciliation/restart acceptance is synthetic, not live

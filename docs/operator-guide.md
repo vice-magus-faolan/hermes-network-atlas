@@ -6,9 +6,10 @@ Reading inventory does not require scan or SSH grants.
 ## Installation and support
 
 Use stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
-Tested with Hermes v0.22.2 on Linux x86_64; earlier v0.21.6 verification covered
-x86_64 and arm64. There is no Hermes upper bound, following its additive plugin
-contract, but other releases are not individually verified.
+CI checks Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64; check the selected
+revision's successful jobs for executed coverage. There is no Hermes upper bound,
+following its additive plugin contract, but other releases are not individually
+verified.
 The plugin declares `ruamel.yaml>=0.18.16,<0.19` as its extra runtime dependency.
 
 Replace PROFILE with an existing profile's name (`default` for the default

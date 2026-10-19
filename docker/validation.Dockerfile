@@ -4,7 +4,8 @@ FROM python:3.14.7-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git build-essential libffi-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 --branch v0.22.2 https://github.com/NousResearch/hermes-agent.git /opt/hermes
+ARG HERMES_REF=v0.22.2
+RUN git clone --depth 1 --branch "$HERMES_REF" https://github.com/NousResearch/hermes-agent.git /opt/hermes
 COPY requirements-test.txt /opt/requirements-test.txt
 # PM's frozen build uses the release's uv.lock and supported editable install.
 # Native installer checks use these image-owned PM tools and cache inputs.

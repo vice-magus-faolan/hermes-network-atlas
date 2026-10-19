@@ -1,8 +1,8 @@
 # Acceptance matrix
 
 Build docker/validation.Dockerfile online against unmodified stock Hermes
-v0.22.2, requiring the two native installer tests during the online build. Then
-run actual validate, doctor and all remaining pytest modules with Docker's
+v0.21.7 and v0.22.2, requiring native enable/empty status during each online build.
+Then run actual validate, doctor and all remaining pytest modules with Docker's
 network disabled. Offline installation is not claimed.
 The candidate needs fresh exact-head hosted evidence and independent review;
 old-SHA approval is not current acceptance. Product/security tests remain mandatory.
@@ -122,9 +122,8 @@ Issue #2 bounded-coverage regressions are discovered by the same pytest suite:
 
 - **A01 Native plugin**: stock validate/doctor, directory-plugin discovery, schemas,
   actual tool invocation and operator commands under a temporary Hermes home.
-  Native CLI enable/status runs online on known non-root v0.22.2 in a fresh home. The
-  shipped pre-#15 manifest is refused for requires_hermes on that same runtime,
-  with unchanged selection and no registered Atlas command or data directory.
+  Native CLI enable/status runs online on known non-root v0.21.7 and v0.22.2
+  in fresh homes, followed by the network-denied application/security suite.
 - **A02 Persistence**: reopen/fresh process retains IDs, facts, relations,
   observation history, access evidence, and map output without discovery.
 - **A03 Config/authorization**: malformed/out-of-policy CIDRs, excessive ranges,
@@ -178,8 +177,10 @@ Neither fixture success nor doctor proves a live host key, real reachability or
 provider chat behavior. Source placement plus native enablement is exercised;
 remote Git installation/security scanning remains a separate installer boundary.
 
-Other OS/OpenSSH/Hermes versions, GitHub CI execution, production installation,
-private seeding, LAN scans, actual SSH and gateway restart remain unperformed.
+Required CI checks both Hermes references on Linux x86_64 and arm64; exact-head
+success is required before claiming that platform coverage. Other OS/OpenSSH/Hermes
+versions, production installation, private seeding, LAN scans, actual SSH and
+gateway restart remain unperformed.
 SSH config/executables and same-UID code are trusted; time/SQLite cancellation is
 cooperative, and local cleanup cannot guarantee remote descendant cancellation.
 Two-file generated export replacement is not a cross-file atomic transaction.
