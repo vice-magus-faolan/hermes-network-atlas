@@ -270,7 +270,7 @@ A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
 A07/A08 discovery/reconciliation separately; Phase 3 documents A09 inspection
 evidence. A13 is indexed in acceptance-matrix.md, not proved by Phase 1 alone.
 
-The current Docker path uses unmodified official Hermes v0.21.6 and Python 3.14.7
+The current Docker path uses unmodified official Hermes v0.22.2 and Python 3.14.7
 within the declared compatibility range. It does not modify production dependencies.
 Exact-head hosted CI, other platforms, publication, target integration and live
 activation/scans/SSH remain unperformed. Complexity warns near 10 and requires

@@ -8,14 +8,17 @@ Historical artifact evidence remains in Git history, not a separate setup harnes
 
 ## Current verification
 
-Use stock supported Hermes (>=0.21.4,<0.22), Python >=3.11,<3.15, and
-requirements-test.txt. The Docker path selects official unmodified v0.21.6.
+Use stock supported Hermes (>=0.21.4), Python >=3.11,<3.15, and
+requirements-test.txt. The current Docker path selects official unmodified v0.22.2;
+the earlier v0.21.6 results remain baseline evidence, not a current version-gate test.
 If Hermes is not importable, NETWORK_ATLAS_HERMES_ROOT may point to its checkout.
 Pytest supplies scratch directories; no manual TMPDIR, native receipt or
 core-identity pin is required. Never pip-edit the production Hermes runtime.
 
     python3 -m pytest -q tests/test_boundaries.py tests/test_runtime.py
-    python3 -m pytest -q
+
+For the complete required online-installer/network-denied application split, use
+the Docker build/run commands in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 The native smoke copies only Atlas source into a fresh synthetic Hermes home,
 sets explicit plugins.enabled selection and uses actual discovery, registry,
@@ -35,9 +38,13 @@ The operator CLI is a trusted local route outside the model tool argument
 surface, not cryptographic human attestation or a same-UID sandbox. Native code
 and the local operator are trusted. No test reads a live profile or atlas.
 
-Directory discovery/opt-in is not the package-manager install/enable lifecycle.
+Directory discovery/opt-in is not native enablement. The additional
+tests/test_compatibility.py exercises real CLI enable/status and incompatible
+released-manifest rejection on known non-root v0.22.2 in fresh synthetic homes
+during the required online image build. It is excluded only from the subsequent
+network-denied application suite; offline installation is not claimed.
 Three-alias collection/reconciliation/restart acceptance is synthetic, not live
-reachability or provider chat evidence. Installation/enable, actual scans/SSH,
+reachability or provider chat evidence. Live installation/enable, actual scans/SSH,
 profile activation and gateway restart remain separately controlled effects.
 Current setup and residual checks are in [operator-guide.md](operator-guide.md)
 and [acceptance-matrix.md](acceptance-matrix.md). Independent exact-SHA review,

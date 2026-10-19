@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: network-atlas
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+kind: standalone
+description: Persistent provenance-aware atlas with bounded LAN discovery and authorized read-only SSH inspection.
+license: GPL-3.0-or-later
+requires_hermes: ">=0.21.4,<0.22"
+python_dependencies:
+  - "ruamel.yaml>=0.18.16,<0.19"
+provides_tools:
+  - network_query
+  - network_update
+  - network_map
+  - network_discover
+  - network_reconcile
+  - network_inspect
+  - network_check_endpoints
+provides_hooks: []

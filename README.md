@@ -8,24 +8,24 @@ administer infrastructure. No external database or background service is needed.
 
 ## Requirements and installation
 
-Requires stock Hermes **>=0.21.4,<0.22** and Python >=3.11,<3.15.
-Tested with Hermes v0.21.6 on Linux x86_64 and arm64. The current manifest refuses
-Hermes 0.22.x, including v0.22.2, with:
-`Plugin 'network-atlas' requires hermes >=0.21.4,<0.22, running 0.22.2`.
-[Issue #15](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/15)
-tracks newer-Hermes compatibility and the CI runtime-version detection defect.
+Requires stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
+Tested with Hermes v0.22.2 on Linux x86_64; earlier v0.21.6 verification covered
+x86_64 and arm64. The manifest follows Hermes's additive plugin contract without
+an upper bound; other releases are not individually verified.
 
-Replace PROFILE with your existing profile (`default` for the default profile)
-and REVIEWED_SHA with the Atlas revision's immutable 40-character commit:
+Replace PROFILE with your existing profile (`default` for the default profile).
+Use the first column from `git ls-remote` below as COMMIT_SHA, or copy the full
+40-character commit from the revision you reviewed on GitHub:
 
 ```sh
-hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref REVIEWED_SHA --no-enable
+git ls-remote https://github.com/vice-magus-faolan/hermes-network-atlas.git refs/heads/main
+hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
 hermes -p PROFILE plugins enable network-atlas
 hermes -p PROFILE plugins show network-atlas
 ```
 
 Installation scans the plugin and resolves its declared dependency. Enabling
-changes the selected profile's plugin selection. Hermes 0.21.6 can hot-reload a
+changes the selected profile's plugin selection. Hermes can hot-reload a
 responding gateway's commands; Atlas's Python tools appear in a new session.
 If no gateway responds, follow the CLI's `hermes gateway restart` hint.
 

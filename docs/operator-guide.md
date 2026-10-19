@@ -5,21 +5,22 @@ Reading inventory does not require scan or SSH grants.
 
 ## Installation and support
 
-Use stock Hermes **>=0.21.4,<0.22** and Python >=3.11,<3.15.
-Tested with Hermes v0.21.6 on Linux x86_64 and arm64. Hermes 0.22.x is refused by
-the current manifest, for example:
-`Plugin 'network-atlas' requires hermes >=0.21.4,<0.22, running 0.22.2`.
-[Issue #15](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/15)
-tracks newer-Hermes compatibility and the CI runtime-version detection defect.
+Use stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
+Tested with Hermes v0.22.2 on Linux x86_64; earlier v0.21.6 verification covered
+x86_64 and arm64. There is no Hermes upper bound, following its additive plugin
+contract, but other releases are not individually verified.
 The plugin declares `ruamel.yaml>=0.18.16,<0.19` as its extra runtime dependency.
 
 Replace PROFILE with an existing profile's name (`default` for the default
-profile), REVIEWED_SHA with an immutable 40-character Atlas commit, and uppercase
-ID placeholders with returned IDs. `-p` selects the profile for each invocation.
+profile), COMMIT_SHA with an immutable 40-character Atlas commit, and uppercase
+ID placeholders with returned IDs. Use the first column of `git ls-remote` below
+for current main, or copy the full commit from a revision reviewed on GitHub.
+`-p` selects the profile for each invocation.
 
 ```sh
 hermes profile list
-hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref REVIEWED_SHA --no-enable
+git ls-remote https://github.com/vice-magus-faolan/hermes-network-atlas.git refs/heads/main
+hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
 hermes -p PROFILE plugins enable network-atlas
 hermes -p PROFILE plugins show network-atlas
 hermes -p PROFILE network-atlas --help
@@ -27,7 +28,7 @@ hermes -p PROFILE network-atlas --help
 
 Install scans the artifact and resolves dependencies, which may need network
 access. Diagnose resolver or security failures rather than bypassing them.
-Enable changes the selected profile's plugin selection. Hermes 0.21.6 attempts
+Enable changes the selected profile's plugin selection. Hermes attempts
 to hot-reload a responding gateway: slash commands can become available there
 immediately, while Atlas's Python tools wait for a new session. If no gateway
 responds, the CLI prints the fallback `hermes gateway restart` hint. A fresh CLI
