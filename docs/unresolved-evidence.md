@@ -23,8 +23,9 @@ accepted for this view. Filters intersect. No device ID is required.
   default is that ceiling. Booleans/fractions/coercions fail.
 - `offset`: integer 0–10000, or the lower current `limits.page_offset` ceiling;
   default 0. Advance offset by the returned page size while `has_more=true`.
-- `batch_id` is rejected on the other views. Other inventory/history filters are
-  rejected on this view. No SQL, paths, commands, source, policy or grants inputs.
+- `batch_id` is also supported by the separate endpoint view, not
+  devices/status/history. Other inventory/history filters are rejected on this
+  view. No SQL, paths, commands, source, policy or grants inputs.
 
 Ordering is `observed_at DESC, id ASC`; immutable unique IDs break timestamp ties.
 Fetch limit+1 before shaping results, return at most limit, and set `has_more`
@@ -154,12 +155,10 @@ invented owners/names/types/links or access:
 
 The model equivalent is `network_query` with the same JSON arguments. The slash
 inventory show command still requires a canonical ID; use the tool or query CLI
-for unresolved evidence. Examples use synthetic addresses, not scan permission.
+for unresolved evidence. Examples use synthetic addresses.
 Filter interpretation of returned items by identity_state and
 historical_responder_evidence to answer “which responding addresses remain
 unidentified”; do not count all originals as unresolved responders.
 
-Executable evidence is `tests/test_unresolved.py::UnresolvedEvidenceTests`, plus
-real native schema/dispatch/CLI and restart comparisons in runtime smoke and
-cumulative acceptance. All tests are synthetic and network-denied. Live behavior,
-publication and deployment are not proved by these fixtures.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for isolated behavioral tests and
+[SECURITY.md](../SECURITY.md) for the trust model and verification limits.

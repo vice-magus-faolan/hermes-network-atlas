@@ -1,21 +1,17 @@
-# Issue #6 host-discovery contract and bounded transport
+# Host-discovery policy and bounded transport
 
-This is a narrow Phase 2 amendment, not service inventory or administration.
-The original charter remains intact. Stage 1 validated policy and implemented a
-packet-free ICMP capability diagnostic, refusing new transport before effects.
-Stage 2 implements the independently approved datagram/connect contract below.
-Passive requests and legacy TCP 80/443 discovery are unchanged. Each candidate
-still needs genuine native validation, independent exact-artifact review and
-separate delivery authorization; synthetic transport checks are not live validation.
+Host discovery records address responses, not services or device identity.
+Passive collection and legacy TCP 80/443 discovery remain available alongside
+explicitly enabled ICMP/TCP socket methods.
 
 ## Operator authority and schema
 
-Configuration version 1 adds only these network-local keys:
+Configuration version 1 supports these network-local keys:
 
     networks.<name>.discovery.icmp_echo: false
     networks.<name>.discovery.tcp_ports: [80, 443]
 
-`ping` remains the explicit active-discovery gate; passive permission does not
+`ping` is the explicit active-discovery setting; passive permission does not
 imply active permission. `icmp_echo` is a strict boolean, default false.
 `tcp_ports` is a YAML/JSON list of at most **4** distinct strict integers in
 1..65535, default [80, 443]. Strings, booleans, floats, ranges, null, mapping,
@@ -29,8 +25,8 @@ IPv6 ICMP/active discovery is refused; IPv6 remains passive/storage-only.
 TCP **4403** (Meshtastic) is a code-enforced sensitive exclusion, rejected even
 in an operator list. There is no exclusion override, helper path, capability
 selector, payload, rate, probe option or method argument on model/CLI surfaces.
-Any exception requires a new human scope decision. No other port is inferred
-from discoveries, stored facts, aliases, services or previous success.
+No other port is inferred from discoveries, stored facts, aliases, services or
+previous success.
 
 For example, synthetic `192.0.2.0/29` policy may select `ping: true`,
 `icmp_echo: true`, `tcp_ports: [80, 443, 2222, 22000]`. 2222 and optional 22000
@@ -42,21 +38,22 @@ transfer permission. Legacy files omit the new keys and retain exactly the
 existing Nmap TCP 80/443 request with no implicit ICMP or extra ports. Old
 binaries reject these additive config keys; deliberately update readers first.
 
-## ICMP feasibility decision: datagram sockets, no helper fallback
+## ICMP datagram sockets and capability diagnostics
 
-The permitted implementation uses Linux `AF_INET/SOCK_DGRAM/IPPROTO_ICMP` echo
+Atlas uses Linux `AF_INET/SOCK_DGRAM/IPPROTO_ICMP` echo
 sockets only, under the process's already-existing kernel/security permission.
 No raw sockets, new capabilities, sudo, sysctl/kernel/firewall changes, capability
 installer, execution with an elevated file-owner identity or Nmap `-PE` fallback.
-An unavailable ICMP method must not suppress a permitted TCP method. ICMP-only unavailable collection is an
-honest failed/partial attempt, not a reason to weaken permission.
+An unavailable ICMP method does not suppress a permitted TCP method. ICMP-only
+unavailable collection is an honest failed/partial attempt, not a reason to weaken
+permission.
 
-`host_discovery.icmp_capability(network, deadline)` is internal, not a registered
-tool. When disabled it opens nothing. Unsupported platform and expired budget
+The internal packet-free capability diagnostic is not a registered tool. When
+disabled it opens nothing. Unsupported platform and expired budget
 also open nothing. On Linux it opens and immediately closes exactly one ICMP
 datagram socket, without bind/connect/send/receive/DNS. It does not read profiles,
 `/proc` permission settings, executable paths or live network state. Tests mock
-this boundary; acceptance never opens a real echo socket.
+this boundary; tests never open a real echo socket.
 
 The diagnostic reports:
 
@@ -79,33 +76,9 @@ rather than caching open success as authority. Diagnostics never retain raw OS
 error strings. Interruption propagates and context-manager closure owns cleanup.
 No dependency on an external ping executable is introduced.
 
-### Assessed and rejected OS helper route
+## Combined budgets and evidence
 
-An already-installed iputils ping may carry CAP_NET_RAW or the executable's
-owner-identity mode bit (04000), which changes the effective user ID on execution.
-Either privilege mechanism is outside this contract. The helper can fall back
-from datagram to raw sockets when datagram permission is denied.
-Finding a binary, checking its version or adding Nmap -PE proves neither effective
-permission nor that privilege stays within this contract. This lane therefore
-**does not rely on or execute a capability-bearing helper**. Independent review
-must approve any future helper reliance separately; no helper is enabled here.
-
-The assessed narrow iputils-only argv would be exactly
-`(<reviewed-absolute-ping>, -4, -n, -q, -c, 1, -s, 0, -W, <T>, -w, <T>, <numeric-IPv4>)`,
-with shell=False, null stdin, a sanitized code-owned environment and T a positive
-integer no greater than command/host/remaining-operation time. This is an
-assessment, **not approved executable argv**: zero data bytes avoid ping's normal
-56-byte payload, but fixed flags do not prevent iputils raw-socket fallback.
-A portable BusyBox/other ping cannot inherit this argv/permission proof. A future
-helper proposal needs exact executable/ownership/mode/capability/version trust,
-no same-UID path substitution claim, audited fallback behavior, deterministic
-exit/output parsing, owned process-group cleanup and independent approval. It
-must never silently route around a denied mechanism. None is needed by the
-selected datagram-only implementation.
-
-## Stage 2 combined accounting and evidence contract
-
-Legacy default policy retains the reviewed serial Nmap /28 argv in
+Legacy default policy uses the serial Nmap /28 argv in
 [local-discovery.md](local-discovery.md), including existing ARP caveats. Opt-in
 multi-method policy uses code-owned numeric IPv4 destinations from the selected
 validated CIDR, direct TCP connect attempts on the validated tuple and ordinary
@@ -172,15 +145,13 @@ never qualify absence. A method success with no response is a completed check,
 not a positive host. Failed chunks cannot attest per-address packets. Whole-batch
 completion and exact coverage must fail conservatively if any enabled method is
 unavailable, timed out, excluded or not started; positive evidence from another
-method survives. Partial/failed batches remain absence-ineligible. Stage 2 must
-validate the worst-case aggregate+method+coverage probe count against the lowered
-observation ceiling before transport and enforce aggregate observation limits.
+method survives. Partial/failed batches remain absence-ineligible. The worst-case
+aggregate, method and coverage probe count is checked against the lowered observation
+ceiling before transport; aggregate observation limits also apply.
 IP-only responses do not create devices, refresh an assumed IP owner, infer
 access or manufacture topology. Original/later unresolved lineage stays intact.
 
-## Evidence and sources
-
-### Counts, transmission evidence and residual blindness
+## Counts, transmission evidence and limitations
 
 `address_count` counts aggregate ping_<index> records, including excluded and
 not-started addresses. `address_outcome_counts.success` counts completed aggregate
@@ -209,59 +180,22 @@ the known single-client radio transport risk; it is not an assurance that every
 other TCP port is harmless. No Syncthing, SSH, Meshtastic, service or identity is
 inferred from port numbers or replies. No UDP discovery is included.
 
-### Future live validation recipe — separate authorization required
+## Operating safely
 
-This is an unperformed plan, not a command to run during tests or permission to
-touch a real policy/store. A future operator must approve the exact reviewed SHA,
-profile, named network/CIDR, methods/ports, single-attempt bounds and private
-evidence destination first. Begin with an isolated empty atlas and a small
-operator-approved scope; exclude connection-sensitive endpoints as well as 4403.
-Do not use production state as an acceptance fixture or widen to routes/VPNs.
+Choose the profile, named network/CIDR and methods/ports deliberately before
+collection, excluding connection-sensitive endpoints. Begin with a small scope
+and inspect the returned batch's outcomes, original times, exclusions and
+not-started work. Read stored evidence before repeating collection. Reconciliation
+is a separate write; it does not resolve an identity from an IP alone. Keep real
+policy, addresses and evidence private. The [operator runbook](operator-guide.md)
+contains the collection commands; [SECURITY.md](../SECURITY.md) covers trust and
+verification limits, and [CONTRIBUTING.md](../CONTRIBUTING.md) covers tests.
 
-1. Record the approved policy and ordinary-user runtime; do not install a helper,
-   grant capabilities, change permissions, kernel settings or firewall rules.
-   A packet-free echo-socket diagnostic may show only unverified or unavailable.
-   A preinstalled ping helper's privilege cannot be substituted for echo permission.
-2. Only after approval, invoke one `hermes network-atlas discover --network
-   <approved-name> --mode ping`. A permitted send/reply check is a live effect,
-   unlike the packet-free diagnostic. Stop on denial or unexpected target effects;
-   never retry via raw/helper/elevation or a different unauthorized port.
-3. Read the returned exact batch and status/unresolved views without rediscovery.
-   Compare requested methods with outcomes, diagnostics, original UTC times,
-   response versus check counts, exclusions and not-started work. Do not claim
-   a packet was sent from a method name alone. Do not infer absence from partial
-   coverage or identity/access/service from an address response.
-4. Reopen only that isolated atlas in a fresh process and compare exact batch and
-   evidence. Reconciliation is a separate explicit local write; it must preserve
-   unresolved IP-only identities, older evidence and idempotent results.
-5. Keep real addresses, policy, paths and batch IDs private. Publish only a
-   redacted outcome/limitation summary after operator consent. Broader rollout,
-   helper changes, firewall changes and production migration need new authority.
+## References
 
-Stage-1 regressions are in `tests/test_host_discovery_policy.py`, required by the
-canonical verifier alongside all original chunk regressions. Capability tests
-are deterministic socket mocks with no raw sockets, helper execution or packets.
-The isolated native directory-plugin fixture remains mandatory; schema/unit
-checks do not substitute for native registration/dispatch/restart acceptance.
-The native harness exercises invalid policy refusal through real tool/slash/CLI,
-and nine synthetic method scenarios retain evidence on all three routes: ICMP
-responses with filtered web ports, true ICMP-only, TCP 2222-only and 22000-only,
-mixed three/five methods, denied/unsupported ICMP with TCP positives and all-
-filtered collection. The restarted process reads the same batch/port/time/identity evidence
-without transport. Actual native registration is never replaced by socket mocks.
-`tests/test_host_acceptance.py` adds the every-method/every-concurrency combined
-budget matrix, sparse tail response by each of five methods and default all-
-filtered exhaustion control, sensitive destinations, hostile echo fields/bytes,
-shared receive exhaustion, deadline-before-send/unregister cleanup and exact
-legacy/new lineage with shared read visibility but no application authority.
-Pytest discovers these tests alongside all prior chunk, unresolved and
-malformed-receipt controls; CI runs the same `python3 -m pytest -q` suite.
-
-References assessed for this decision:
 - https://man7.org/linux/man-pages/man7/icmp.7.html (Linux echo socket permissions)
 - https://man7.org/linux/man-pages/man8/ping.8.html (iputils payload, flags and privileges)
 - https://nmap.org/book/host-discovery-controls.html (explicit probe/ARP behavior)
 
-This design is feasible where echo datagrams are already permitted; unavailable
-elsewhere is an accepted diagnostic, not a deployment privilege request. No live
-capability, packets, policy, atlas, privileges or runtime changes were exercised.
+Echo datagrams work only where existing OS permissions permit them. An unavailable
+diagnostic is not a request to change privileges or firewall/kernel settings.

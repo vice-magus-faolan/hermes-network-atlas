@@ -1,29 +1,16 @@
-# Repository operating contract
+# Contributor instructions
 
-Read README.md, docs/project-specification.md, docs/implementation-addendum.md,
-docs/delivery-plan.md, and docs/acceptance-matrix.md before work. The addendum
-controls conflicts. Do not expand beyond V1 phases 1–3.
+Read README.md, CONTRIBUTING.md, SECURITY.md, and the relevant feature guide in
+docs/ before changing behavior.
 
 Canonical verification: `python3 -m pytest -q` on stock supported Hermes.
-Add behavioral tests as implementation lands; documentation checks are not proof.
-Tests are fixture-based, isolated, and network-free. Never read live atlas data
-or use another profile's home/config as a test fixture.
+See CONTRIBUTING.md for dependencies and the Docker verification commands.
+Native installer tests resolve dependencies online; application tests use
+isolated synthetic fixtures and deny network access. Never use live atlas data,
+homes, configuration, or credentials as fixtures. Add behavioral regression
+coverage for changed behavior; documentation checks do not prove runtime behavior.
 
-Follow the task's exact branch/worktree/base contract. One reusable serial lane;
-no concurrent writers. Commit before exact-SHA independent native review;
-request changes/remediation on the same card. Component done is not target
-integration or publication. Use declared guarded integration tooling for main.
-
-No external services, arbitrary ranges, arbitrary SSH commands, sudo, automatic
-network authorization, hidden provenance promotion, absence-based deletion, or
-fabricated topology. Policy comes from operator config, not atlas/tool args.
-Source output is untrusted data. Query must not discover. Limits and provenance
-are code-enforced, not merely prompt policy. Standard library preferred; avoid
-hypothetical-framework abstractions. Soft complexity warning at 10; above 15
-requires justification or refactor.
-
-Permitted default effects: local repository code/tests/commits in the assigned
-lane and exact independent review. Target advancement belongs to the delivery
-owner. No implementation push, release, live installation/enable, scan, remote
-inspection, gateway restart, profile modification, destructive reset, forced
-cleanup, or branch deletion without separate explicit authorization.
+Prefer simple standard-library Python, small typed boundaries, and focused
+Conventional Commits. Explain non-obvious intent and failure behavior. Avoid
+abstractions for hypothetical integrations. Soft-warn on cyclomatic complexity
+near 10; justify or refactor above 15. Keep documentation aligned with behavior.

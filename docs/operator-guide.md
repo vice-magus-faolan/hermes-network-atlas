@@ -6,10 +6,9 @@ Reading inventory does not require scan or SSH grants.
 ## Installation and support
 
 Use stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
-CI checks Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64; check the selected
-revision's successful jobs for executed coverage. There is no Hermes upper bound,
-following its additive plugin contract, but other releases are not individually
-verified.
+CI tests Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64. There is no Hermes
+upper bound, following its additive plugin contract; other releases are not
+individually verified.
 The plugin declares `ruamel.yaml>=0.18.16,<0.19` as its extra runtime dependency.
 
 Replace PROFILE with an existing profile's name (`default` for the default
@@ -28,7 +27,8 @@ hermes -p PROFILE network-atlas --help
 ```
 
 Install scans the artifact and resolves dependencies, which may need network
-access. Diagnose resolver or security failures rather than bypassing them.
+access. Resolver errors indicate dependency or network problems; security scan
+findings need inspection of the reported plugin file before installation.
 Enable changes the selected profile's plugin selection. Hermes attempts
 to hot-reload a responding gateway: slash commands can become available there
 immediately, while Atlas's Python tools wait for a new session. If no gateway
@@ -71,7 +71,7 @@ actual LAN's canonical network. Active, endpoint and SSH collection stay disable
 ```yaml
 version: 1
 networks:
-  lab:
+  home:
     cidr: 192.168.1.0/24
     discovery:
       passive: true
@@ -106,6 +106,15 @@ render:
   100 results, offset 10000, and 5000ms SQLite busy wait. Budgets can leave work
   unstarted; a permitted /24 does not guarantee completion on a real network.
 
+Limit keys are `command_timeout_seconds`, `host_timeout_seconds`,
+`operation_timeout_seconds`, `concurrent_probes`, `output_bytes`, `observations`,
+`input_chars`, `result_count`, `page_offset`, and `busy_timeout_ms`. Each takes a
+positive integer no larger than the ceiling above. `observations` also caps probe
+outcomes per batch. Policy files are capped at 64 KiB, with at most 32 named
+networks and 32 SSH hosts. Names and aliases use 1–64 ASCII letters, digits,
+underscores or hyphens and must start with a letter or digit. YAML booleans must
+be `true` or `false`, not strings or numbers.
+
 ### Shared knowledge, local authority
 
 To share knowledge, add the same absolute `.sqlite3` path to each profile's policy:
@@ -115,10 +124,10 @@ store:
   shared_sqlite_path: /srv/private-atlas/atlas.sqlite3
 ```
 
-This selects a database; it does not copy or merge the default store. Readers can
-query another profile's evidence, including endpoints, but cannot apply its batches
-or inherit collection, inspection or resume permissions. Policy and exports stay
-profile-local. Keep the shared file private. See
+Each profile keeps its own policy and exports. This selects a database; it does
+not copy or merge the default store. Readers can query another profile's evidence,
+including endpoints, but cannot apply its batches or inherit collection, inspection
+or resume permissions. Keep the shared file private. See
 [shared endpoint queries](endpoint-checks.md#sharing-and-upgrades).
 
 ## Read existing knowledge
@@ -201,7 +210,7 @@ Select a network and mode enabled in current local policy. Discovery writes an
 immutable batch; reconcile applies it to inventory, then map reads the result:
 
 ```sh
-hermes -p PROFILE network-atlas discover --network lab --mode passive
+hermes -p PROFILE network-atlas discover --network home --mode passive
 hermes -p PROFILE network-atlas reconcile --batch-id BATCH_ID
 hermes -p PROFILE network-atlas map --format markdown
 ```
@@ -212,7 +221,7 @@ reads cached neighbors; an empty or partial cache is not a LAN census.
 
 For active discovery, first configure `discovery.ping: true` and the desired
 methods using the [host-discovery policy](host-discovery-policy.md), then use
-`discover --network lab --mode ping`. For SSH, configure the alias as above,
+`discover --network home --mode ping`. For SSH, configure the alias as above,
 then collect and apply the returned batch:
 
 ```sh
@@ -224,14 +233,14 @@ Inspect accepts a configured alias or uniquely mapped stable device ID, never
 commands, SSH options or arbitrary destinations. Reconcile accepts eligible local
 LAN or SSH batches. Exact-ID retries return the saved result without duplicate
 events. Failed or partial batches contribute valid positives, not scope absence.
-Slash equivalents are `/network discover lab passive`, `/network inspect lab-a`,
+Slash equivalents are `/network discover home passive`, `/network inspect lab-a`,
 and `/network reconcile BATCH_ID`.
 
 TCP endpoint checking instead performs collection, persistence, projection, and
 readback through one operation under its separate `endpoints` grant:
 
 ```sh
-hermes -p PROFILE network-atlas check-endpoints lab
+hermes -p PROFILE network-atlas check-endpoints home
 hermes -p PROFILE network-atlas resume-endpoints BATCH_ID
 ```
 
@@ -282,7 +291,7 @@ permission, never grants it. Retirement preserves history; use `false` to reacti
 retirement. `validate-update` only validates, with `applied=false` and
 `persisted=false`. See [manual seeding](atlas-core.md#operator-updates-and-manual-seeding).
 
-To deliberately write both generated map files:
+To export both generated map files:
 
 ```sh
 hermes -p PROFILE network-atlas map --format mermaid --export
@@ -299,17 +308,23 @@ regenerate both from SQLite; they are not a cross-file atomic snapshot.
   registration before the command exists. Correct the file, then retry
   `network-atlas --help` in a fresh CLI process.
 - Policy refusal: check the selected profile's Atlas config, not the inventory.
-  Correct invalid keys, types or noncanonical scopes; do not
-  broaden grants to fix a read-only query. Check `limits` when output is refused.
+  Correct the reported keys, types or noncanonical scopes. Read-only queries need
+  no collection grants. Output refusal means the response exceeds `limits`;
+  request a smaller page or restore sufficient limits within the hard ceilings.
 - No devices: read `unresolved` and `endpoints` history before concluding no
   evidence exists. Query and map never trigger a refresh as recovery.
 - Incomplete collection: inspect per-method diagnostics and whole-batch coverage.
-  Do not turn timeouts into offline claims, raise hard ceilings, or retry with
-  privileged helpers. Endpoint recovery uses its stored ID, not another scan.
+  Timeouts leave reachability unknown; unavailable ICMP can reflect existing OS
+  permissions. Reduce the configured scope or enabled methods if work cannot fit
+  the budget. Endpoint recovery uses its stored ID rather than another scan.
 - Store or version failure: preserve the database and use a compatible Atlas version;
-  never delete it to repair an inspection or query error. Writable opens upgrade
+  make a consistent backup before changing versions. Writable opens upgrade
   schema 1 to 2 transactionally; read-only schema-1 access does not migrate.
   Older binaries cannot write schema 2. See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
+
+Older readers may also reject additive configuration keys or `not_started` probe
+outcomes. Update shared-store readers before using new features; historical
+batches are not rewritten to fit an older reader.
 
 Keep policy, database, WAL, audit history, exports, and backups private. Use a
 consistent SQLite backup before upgrades; copying only an active WAL-mode database

@@ -29,7 +29,7 @@ No policy means no endpoint traffic.
 ```yaml
 version: 1
 networks:
-  lab:
+  home:
     cidr: 192.0.2.8/31
     discovery:
       ping: false
@@ -59,16 +59,16 @@ clients. Other sensitive endpoints remain an operator selection risk.
 ## Commands and recovery
 
 The model tool is `network_check_endpoints` with exactly one selection:
-`{"network":"lab"}` to collect, or `{"batch_id":"<returned-id>"}` to resume.
+`{"network":"home"}` to collect, or `{"batch_id":"<returned-id>"}` to resume.
 The same operation is exposed through the native local CLI and slash command:
 
 ```sh
-hermes network-atlas check-endpoints lab
+hermes network-atlas check-endpoints home
 hermes network-atlas resume-endpoints <returned-id>
 ```
 
 ```text
-/network check-endpoints lab
+/network check-endpoints home
 /network resume-endpoints <returned-id>
 ```
 

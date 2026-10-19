@@ -9,10 +9,9 @@ administer infrastructure. No external database or background service is needed.
 ## Requirements and installation
 
 Requires stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
-CI checks Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64; check the selected
-revision's successful jobs for executed coverage. The manifest follows Hermes's
-additive plugin contract without an upper bound; other releases are not
-individually verified.
+CI tests Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64.
+The manifest follows Hermes's additive plugin contract without an upper bound;
+other releases are not individually verified.
 
 Replace PROFILE with your existing profile (`default` for the default profile).
 Use the first column from `git ls-remote` below as COMMIT_SHA, or copy the full
@@ -38,7 +37,7 @@ directory. Its `network-atlas/config.yaml` is operator policy;
 `~/.hermes`; named profiles normally use `~/.hermes/profiles/NAME`.
 An explicit `HERMES_HOME` can override the home. See
 [profile-local configuration](docs/operator-guide.md#profile-local-configuration)
-before editing anything. An optional shared database never shares permissions.
+before editing anything. Profiles can share a database; each keeps its own policy.
 
 Keep policy private (0600 in a 0700 directory). A missing file grants nothing;
 an existing empty, malformed, or unknown-key policy fails closed.
@@ -93,7 +92,7 @@ hermes -p PROFILE network-atlas map --format markdown
 
 Replace BATCH_ID with the returned `batch_id`. Discovery stores evidence;
 reconciliation applies it to inventory. Neighbor caches can be empty or partial,
-not a complete LAN census. IPs alone never establish device identity.
+not a complete LAN census.
 
 ## Model tools
 
