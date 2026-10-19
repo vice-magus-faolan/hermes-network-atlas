@@ -30,13 +30,18 @@ class CumulativeHostTests(unittest.TestCase):
                                              limits={'concurrent_probes': concurrency, 'host_timeout_seconds': 1,
                                                      'operation_timeout_seconds': 2})
                         fixture = SyntheticSockets(lambda *_: state)
+                        # Reproduce the fractional-origin reserve-boundary rounding regression.
+                        fixture.clock.now = 254.4186405
                         beginnings = []
                         original = transport.begin
                         def begin(network, address, port, deadline):
                             beginnings.append((address, fixture.clock.now, deadline))
                             return original(network, address, port, deadline)
                         started = fixture.clock.now
-                        with patch.object(transport, 'begin', begin):
+                        # Persistence must use the same synthetic deadline clock as transport.
+                        with patch.object(transport, 'begin', begin), \
+                                patch.object(storage, 'time', fixture.clock), \
+                                patch('atlas_test_plugin.batches.time', fixture.clock):
                             result = self.collect(policy, fixture)
                         self.assertLessEqual(fixture.clock.now - started, 2)
                         self.assertLessEqual(fixture.peak, concurrency)
@@ -48,7 +53,8 @@ class CumulativeHostTests(unittest.TestCase):
                         for address, now, deadline in beginnings:
                             first.setdefault(address, now)
                             self.assertLessEqual(deadline, first[address] + 1)
-                            self.assertLessEqual(deadline, started + 1.5)  # persistence reserve
+                            # Subtract reserve after adding the operation timeout, as the collector does.
+                            self.assertLessEqual(deadline, (started + 2) - 0.5)
                         if state == 'filtered':
                             self.assertEqual(self.evidence(policy, result), [])
                             self.assertFalse(reconcile.reconcile(policy, {'batch_id': result['batch_id']})['missing'])

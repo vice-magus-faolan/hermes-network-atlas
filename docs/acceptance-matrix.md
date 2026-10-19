@@ -1,7 +1,9 @@
 # Acceptance matrix
 
 Build docker/validation.Dockerfile online against unmodified stock Hermes
-v0.21.6, then run actual validate, doctor and pytest with Docker's network disabled.
+v0.21.7 and v0.22.2, requiring native enable/empty status during each online build.
+Then run actual validate, doctor and all remaining pytest modules with Docker's
+network disabled. Offline installation is not claimed.
 The candidate needs fresh exact-head hosted evidence and independent review;
 old-SHA approval is not current acceptance. Product/security tests remain mandatory.
 Superseded core-identity, admission and acquisition/controller tests are removed
@@ -10,8 +12,10 @@ with their harness. Historical experiments remain recoverable in Git history.
 The requirements below map to cumulative synthetic tests, not live validation
 or self approval. Run `python3 -m pytest -q` with the supported dependencies in
 [operator-guide.md](operator-guide.md). Missing Hermes fails rather than skips.
-Pytest supplies scratch fixtures and discovers all test modules; CI uses the same
-suite. No native receipt, manually set TMPDIR or platform/CI predicate is required.
+Pytest supplies scratch fixtures; Docker/CI executes tests/test_compatibility.py
+online once and excludes only that module from the network-denied application
+suite. Both phases are required. No native receipt, manually set TMPDIR or
+platform/CI predicate is required.
 
 ## Executable evidence index
 
@@ -20,7 +24,7 @@ not a test of documentation wording or file inventory.
 
 | ID | Exact executable evidence | Operator/contract documentation |
 | --- | --- | --- |
-| A01 | `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection`; `tests/test_runtime.py::NativeRuntimeTests::test_actual_native_discovery_schemas_tools_commands_and_operator_split` | `docs/operator-guide.md`; `plugin.yaml`; `tests/runtime_smoke.py` |
+| A01 | `tests/test_compatibility.py::NativeCompatibilityTests`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection`; `tests/test_runtime.py::NativeRuntimeTests::test_actual_native_discovery_schemas_tools_commands_and_operator_split` | `docs/operator-guide.md`; `plugin.yaml`; `tests/runtime_smoke.py` |
 | A02 | `tests/test_core.py::PersistenceTests::test_fresh_process_reopen_preserves_manual_seed_query_history_access_and_map`; `tests/test_acceptance.py::CumulativeAcceptanceTests::test_three_aliases_and_fresh_process_without_collection` | `docs/atlas-core.md`; `docs/operator-guide.md` |
 | A03 | `tests/test_boundaries.py::PolicyTests::test_cidr_scope_and_ipv6_active_boundaries`; `tests/test_boundaries.py::PolicyTests::test_each_limit_rejects_zero_negative_bool_fraction_nan_and_over_ceiling`; `tests/test_inspection.py::InspectionTests::test_exact_schema_and_request_boundary_before_any_effect` | `docs/contract-decisions.md`; `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
 | A04 | `tests/test_core.py::IdentityAndProvenanceTests::test_ip_hostname_never_merge_and_mac_anchors_interface_only`; `tests/test_discovery_remediation.py::LocalCollisionTests::test_duplicate_mac_local_rows_both_orders_are_unresolved`; `tests/test_inspection_extra.py::ExtraInspectionTests::test_duplicate_remote_macs_and_foreign_interface_preserved` | `docs/contract-decisions.md`; `docs/local-discovery.md`; `docs/authorized-ssh-inspection.md` |
@@ -118,7 +122,8 @@ Issue #2 bounded-coverage regressions are discovered by the same pytest suite:
 
 - **A01 Native plugin**: stock validate/doctor, directory-plugin discovery, schemas,
   actual tool invocation and operator commands under a temporary Hermes home.
-  Package-manager install/enable is not exercised by this source test path.
+  Native CLI enable/status runs online on known non-root v0.21.7 and v0.22.2
+  in fresh homes, followed by the network-denied application/security suite.
 - **A02 Persistence**: reopen/fresh process retains IDs, facts, relations,
   observation history, access evidence, and map output without discovery.
 - **A03 Config/authorization**: malformed/out-of-policy CIDRs, excessive ranges,
@@ -169,11 +174,13 @@ pytest-owned isolated homes and non-forwarding fixture executables/sockets, not
 the operator's config or atlas. The Python audit tripwire is regression protection,
 not an OS sandbox; Docker's --network none independently isolates product runs.
 Neither fixture success nor doctor proves a live host key, real reachability or
-provider chat behavior. Package-manager install/enable remains separate from
-directory registration and is not a prerequisite for this test path.
+provider chat behavior. Source placement plus native enablement is exercised;
+remote Git installation/security scanning remains a separate installer boundary.
 
-Other OS/OpenSSH/Hermes versions, GitHub CI execution, production installation,
-private seeding, LAN scans, actual SSH and gateway restart remain unperformed.
+Required CI checks both Hermes references on Linux x86_64 and arm64; exact-head
+success is required before claiming that platform coverage. Other OS/OpenSSH/Hermes
+versions, production installation, private seeding, LAN scans, actual SSH and
+gateway restart remain unperformed.
 SSH config/executables and same-UID code are trusted; time/SQLite cancellation is
 cooperative, and local cleanup cannot guarantee remote descendant cancellation.
 Two-file generated export replacement is not a cross-file atomic transaction.

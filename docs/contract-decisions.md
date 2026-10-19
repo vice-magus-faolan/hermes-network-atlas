@@ -204,8 +204,9 @@ v0.21.4+canary.20260930T070235Z. Official docs checked on 2026-09-30:
 https://hermes-agent.nousresearch.com/docs/developer-guide/plugins and
 https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins.
 Current Docker/CI checks use the official unmodified NousResearch/hermes-agent
-release v0.21.6, within the existing compatibility range. Tests do not check core
-identity, source digests or Git trees. The inspection coordinates below remain
+releases v0.21.7 and v0.22.2 on both Linux x86_64 and arm64; successful exact-head
+CI establishes platform coverage, not an earlier commit's results.
+Tests do not check core identity, source digests or Git trees. The inspection coordinates below remain
 historical; use [operator-guide.md](operator-guide.md) for current stock setup.
 The docs advertise directory plugin discovery, register_tool, register_command,
 and register_cli_command. Installed APIs are the executable contract; docs are
@@ -242,10 +243,11 @@ exactly the conservative local-route fallback in addendum section 5. No credenti
 or attestation tokens enter model arguments. If stronger origin isolation is later
 required, it needs a steward decision, not a caller-selected flag.
 
-Supported plugin syntax: Python >=3.11,<3.15; declared Hermes >=0.21.4,<0.22.
+Supported plugin syntax: Python >=3.11,<3.15; declared Hermes >=0.21.4.
 Historical native smoke used the canary above with Python 3.14.7; the current
-verification path selects official v0.21.6 without modifying core. Do not infer
-matrix-wide coverage from one release. Keep this compatibility range unchanged.
+verification path checks official v0.21.7 and v0.22.2 without modifying core.
+There is no Hermes upper bound, following its additive plugin contract. Do not
+infer that every intervening release has been executed.
 Native dependency declaration:
 ruamel.yaml>=0.18.16,<0.19 (already present in tested Hermes). This upper-bounded
 range accommodates Hermes's exact host pin without adding another YAML package.
