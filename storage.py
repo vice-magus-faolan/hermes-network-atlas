@@ -234,13 +234,18 @@ class Store:
         finally:
             self.connection.execute("ROLLBACK")
 
-    def require(self, table: str, entity_id: str) -> sqlite3.Row:
-        """Validate existing stable references; table names are code-owned."""
+    def require(self, table: str, entity_id: str, *, field: str | None = None) -> sqlite3.Row:
+        """Validate stable references with code-owned table and diagnostic labels."""
         if table not in {"devices", "interfaces", "batches"}:
             raise ValueError("invalid reference kind")
+        labels = {"devices": ("device_id", "value.target_device"),
+                  "interfaces": ("interface_id", "value.source_interface", "value.target_interface"),
+                  "batches": ("batch_id",)}
+        if field is not None and field not in labels[table]:
+            raise ValueError("invalid reference field")
         row = self.connection.execute(f"SELECT * FROM {table} WHERE id=?", (entity_id,)).fetchone()
         if row is None:
-            field = {"devices": "device_id", "interfaces": "interface_id", "batches": "batch_id"}[table]
+            field = field or labels[table][0]
             raise RequestError(f"{field}: select an existing atlas entity")
         return row
 

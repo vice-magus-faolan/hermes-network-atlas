@@ -74,11 +74,11 @@ def _relationship(store: Store, update: Update, at: str) -> str:
         raise ValueError("typed relationship required")
     value = dict(update.value)
     target = value["target_device"]
-    store.require("devices", target)
+    store.require("devices", target, field="value.target_device")
     if target == update.device_id:
         raise RequestError("value.target_device: relationship must target a different device")
     for key, device in (("source_interface", update.device_id), ("target_interface", target)):
-        if key in value and store.require("interfaces", value[key])["device_id"] != device:
+        if key in value and store.require("interfaces", value[key], field=f"value.{key}")["device_id"] != device:
             raise RequestError("value.relationship: interface must belong to its relationship endpoint")
     existing = store.connection.execute("""SELECT id FROM relations WHERE source_device=? AND target_device=?
       AND source_interface IS ? AND target_interface IS ? AND relationship_type=?""",

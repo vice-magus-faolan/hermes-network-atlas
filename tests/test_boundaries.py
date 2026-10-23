@@ -302,6 +302,7 @@ class BoundaryTests(unittest.TestCase):
                     self.assertFalse(result["applied"])
 
     def test_optimized_runtime_guards_are_exercised_by_ordinary_pytest(self):
+        """Run the RuntimeGuardTests subset under -O, not a second full suite."""
         with scratch_home() as directory:
             root = Path(directory)
             env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root),

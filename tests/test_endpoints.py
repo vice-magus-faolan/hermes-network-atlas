@@ -281,7 +281,7 @@ class EndpointTests(unittest.TestCase):
         page = self.rows(policy)
         with storage.Store(policy) as store:
             history = tuple(store.connection.iterdump())
-        for change in ('ports', 'disabled', 'removed', 'cidr'):
+        for change in ('ports', 'disabled', 'removed', 'cidr', 'observations'):
             raw = json.loads(original)
             network = raw['networks']['lab']
             if change == 'ports':
@@ -290,6 +290,8 @@ class EndpointTests(unittest.TestCase):
                 network['endpoints'] = {'enabled': False}
             elif change == 'removed':
                 raw['networks'] = {}
+            elif change == 'observations':
+                raw['limits'] = {'observations': 3, 'output_bytes': 500}
             else:
                 network['cidr'] = '192.0.2.10/31'
             path.write_text(json.dumps(raw))
@@ -297,8 +299,14 @@ class EndpointTests(unittest.TestCase):
                     patch.object(transport.socket, 'socket') as socket, patch('subprocess.Popen') as spawn:
                 emitted = tools.Handlers(self.home).check_endpoints({'batch_id': result['batch_id']})
                 failed = json.loads(emitted)
-                self.assertTrue(failed['error'].startswith('endpoint policy:'), failed)
-                self.assertIn('network/port authorization', failed['error'])
+                if change == 'observations':
+                    self.assertTrue(failed['error'].startswith('limits.observations:'), failed)
+                    self.assertIn('record budget', failed['error'])
+                    self.assertNotIn('network/port authorization', failed['error'])
+                    self.assertLessEqual(len(emitted.encode()), 500)
+                else:
+                    self.assertTrue(failed['error'].startswith('endpoint policy:'), failed)
+                    self.assertIn('network/port authorization', failed['error'])
                 self.assertEqual(failed['batch_id'], result['batch_id'])
                 self.assertEqual(failed['completion'], result['completion'])
                 self.assertEqual(failed['stage'], 'projection')
@@ -343,6 +351,19 @@ class EndpointTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 endpoints.check(policy, {'network': 'lab'})
         self.assertFalse(policy.database.exists())
+        recovery = {'batch_id': '0' * 36, 'persisted': True, 'applied': False, 'projected': False,
+                    'queryable': False, 'stage': 'projection', 'collection_performed': False,
+                    'completion': 'complete',
+                    'error': 'limits.observations: endpoint address/port grid exceeds configured record budget; restore sufficient limits and resume this batch'}
+        minimum = len(storage.response_json(recovery, config.Limits().output_bytes).encode())
+        self.policy(limits={'output_bytes': minimum - 1})
+        with patch.object(endpoints.Scheduler, 'run') as collect, patch.object(transport.socket, 'socket') as socket:
+            refused = json.loads(tools.Handlers(self.home).check_endpoints({'network': 'lab'}))
+            self.assertTrue(refused['error'].startswith('atlas state or bounds:'), refused)
+            self.assertFalse(refused['persisted'])
+            collect.assert_not_called()
+            socket.assert_not_called()
+        self.assertFalse(policy.database.exists())
         policy = self.policy(limits={'output_bytes': 500})
         fixture = SyntheticSockets()
         with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock):
@@ -355,6 +376,28 @@ class EndpointTests(unittest.TestCase):
         self.assertFalse(failed['queryable'])
         self.assertEqual(failed['stage'], 'readback')
         self.assertTrue(all(sock.closed for sock in fixture.sockets))
+        with storage.Store(policy) as store:
+            history = tuple(store.connection.iterdump())
+        self.policy(limits={'observations': 3, 'output_bytes': 500})
+        with patch.object(endpoints.Scheduler, 'run') as collect, \
+                patch.object(transport.socket, 'socket') as socket, patch('subprocess.Popen') as spawn:
+            emitted = tools.Handlers(self.home).check_endpoints({'batch_id': failed['batch_id']})
+            limited = json.loads(emitted)
+            self.assertLessEqual(len(emitted.encode()), 500)
+            self.assertTrue(limited['error'].startswith('limits.observations:'), limited)
+            self.assertIn('record budget', limited['error'])
+            self.assertNotIn('network/port authorization', limited['error'])
+            for key in ('batch_id', 'completion', 'persisted', 'applied', 'projected'):
+                self.assertEqual(limited[key], failed[key])
+            self.assertEqual(limited['stage'], 'projection')
+            self.assertFalse(limited['queryable'] or limited['collection_performed'])
+            for private in (str(self.home), '192.0.2.', '2222'):
+                self.assertNotIn(private, emitted)
+            collect.assert_not_called()
+            socket.assert_not_called()
+            spawn.assert_not_called()
+        with storage.Store(policy) as store:
+            self.assertEqual(tuple(store.connection.iterdump()), history)
         restored = self.policy()
         with patch.object(transport.socket, 'socket', side_effect=AssertionError('recovery recollected')):
             recovered = json.loads(tools.Handlers(self.home).check_endpoints({'batch_id': failed['batch_id']}))

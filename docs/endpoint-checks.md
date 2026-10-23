@@ -83,7 +83,8 @@ Revocation preserves historical query access but cannot authorize projection.
 An `endpoint policy` recovery error includes removed/disabled networks, changed
 CIDRs and changed port grids. Restore the original authorization only if still
 appropriate, then resume the saved batch; do not delete history or recollect.
-If lowered record/output limits prevent recovery, restore sufficient limits
+An observation-grid budget refusal names `limits.observations`, not network/port
+authorization. If lowered record/output limits prevent recovery, restore sufficient limits
 within existing ceilings. No automatic policy expansion occurs. A failure before
 persistence cannot promise a recoverable ID; another collection is a new check.
 

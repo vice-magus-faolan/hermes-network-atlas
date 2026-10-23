@@ -72,6 +72,8 @@ use a typed value, never free-form diagram text:
 
 Optional source_interface/target_interface must reference existing interfaces
 belonging to the corresponding device. Self edges and unknown endpoints fail.
+Missing relationship references name `value.target_device`,
+`value.source_interface` or `value.target_interface`; the valid subject ID is unchanged.
 Supported types: physical, virtual, parent, bridge_member, routes_via, hosted_on,
 unknown. Every stored edge retains source/confidence/time. An alias association:
 

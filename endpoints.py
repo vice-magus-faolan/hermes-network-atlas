@@ -20,6 +20,7 @@ from .storage import Store, encode, identifier, response_json, timestamp, utc_no
 
 STATES = ('open', 'closed', 'no_response', 'unavailable', 'not_started')
 RECOVERY_ERRORS = {
+    'observations': 'limits.observations: endpoint address/port grid exceeds configured record budget; restore sufficient limits and resume this batch',
     'policy': 'endpoint policy: check current network/port authorization and resume this batch',
     'store': 'endpoint store: check database availability and compatible schema; resume this batch',
     'io': 'endpoint local I/O: check store access and available space; resume this batch',
@@ -38,6 +39,10 @@ RESULTS = {
 }
 
 
+class EndpointObservationLimitError(RequestError):
+    """The saved endpoint grid no longer fits the current observation budget."""
+
+
 def network_policy(policy: Policy, name: str) -> Network:
     """Endpoint grants are independent of ping, ICMP, legacy ports and SSH."""
     network = next((item for item in policy.networks if item.name == name), None)
@@ -47,7 +52,7 @@ def network_policy(policy: Policy, name: str) -> Network:
     if not network.endpoint_ports:
         raise RequestError('network.endpoints: explicit enablement and nonempty tcp_ports required')
     if ip_network(network.cidr).num_addresses * len(network.endpoint_ports) > policy.limits.observations:
-        raise RequestError('limits.observations: endpoint address/port grid exceeds configured record budget')
+        raise EndpointObservationLimitError('limits.observations: endpoint address/port grid exceeds configured record budget')
     return network
 
 
@@ -182,7 +187,8 @@ def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
     except (OSError, ValueError, sqlite3.Error) as exc:
         # Do not erase a durable ID, claim rolled-back work applied, or retry a
         # probe just because projection/query/output failed after persistence.
-        category = ('policy' if isinstance(exc, (ConfigError, RequestError)) else
+        category = ('observations' if isinstance(exc, EndpointObservationLimitError) else
+                    'policy' if isinstance(exc, (ConfigError, RequestError)) else
                     'store' if isinstance(exc, (sqlite3.Error, StoreError)) else 'io' if isinstance(exc, OSError) else 'state')
         receipt['error'] = RECOVERY_ERRORS[category]
         # Keep this recovery receipt small even when final result exceeded output.
