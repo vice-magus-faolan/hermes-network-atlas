@@ -61,7 +61,7 @@ def validate_probes(policy: Policy, name: str, probes: tuple[Probe, ...]) -> dic
     """Reject missing/duplicate/forged evidence before storage or projection."""
     expected = plans(network_policy(policy, name))
     if len(probes) != len(expected) or {probe.probe_name for probe in probes} != set(expected):
-        raise ValueError('incomplete endpoint accounting or changed port policy')
+        raise RequestError('network.endpoints.tcp_ports: endpoint evidence grid must match current port policy')
     for probe in probes:
         if (probe.outcome, probe.diagnostic_code) not in RESULTS or probe.observations or probe.evidence_kind != 'tcp_endpoint':
             raise ValueError('invalid endpoint evidence')
@@ -77,10 +77,10 @@ def _owned_batch(store: Store, batch_id: str):
 
 def _stored(store: Store, batch_id: str):
     batch = _owned_batch(store, batch_id)
+    network_policy(store.policy, batch['scope_name'])
     kind, scope, _ = _scope(store, 'tcp_endpoint', batch['scope_name'])
     if (batch['scope_kind'], batch['scope_value']) != (kind, scope):
-        raise ValueError('endpoint scope changed')
-    network_policy(store.policy, batch['scope_name'])
+        raise RequestError('network.cidr: saved endpoint scope must match current network policy')
     return batch
 
 

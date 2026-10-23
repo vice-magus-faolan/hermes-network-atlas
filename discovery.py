@@ -57,7 +57,7 @@ def _validate_scope(cidr: str, mode: str, policy: Policy) -> None:
         raise ValueError("active discovery is IPv4 only")
     count = 3 if mode == "passive" else scope.num_addresses + 1
     if count > policy.limits.observations:
-        raise ValueError("configured probe count too small for complete scope")
+        raise RequestError("limits.observations: selected discovery scope exceeds configured record budget")
 
 
 def _probe(name: str, argv: tuple[str, ...], evidence: str, parser: Parser, scope: str,

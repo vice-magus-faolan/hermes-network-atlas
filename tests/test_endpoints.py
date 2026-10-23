@@ -275,14 +275,52 @@ class EndpointTests(unittest.TestCase):
         isolated = config.validate_policy({}, self.home / 'isolated')
         self.assertEqual(self.rows(isolated)['endpoints'], [])
         self.assertFalse(isolated.database.exists())
-        revoked = replace(policy, networks=(replace(policy.networks[0], endpoint_ports=(22,)),))
-        disabled = replace(policy, networks=())
-        for changed in (revoked, disabled):
-            failed = endpoints.check(changed, {'batch_id': result['batch_id']})
-            self.assertIn('error', failed)
-            self.assertTrue(failed['persisted'])
-            self.assertFalse(failed['queryable'])
-            self.assertTrue(failed['applied'] and failed['projected'])
+        path = self.home / 'network-atlas' / 'config.yaml'
+        original = path.read_bytes()
+        self.addCleanup(path.write_bytes, original)
+        page = self.rows(policy)
+        with storage.Store(policy) as store:
+            history = tuple(store.connection.iterdump())
+        for change in ('ports', 'disabled', 'removed', 'cidr'):
+            raw = json.loads(original)
+            network = raw['networks']['lab']
+            if change == 'ports':
+                network['endpoints']['tcp_ports'] = [22]
+            elif change == 'disabled':
+                network['endpoints'] = {'enabled': False}
+            elif change == 'removed':
+                raw['networks'] = {}
+            else:
+                network['cidr'] = '192.0.2.10/31'
+            path.write_text(json.dumps(raw))
+            with self.subTest(change=change), patch.object(endpoints.Scheduler, 'run') as collect, \
+                    patch.object(transport.socket, 'socket') as socket, patch('subprocess.Popen') as spawn:
+                emitted = tools.Handlers(self.home).check_endpoints({'batch_id': result['batch_id']})
+                failed = json.loads(emitted)
+                self.assertTrue(failed['error'].startswith('endpoint policy:'), failed)
+                self.assertIn('network/port authorization', failed['error'])
+                self.assertEqual(failed['batch_id'], result['batch_id'])
+                self.assertEqual(failed['completion'], result['completion'])
+                self.assertEqual(failed['stage'], 'projection')
+                self.assertTrue(failed['persisted'])
+                self.assertFalse(failed['queryable'] or failed['collection_performed'])
+                self.assertTrue(failed['applied'] and failed['projected'])
+                for private in (str(self.home), '192.0.2.', '2222'):
+                    self.assertNotIn(private, emitted)
+                collect.assert_not_called()
+                socket.assert_not_called()
+                spawn.assert_not_called()
+            with storage.Store(policy) as store:
+                self.assertEqual(tuple(store.connection.iterdump()), history)
+            self.assertEqual(self.rows(policy), page)
+        path.write_bytes(original)
+        with patch.object(endpoints.Scheduler, 'run') as collect:
+            recovered = json.loads(tools.Handlers(self.home).check_endpoints({'batch_id': result['batch_id']}))
+            self.assertTrue(recovered['queryable'])
+            self.assertFalse(recovered['collection_performed'])
+            collect.assert_not_called()
+        with storage.Store(policy) as store:
+            self.assertEqual(tuple(store.connection.iterdump()), history)
 
     def test_owned_socket_cleanup_on_registration_failure_and_interrupt(self):
         policy = self.policy()

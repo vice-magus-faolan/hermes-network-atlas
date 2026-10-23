@@ -225,6 +225,50 @@ class RuntimeGuardTests(unittest.TestCase):
             open_store.assert_not_called()
         self.assertFalse(self.policy.database.exists())
 
+    def test_collection_record_budgets_name_setting_on_all_public_routes_before_effects(self):
+        handlers = tools.Handlers(self.home)
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        path = self.home / "network-atlas" / "config.yaml"
+        cases = (("passive", 1, False, "discovery scope"),
+                 ("ping", 1, False, "discovery scope"),
+                 ("ping", 3, True, "discovery methods and scope"),
+                 ("inspect", 1, False, "SSH inspection probes"))
+        for mode, budget, sockets, reason in cases:
+            raw = synthetic_policy()
+            raw["limits"] = {"observations": budget}
+            if sockets:
+                # Three records fit the legacy address+coverage check, but not
+                # the five method+address+coverage records of this valid policy.
+                raw["networks"]["lab"]["cidr"] = "192.0.2.8/31"
+                raw["networks"]["lab"]["discovery"]["tcp_ports"] = [22]
+            path.write_text(json.dumps(raw))
+            before = {item: item.read_bytes() for item in self.home.rglob("*") if item.is_file()}
+            argv = (["inspect", "--target", "lab-router"] if mode == "inspect" else
+                    ["discover", "--network", "lab", "--mode", mode])
+            with self.subTest(mode=mode, sockets=sockets), patch("subprocess.Popen") as spawn, \
+                    patch("socket.socket") as socket, patch.object(storage.Store, "__init__") as open_store:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    code = commands.run_command(parser.parse_args(argv), self.home)
+                model = (handlers.inspect({"target": "lab-router"}) if mode == "inspect" else
+                         handlers.discover({"network": "lab", "mode": mode}))
+                slash = handlers.command("inspect lab-router" if mode == "inspect" else "discover lab " + mode)
+                self.assertEqual(code, 2)
+                for emitted in (model, slash, output.getvalue()):
+                    result = json.loads(emitted)
+                    self.assertIn("limits.observations", result["error"])
+                    self.assertIn(reason, result["error"])
+                    self.assertIn("record budget", result["error"])
+                    self.assertFalse(result["persisted"] or result["applied"])
+                    for private in (str(self.home), "192.0.2.", "lab-router"):
+                        self.assertNotIn(private, emitted)
+                spawn.assert_not_called()
+                socket.assert_not_called()
+                open_store.assert_not_called()
+            self.assertEqual(before, {item: item.read_bytes() for item in self.home.rglob("*") if item.is_file()})
+            self.assertFalse(self.policy.database.exists())
+
     def test_invalid_collector_receipts_fail_closed_at_handlers(self):
         at = storage.timestamp(storage.utc_now())
         probe = batches.Probe("fixture", "unavailable", at, at, "none", "", "none", "executable_missing")
