@@ -359,6 +359,45 @@ class ReconciliationTests(AtlasFixture):
             reconcile.reconcile(second_profile, {"batch_id": first}, now=NOW)
         self.assertFalse(second_profile.home.exists())
 
+    def test_explicit_revoked_collection_policy_is_actionable_on_public_routes(self):
+        # Real collectors persist the input; revocation must reject even an
+        # explicit ID, without rewriting evidence or attempting recollection.
+        path = self.home / "network-atlas" / "config.yaml"
+        handlers = tools.Handlers(self.home)
+        for mode in ("passive", "ping"):
+            with patch.object(discovery, "run", side_effect=lambda argv, *args, **kwargs:
+                              runner.CommandResult("success", xml(argv[-1], up=False) if argv[0] == "nmap" else b"[]")):
+                receipt = discovery.collect(self.policy, {"network": "lab", "mode": mode})
+            self.assertEqual(receipt["completion"], "complete")
+            batch = receipt["batch_id"]
+            disabled = json.loads(json.dumps(self.raw))
+            disabled["networks"]["lab"]["discovery"][mode] = False
+            removed = {**self.raw, "networks": {}}
+            before = list(self.store.connection.iterdump())
+            with patch.object(discovery, "run") as transport, patch("subprocess.Popen") as spawn, patch("socket.socket") as socket:
+                for raw in (disabled, removed):
+                    path.write_text(json.dumps(raw))
+                    with self.subTest(mode=mode, removed=raw is removed):
+                        code, operator = self.cli(["reconcile", "--batch-id", batch])
+                        self.assertEqual(code, 2)
+                        for result in (json.loads(handlers.reconcile({"batch_id": batch})),
+                                       json.loads(handlers.command("reconcile " + batch)), operator):
+                            self.assertEqual(result, {"error": "network.discovery." + mode +
+                                ": stored scope requires a configured network and enabled collection mode; restore intended policy or select an eligible batch",
+                                "applied": False})
+                        self.assertEqual(list(self.store.connection.iterdump()), before)
+                path.write_text(json.dumps(self.raw))
+                restored = json.loads(handlers.reconcile({"batch_id": batch}))
+                self.assertTrue(restored["applied"])
+                self.assertEqual(restored["batch_id"], batch)
+                after = list(self.store.connection.iterdump())
+                self.assertEqual(json.loads(handlers.command("reconcile " + batch)), restored)
+                self.assertEqual(self.cli(["reconcile", "--batch-id", batch]), (0, restored))
+                self.assertEqual(list(self.store.connection.iterdump()), after)
+                transport.assert_not_called()
+                spawn.assert_not_called()
+                socket.assert_not_called()
+
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):

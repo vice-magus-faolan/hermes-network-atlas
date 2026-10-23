@@ -30,6 +30,12 @@ readable knowledge, not permission to apply its batches under this profile.
 No probes run during reconciliation. SSH batch application is documented in
 [Authorized SSH Inspection](authorized-ssh-inspection.md).
 
+An explicit ID from a revoked scope is refused with the responsible
+`network.discovery.passive`, `network.discovery.ping`, or
+`ssh.enabled/ssh.hosts.inspect` setting and repair guidance, without changing
+stored history. Restore policy only if that collection is still intended, or
+select a currently eligible batch; a saved batch never grants authorization.
+
 With a network named `home` enabled in local policy:
 
     hermes network-atlas discover --network home --mode passive

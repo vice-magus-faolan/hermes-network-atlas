@@ -165,11 +165,40 @@ class ExtraInspectionTests(AtlasFixture):
 
     def test_current_policy_latest_selection_skips_revoked_alias(self):
         receipt = self.collect()
+        self.assertEqual(receipt["completion"], "complete")
         policy = replace(self.policy, ssh_enabled=False)
         with self.assertRaises(ValueError):
             reconcile.reconcile(policy, {})
+        path = self.home / "network-atlas" / "config.yaml"
+        disabled = json.loads(json.dumps(self.raw))
+        disabled["ssh"]["enabled"] = False
+        alias_disabled = json.loads(json.dumps(self.raw))
+        alias_disabled["ssh"]["hosts"][ALIAS]["inspect"] = False
+        alias_removed = json.loads(json.dumps(self.raw))
+        alias_removed["ssh"]["hosts"] = {}
+        before = list(self.store.connection.iterdump())
+        handlers = tools.Handlers(self.home)
+        with patch.object(inspection, "run") as transport, patch("subprocess.Popen") as spawn, patch("socket.socket") as socket:
+            for raw in (disabled, alias_disabled, alias_removed):
+                path.write_text(json.dumps(raw))
+                code, operator = self.cli(["reconcile", "--batch-id", receipt["batch_id"]])
+                self.assertEqual(code, 2)
+                for result in (json.loads(handlers.reconcile({"batch_id": receipt["batch_id"]})),
+                               json.loads(handlers.command("reconcile " + receipt["batch_id"])), operator):
+                    self.assertEqual(result, {"error": "ssh.enabled/ssh.hosts.inspect: stored alias is not currently authorized; restore intended policy or select an eligible batch",
+                                              "applied": False})
+                self.assertEqual(list(self.store.connection.iterdump()), before)
+            path.write_text(json.dumps(self.raw))
+            transport.assert_not_called()
+            spawn.assert_not_called()
+            socket.assert_not_called()
         result = reconcile.reconcile(self.policy, {})
         self.assertEqual(result["batch_id"], receipt["batch_id"])
+        after = list(self.store.connection.iterdump())
+        self.assertEqual(json.loads(handlers.reconcile({"batch_id": receipt["batch_id"]})), result)
+        self.assertEqual(json.loads(handlers.command("reconcile " + receipt["batch_id"])), result)
+        self.assertEqual(self.cli(["reconcile", "--batch-id", receipt["batch_id"]]), (0, result))
+        self.assertEqual(list(self.store.connection.iterdump()), after)
         mapped = query.query(self.policy, {"access_method": "ssh"})["devices"]
         self.assertEqual(len(mapped), 1)
         self.assertFalse(query.query(policy, {"access_method": "ssh"})["devices"])
