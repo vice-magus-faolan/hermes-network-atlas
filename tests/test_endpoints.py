@@ -200,6 +200,8 @@ class EndpointTests(unittest.TestCase):
         self.assertFalse(failed['queryable'])
         self.assertEqual(failed['stage'], 'readback')
         self.assertNotEqual(failed['batch_id'], original['batch_id'])
+        self.assertTrue(failed['error'].startswith('endpoint store:'), failed)
+        self.assertNotIn('synthetic readback failure', json.dumps(failed))
         stored = self.rows(policy, batch_id=failed['batch_id'])
         with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('resume collected')):
             recovered = endpoints.check(policy, {'batch_id': failed['batch_id']})
@@ -219,6 +221,8 @@ class EndpointTests(unittest.TestCase):
         self.assertFalse(failed['applied'] or failed['queryable'])
         self.assertEqual(failed['stage'], 'projection')
         self.assertEqual(self.counts(policy)['endpoint_observations'], 0)
+        self.assertTrue(failed['error'].startswith('endpoint store:'), failed)
+        self.assertNotIn('projection failure after inserts', json.dumps(failed))
         self.assertEqual(query.query(policy, {'view': 'status'})['unprojected_endpoint_batches'], 1)
         with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('resume collected')):
             with ThreadPoolExecutor(max_workers=2) as executor:
@@ -309,6 +313,7 @@ class EndpointTests(unittest.TestCase):
         failed = json.loads(emitted)
         self.assertIn('error', failed)
         self.assertTrue(failed['persisted'], failed)
+        self.assertTrue(failed['error'].startswith('endpoint state or bounds:'), failed)
         self.assertFalse(failed['queryable'])
         self.assertEqual(failed['stage'], 'readback')
         self.assertTrue(all(sock.closed for sock in fixture.sockets))

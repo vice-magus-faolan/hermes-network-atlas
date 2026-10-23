@@ -303,6 +303,15 @@ regenerate both from SQLite; they are not a cross-file atomic snapshot.
 
 ## Troubleshooting and data care
 
+Application errors name the responsible field or policy setting without echoing
+its value. Correct that field in the request or the selected profile's policy.
+`store`, `local I/O`, and `atlas state or bounds` errors instead indicate local
+availability, schema, evidence or limit problems; changing a target does not
+repair them. Raw exception text, SQL and transport stderr are not returned.
+Transport failures remain per-probe outcomes/diagnostics, not invalid arguments.
+For endpoint failures, keep the returned `batch_id`, `stage` and persistence flags;
+resume a saved batch after repairing the reported category, rather than rescanning.
+
 - Command unavailable: confirm PROFILE, supported Hermes version and
   `plugins show network-atlas`. Check policy errors: malformed policy can stop
   registration before the command exists. Correct the file, then retry

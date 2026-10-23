@@ -13,11 +13,18 @@ import sqlite3
 import time
 
 from .batches import Probe, _scope, _validate_probes, store_batch
-from .config import NAME_PATTERN, Network, Policy, validate_network
+from .config import ConfigError, NAME_PATTERN, Network, Policy, validate_network
+from .errors import RequestError, StoreError
 from .host_schedule import Scheduler
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
 
 STATES = ('open', 'closed', 'no_response', 'unavailable', 'not_started')
+RECOVERY_ERRORS = {
+    'policy': 'endpoint policy: check current network/port authorization and resume this batch',
+    'store': 'endpoint store: check database availability and compatible schema; resume this batch',
+    'io': 'endpoint local I/O: check store access and available space; resume this batch',
+    'state': 'endpoint state or bounds: check stored evidence and configured limits; resume this batch',
+}
 RESULTS = {
     ('success', 'tcp_connected_response'): ('open', True),
     ('success', 'tcp_refused_response'): ('closed', True),
@@ -35,12 +42,12 @@ def network_policy(policy: Policy, name: str) -> Network:
     """Endpoint grants are independent of ping, ICMP, legacy ports and SSH."""
     network = next((item for item in policy.networks if item.name == name), None)
     if network is None:
-        raise ValueError('unknown endpoint scope')
+        raise RequestError('network: select a configured endpoint network')
     validate_network(network)
     if not network.endpoint_ports:
-        raise ValueError('endpoint checks disabled')
+        raise RequestError('network.endpoints: explicit enablement and nonempty tcp_ports required')
     if ip_network(network.cidr).num_addresses * len(network.endpoint_ports) > policy.limits.observations:
-        raise ValueError('endpoint scope exceeds record budget')
+        raise RequestError('limits.observations: endpoint address/port grid exceeds configured record budget')
     return network
 
 
@@ -64,7 +71,7 @@ def validate_probes(policy: Policy, name: str, probes: tuple[Probe, ...]) -> dic
 def _owned_batch(store: Store, batch_id: str):
     batch = store.require('batches', batch_id)
     if batch['collector'] != 'tcp_endpoint' or batch['policy_context'] != str(store.policy.home):
-        raise ValueError('not locally owned endpoint evidence')
+        raise RequestError('batch_id: select endpoint evidence owned by this profile')
     return batch
 
 
@@ -121,15 +128,15 @@ def collection_completion(probes: tuple[Probe, ...]) -> str:
 def check(policy: Policy, params: object) -> dict:
     """Collect once, or resume a genuine local batch without any network effects."""
     if not isinstance(params, dict) or set(params) not in ({'network'}, {'batch_id'}):
-        raise ValueError('select a configured network OR exact batch ID')
+        raise RequestError('endpoint arguments: select a configured network OR exact batch_id, no other arguments')
     key = next(iter(params))
     value = params[key]
     if not isinstance(value, str) or re.fullmatch(NAME_PATTERN, value) is None:
-        raise ValueError('invalid endpoint scope/batch name')
+        raise RequestError(f'{key}: stable configured network name or batch ID required')
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     # Ensure even a post-commit failure receipt can be emitted before any effects.
     response_json({**_receipt('0' * 36), 'stage': 'projection', 'completion': 'complete',
-                   'error': 'endpoint stage failed; resume this batch'},
+                   'error': max(RECOVERY_ERRORS.values(), key=len)},
                   policy.limits.output_bytes)
     receipt = _receipt()
     if key == 'network':
@@ -172,10 +179,12 @@ def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
                        state_counts=result['state_counts'])
         response_json(receipt, policy.limits.output_bytes)
         return receipt
-    except (OSError, ValueError, sqlite3.Error):
+    except (OSError, ValueError, sqlite3.Error) as exc:
         # Do not erase a durable ID, claim rolled-back work applied, or retry a
         # probe just because projection/query/output failed after persistence.
-        receipt['error'] = 'endpoint stage failed; resume this batch'
+        category = ('policy' if isinstance(exc, (ConfigError, RequestError)) else
+                    'store' if isinstance(exc, (sqlite3.Error, StoreError)) else 'io' if isinstance(exc, OSError) else 'state')
+        receipt['error'] = RECOVERY_ERRORS[category]
         # Keep this recovery receipt small even when final result exceeded output.
         receipt.pop('state_counts', None)
         receipt.pop('observation_count', None)

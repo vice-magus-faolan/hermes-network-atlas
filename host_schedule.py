@@ -100,7 +100,8 @@ class Scheduler:
         return None
 
     def _launch(self, selector):
-        assert self.pending is not None
+        if self.pending is None:
+            raise ValueError('scheduler has no pending probe')
         index, address, port = self.pending
         started = timestamp(utc_now())
         result = self._preflight(index, address, port)

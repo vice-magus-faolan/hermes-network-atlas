@@ -5,9 +5,12 @@ from contextlib import redirect_stderr, redirect_stdout
 import importlib
 import io
 import json
+import os
+import signal
 from pathlib import Path
 from datetime import timedelta
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -15,11 +18,14 @@ if __name__ == "__main__":
     from network_guard import deny_network
     deny_network()
 
-from helpers import scratch_home
+from helpers import ROOT, scratch_home
 from test_boundaries import synthetic_policy
 from test_core import NOW, batches, core, query, storage, config, tools
 
 commands = importlib.import_module("atlas_test_plugin.commands")
+discovery = importlib.import_module("atlas_test_plugin.discovery")
+inspection = importlib.import_module("atlas_test_plugin.inspection")
+runner = importlib.import_module("atlas_test_plugin.probes")
 
 
 class OperatorStatusTests(unittest.TestCase):
@@ -154,6 +160,142 @@ class OperatorStatusTests(unittest.TestCase):
                     parser.parse_args(argv)
                 self.assertEqual(rejected.exception.code, 2)
             check.assert_not_called()
+
+    def test_operator_errors_identify_fields_json_and_store_without_private_payloads(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        cases = ((["query", "--query-json", '{"limit":false}'], "limit"),
+                 (["query", "--query-json", "PRIVATE_JSON"], "JSON input"),
+                 (["validate-update", "--device-id", "fixture", "--field", "retired",
+                   "--value-json", '"PRIVATE_VALUE"'], "value.retired"),
+                 (["inspect", "--target", "PRIVATE;id"], "target"))
+        cases += ((["update", "--device-id", "fixture", "--field", "PRIVATE_FIELD", "--value-json", '"safe"'], "field"),
+                  (["map", "--format", "PRIVATE_FORMAT"], "format"),
+                  (["discover", "--network", "lab", "--mode", "PRIVATE_MODE"], "mode"),
+                  (["address", "--interface-id", "fixture", "--address", "192.0.2.1",
+                    "--prefix-length", "PRIVATE_PREFIX"], "prefix_length"))
+        before = {path: path.read_bytes() for path in self.home.rglob("*") if path.is_file()}
+        with patch("subprocess.Popen") as spawn:
+            for argv, field in cases:
+                with self.subTest(argv=argv):
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        code = commands.run_command(parser.parse_args(argv), self.home)
+                    self.assertEqual(code, 2)
+                    self.assertIn(field, json.loads(output.getvalue())["error"])
+                    self.assertNotIn("PRIVATE", output.getvalue())
+            spawn.assert_not_called()
+        self.assertEqual(before, {path: path.read_bytes() for path in self.home.rglob("*") if path.is_file()})
+        self.policy.database.write_bytes(b"PRIVATE_NOT_SQLITE")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = commands.run_command(parser.parse_args(["query"]), self.home)
+        self.assertEqual(code, 2)
+        self.assertTrue(json.loads(output.getvalue())["error"].startswith("store:"))
+        self.assertNotIn("PRIVATE", output.getvalue())
+
+
+class RuntimeGuardTests(unittest.TestCase):
+    """Also run by ordinary pytest in a fresh -O child; unittest assertions survive."""
+
+    def setUp(self):
+        self.temp = scratch_home()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        path = self.home / "network-atlas" / "config.yaml"
+        path.parent.mkdir()
+        path.write_text(json.dumps(synthetic_policy()))
+        self.policy = config.load_policy(self.home)
+
+    def test_invalid_requests_and_policy_ports_reject_before_effects(self):
+        handlers = tools.Handlers(self.home)
+        with patch("subprocess.Popen") as spawn, patch.object(storage.Store, "__init__") as open_store:
+            for result in (handlers.command("discover PRIVATE_SCOPE passive"),
+                           handlers.command("inspect PRIVATE_ALIAS"),
+                           handlers.update({"device_id": "fixture", "field": "PRIVATE_FIELD", "value": "safe", "explanation": "safe"})):
+                self.assertIn("error", json.loads(result))
+                self.assertNotIn("PRIVATE", result)
+            path = self.home / "network-atlas" / "config.yaml"
+            raw = synthetic_policy()
+            raw["networks"]["lab"]["discovery"]["tcp_ports"] = [4403]
+            path.write_text(json.dumps(raw))
+            result = json.loads(handlers.discover({"network": "lab", "mode": "ping"}))
+            self.assertIn("tcp_ports", result["error"])
+            spawn.assert_not_called()
+            open_store.assert_not_called()
+        self.assertFalse(self.policy.database.exists())
+
+    def test_invalid_collector_receipts_fail_closed_at_handlers(self):
+        at = storage.timestamp(storage.utc_now())
+        probe = batches.Probe("fixture", "unavailable", at, at, "none", "", "none", "executable_missing")
+        handlers = tools.Handlers(self.home)
+        for module, route, params in ((discovery, handlers.discover, {"network": "lab", "mode": "passive"}),
+                                      (inspection, handlers.inspect, {"target": "lab-router"})):
+            with self.subTest(route=route.__name__), patch.object(module, "_probe", return_value=probe), \
+                    patch.object(module, "store_batch", return_value="not-a-receipt"):
+                result = json.loads(route(params))
+                self.assertIn("error", result)
+                self.assertFalse(result["persisted"] or result["applied"])
+        with storage.Store(self.policy) as store:
+            self.assertEqual(store.connection.execute("SELECT COUNT(*) FROM batches").fetchone()[0], 0)
+
+    def test_missing_child_pipe_still_kills_reaps_and_closes_owned_streams(self):
+        (self.home / "offline-fixture").touch()
+        children = []
+        real_spawn = runner.subprocess.Popen
+        streams = []
+        def spawn(*args, **kwargs):
+            child = real_spawn(*args, **kwargs)
+            children.append(child)
+            streams.extend((child.stdout, child.stderr))
+            child.stdout.close()
+            child.stdout = None
+            return child
+        with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(self.home)}), \
+                patch.object(runner.subprocess, "Popen", spawn):
+            try:
+                result = runner.run((sys.executable, str(ROOT / "tests" / "offline_probe.py"), "sleep"),
+                                    self.policy.limits, time.monotonic() + 5)
+                closed_by_runner = all(stream.closed for stream in streams)
+                reaped_by_runner = all(child.returncode is not None for child in children)
+            finally:
+                # A regressed runner must not strand this test's sleeping child.
+                for child in children:
+                    if child.returncode is None:
+                        os.killpg(child.pid, signal.SIGKILL)
+                        child.wait()
+                for stream in streams:
+                    stream.close()
+        self.assertEqual(result.outcome, "command_failed")
+        self.assertEqual(result.diagnostic_code, "missing_output_pipe")
+        self.assertTrue(closed_by_runner)
+        self.assertTrue(reaped_by_runner)
+        self.assertEqual(len(children), 1)
+        with self.assertRaises(ChildProcessError):
+            os.waitpid(children[0].pid, os.WNOHANG)
+
+    def test_runtime_guard_failure_rolls_back_and_allows_next_transaction(self):
+        with storage.Store(self.policy, writable=True) as store:
+            device = core.create_device(store, "Before failure")["device_id"]
+            before = store.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        params = {"device_id": device, "field": "description", "value": "Proposed", "explanation": "Synthetic inference"}
+        with patch.object(storage.Store, "audit", side_effect=ValueError("PRIVATE_INTERNAL_FAILURE")):
+            failed = json.loads(tools.Handlers(self.home).update(params))
+        self.assertFalse(failed["applied"])
+        self.assertNotIn("PRIVATE", json.dumps(failed))
+        with storage.Store(self.policy) as store:
+            self.assertFalse(store.connection.in_transaction)
+            self.assertEqual(store.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0], before)
+        self.assertTrue(json.loads(tools.Handlers(self.home).update(params))["persisted"])
+
+    def test_store_layout_failure_retains_explicit_exception_cause(self):
+        target = self.home / "private-target"
+        target.write_text("synthetic")
+        self.policy.database.symlink_to(target)
+        with self.assertRaises(ValueError) as caught:
+            storage.Store(self.policy, writable=True)
+        self.assertIsInstance(caught.exception.__cause__, FileExistsError)
+        self.assertEqual(target.read_text(), "synthetic")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import time
 from . import discovery_parse as parse
 from .batches import Observation, Probe, store_batch
 from .config import LEGACY_TCP_PORTS, Network, Policy, validate_network
+from .errors import RequestError
 from .host_schedule import collect_methods, validate_count
 from .probes import run
 from .storage import Store, timestamp, utc_now
@@ -30,15 +31,17 @@ Parser = Callable[[bytes, str, str, Policy], tuple[Observation, ...]]
 def validate_request(params: object, policy: Policy) -> tuple[Network, str]:
     """Names and enabled modes only; no raw targets/options/probe/policy inputs."""
     if not isinstance(params, dict) or set(params) != {"network", "mode"}:
-        raise ValueError("network and mode required, no other arguments")
+        raise RequestError("discovery arguments: network and mode required, no other arguments")
     name, mode = params["network"], params["mode"]
-    if not isinstance(name, str) or not isinstance(mode, str) or mode not in {"passive", "ping"}:
-        raise ValueError("invalid network or mode")
+    if not isinstance(name, str):
+        raise RequestError("network: configured network name required")
+    if not isinstance(mode, str) or mode not in {"passive", "ping"}:
+        raise RequestError("mode: choose passive or ping")
     network = next((item for item in policy.networks if item.name == name), None)
     if network is not None:
         validate_network(network)
     if network is None or not getattr(network, mode):
-        raise ValueError("network/mode not authorized by local policy")
+        raise RequestError("network/mode: select a configured network and an enabled discovery mode")
     _validate_scope(network.cidr, mode, policy)
     if mode == "ping" and (network.icmp_echo or network.tcp_ports != LEGACY_TCP_PORTS):
         validate_count(network, policy)
@@ -113,7 +116,8 @@ def collect(policy: Policy, params: object) -> dict:
     with Store(policy, writable=True, deadline=deadline) as store:
         result = store_batch(store, "local_passive" if mode == "passive" else "ping", network.name,
                              started, timestamp(utc_now()), completion, probes, receipt=True, deadline=deadline)
-        assert isinstance(result, dict)
+        if not isinstance(result, dict):
+            raise ValueError("discovery persistence receipt missing")
         return result
 
 
@@ -144,7 +148,8 @@ def _chunk_addresses(chunk, probe: Probe, offset: int) -> tuple[Probe, ...]:
     """
     observations = {}
     for observation in probe.observations:
-        assert isinstance(observation.value, tuple)
+        if not isinstance(observation.value, tuple):
+            raise ValueError("invalid parsed address observation")
         observations[dict(observation.value)["address"]] = observation
     return tuple(replace(probe, probe_name="ping_" + str(offset + index),
                          observations=(observations[str(address)],) if str(address) in observations else ())

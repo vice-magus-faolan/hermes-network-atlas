@@ -118,7 +118,8 @@ def _lineage(store: Store, row, batch, application: dict | None) -> dict | None:
     if later is None:
         return None
     latest = _application(store, later["id"])
-    assert latest is not None  # The snapshot's applications JOIN proved this row.
+    if latest is None:
+        raise ValueError("lineage application missing from snapshot")
     originals = _bounded(store, "SELECT o.id FROM observations o WHERE " + match +
                          " AND o.batch_id=? AND o.entity_id IS NULL ORDER BY o.id", (*bindings, later["id"]))
     reason, candidates = _reason(store, latest, {entry["id"] for entry in originals})

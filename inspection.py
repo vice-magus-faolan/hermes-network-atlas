@@ -83,7 +83,8 @@ def collect(policy: Policy, params: object) -> dict:
     """
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     alias = resolve_target(policy, params, deadline)
-    assert isinstance(params, dict)
+    if not isinstance(params, dict):
+        raise ValueError("inspection request invariant failed")
     if len(PROBES) > policy.limits.observations:
         raise ValueError("probe count exceeds configured bound")
     started = timestamp(utc_now())
@@ -97,5 +98,6 @@ def collect(policy: Policy, params: object) -> dict:
         # invalidate a device's association while SSH is running; never reroute it.
         result = store_batch(store, "ssh", alias, started, timestamp(utc_now()), completion,
                              probes, receipt=True, deadline=deadline, inspection_target=params["target"])
-        assert isinstance(result, dict)
+        if not isinstance(result, dict):
+            raise ValueError("inspection persistence receipt missing")
         return result

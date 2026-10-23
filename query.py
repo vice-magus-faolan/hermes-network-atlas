@@ -7,6 +7,7 @@ from ipaddress import ip_address
 import re
 
 from .config import NAME_PATTERN, Policy
+from .errors import RequestError
 from .facts import RELATION_TYPES, evidence, freshness, selected_facts, selection_cte
 from .storage import Store, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
@@ -23,11 +24,11 @@ STATUSES = ("known", "observed", "stale", "retired", "unknown")
 def validate_query(params: object, policy: Policy) -> dict:
     """Unknown arguments, invalid types, oversized text and pagination fail closed."""
     if not isinstance(params, dict) or not set(params) <= QUERY_KEYS:
-        raise ValueError("invalid query arguments")
+        raise RequestError("query arguments: object with documented filters required")
     result = dict(params)
     for key, value in result.items():
         if key not in {"limit", "offset"}:
-            _text(value, policy.limits.input_chars)
+            _text(value, policy.limits.input_chars, key)
     _enum(result, "view", ("devices", "status", "history", "unresolved", "endpoints"))
     _enum(result, "device_type", DEVICE_TYPES)
     _enum(result, "status", STATUSES)
@@ -35,11 +36,15 @@ def validate_query(params: object, policy: Policy) -> dict:
     _enum(result, "relationship", RELATION_TYPES)
     for key in ("device_id", "related_to", "batch_id"):
         if key in result and re.fullmatch(NAME_PATTERN, result[key]) is None:
-            raise ValueError("invalid stable device reference")
-    if "address" in result and (str(ip_address(result["address"])) != result["address"] or "%" in result["address"]):
-        raise ValueError("canonical address required")
-    result["limit"] = _page(result.get("limit", policy.limits.result_count), 1, policy.limits.result_count)
-    result["offset"] = _page(result.get("offset", 0), 0, policy.limits.page_offset)
+            raise RequestError(f"{key}: stable atlas reference required")
+    if "address" in result:
+        try:
+            if str(ip_address(result["address"])) != result["address"] or "%" in result["address"]:
+                raise ValueError("noncanonical address")
+        except ValueError as exc:
+            raise RequestError("address: canonical unscoped IP address required") from exc
+    result["limit"] = _page(result.get("limit", policy.limits.result_count), 1, policy.limits.result_count, "limit")
+    result["offset"] = _page(result.get("offset", 0), 0, policy.limits.page_offset, "offset")
     _validate_view(params)
     return result
 
@@ -51,19 +56,19 @@ def _validate_view(params: dict) -> None:
                "endpoints": {"view", "address", "batch_id", "limit", "offset"},
                "devices": QUERY_KEYS - {"batch_id"}}
     if not set(params) <= allowed[view]:
-        raise ValueError("unsupported filters for query view")
+        raise RequestError("view: use only filters supported by the selected query view")
     if params.get("view") == "history" and "device_id" not in params:
-        raise ValueError("history requires existing device_id")
+        raise RequestError("device_id: history view requires an existing device ID")
 
 
 def _enum(params: dict, key: str, choices: tuple[str, ...]) -> None:
     if key in params and params[key] not in choices:
-        raise ValueError("unsupported query enum")
+        raise RequestError(f"{key}: choose a documented query option")
 
 
-def _page(value: object, minimum: int, maximum: int) -> int:
+def _page(value: object, minimum: int, maximum: int, label: str) -> int:
     if type(value) is not int or not minimum <= value <= maximum:
-        raise ValueError("query pagination exceeds configured bound")
+        raise RequestError(f"{label}: integer within configured pagination bounds required")
     return value
 
 

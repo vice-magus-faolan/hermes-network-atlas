@@ -18,6 +18,7 @@ from uuid import uuid4
 from collections.abc import Iterator
 
 from .config import Policy
+from .errors import RequestError, StoreError
 
 SCHEMA_VERSION = 2
 IMMUTABLE_TABLES = ("batches", "probes", "observations", "applications", "audit_events", "access_evidence")
@@ -68,21 +69,21 @@ def response_json(value: object, maximum: int) -> str:
 def private_directory(path: Path) -> None:
     """Create private directories without chmodding an existing shared parent."""
     if path.is_symlink():
-        raise ValueError("symlink data directory refused")
+        raise StoreError("symlink data directory refused")
     if not path.exists():
         private_directory(path.parent)
         path.mkdir(mode=0o700)
     if not path.is_dir():
-        raise ValueError("data directory required")
+        raise StoreError("data directory required")
 
 
 def _prepare_file(path: Path) -> None:
     private_directory(path.parent)
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-    except FileExistsError:
+    except FileExistsError as exc:
         if path.is_symlink() or not path.is_file():
-            raise ValueError("regular SQLite file required")
+            raise StoreError("regular SQLite file required") from exc
         return
     os.close(fd)
 
@@ -106,7 +107,7 @@ def _initialize_locked(connection: sqlite3.Connection) -> None:
         _migrate_endpoints(connection)
         return
     if version != 0 or connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
-        raise ValueError("unsupported or unversioned atlas schema; no automatic downgrade")
+        raise StoreError("unsupported or unversioned atlas schema; no automatic downgrade")
     schema = Path(__file__).with_name("storage_schema.sql").read_text(encoding="utf-8")
     for statement in schema.split(";"):
         if statement.strip():
@@ -180,7 +181,8 @@ class Store:
         self.connection.row_factory = sqlite3.Row
         try:
             if isinstance(self.connection, _DeadlineConnection):
-                assert deadline is not None
+                if deadline is None:
+                    raise ValueError("deadline connection requires an operation deadline")
                 self.connection.bind(deadline, policy.limits.busy_timeout_ms)
             self.connection.execute("PRAGMA foreign_keys=ON")
             if deadline is None:
@@ -190,7 +192,7 @@ class Store:
                 os.chmod(policy.database, 0o600)
                 self.connection.execute("PRAGMA journal_mode=WAL")
             elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
-                raise ValueError("unsupported atlas schema")
+                raise StoreError("unsupported atlas schema")
             else:
                 self.connection.execute("PRAGMA query_only=ON")
             self.schema_version = self.connection.execute("PRAGMA user_version").fetchone()[0]
@@ -238,7 +240,8 @@ class Store:
             raise ValueError("invalid reference kind")
         row = self.connection.execute(f"SELECT * FROM {table} WHERE id=?", (entity_id,)).fetchone()
         if row is None:
-            raise ValueError("unknown atlas entity")
+            field = {"devices": "device_id", "interfaces": "interface_id", "batches": "batch_id"}[table]
+            raise RequestError(f"{field}: select an existing atlas entity")
         return row
 
     def audit(self, operation: str, action: str, actor: str, at: str, *,

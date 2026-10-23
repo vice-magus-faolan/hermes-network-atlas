@@ -7,6 +7,7 @@ from datetime import datetime
 from ipaddress import ip_address
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
+from .errors import RequestError
 from .identity import mac_address
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 from .updates import Update, _text, inference_update, operator_update
@@ -54,7 +55,7 @@ def _positive(store: Store, device: str, at: str) -> None:
 
 def create_device(store: Store, name: str, *, now: datetime | None = None) -> dict:
     """Create an operator-owned known record, never an artificial sighting."""
-    name = _text(name, store.policy.limits.input_chars)
+    name = _text(name, store.policy.limits.input_chars, "name")
     at = timestamp(now or utc_now())
     device, operation = identifier(), identifier()
     with store.transaction():
@@ -75,10 +76,10 @@ def _relationship(store: Store, update: Update, at: str) -> str:
     target = value["target_device"]
     store.require("devices", target)
     if target == update.device_id:
-        raise ValueError("self relationship refused")
+        raise RequestError("value.target_device: relationship must target a different device")
     for key, device in (("source_interface", update.device_id), ("target_interface", target)):
         if key in value and store.require("interfaces", value[key])["device_id"] != device:
-            raise ValueError("interface does not belong to relationship endpoint")
+            raise RequestError("value.relationship: interface must belong to its relationship endpoint")
     existing = store.connection.execute("""SELECT id FROM relations WHERE source_device=? AND target_device=?
       AND source_interface IS ? AND target_interface IS ? AND relationship_type=?""",
       (update.device_id, target, value.get("source_interface"), value.get("target_interface"),
@@ -141,10 +142,13 @@ def _apply_fact(store: Store, update: Update, at: str) -> str:
 def add_interface(store: Store, device: str, name: str, mac: str | None = None, *,
                   interface_type: str = "unknown", now: datetime | None = None) -> str:
     """Explicit operator same-device association; MAC collisions are retained, not merged."""
-    _text(name, store.policy.limits.input_chars)
+    _text(name, store.policy.limits.input_chars, "name")
     if interface_type not in INTERFACE_TYPES:
-        raise ValueError("invalid interface type")
-    normalized, stable = mac_address(mac) if mac is not None else (None, False)
+        raise RequestError("interface_type: choose a documented interface type")
+    try:
+        normalized, stable = mac_address(mac) if mac is not None else (None, False)
+    except ValueError as exc:
+        raise RequestError("mac: six colon-separated hexadecimal octets required") from exc
     at, interface, operation = timestamp(now or utc_now()), identifier(), identifier()
     response_json({"interface_id": interface, "applied": True, "persisted": True}, store.policy.limits.output_bytes)
     with store.transaction():
@@ -188,11 +192,14 @@ def record_direct_fact(store: Store, kind: str, entity: str, field: str, value: 
 def add_address(store: Store, interface: str, address: str, prefix_length: int, *,
                 now: datetime | None = None) -> str:
     """Operator assertion of an assignment; multi-address sets and collisions survive."""
-    ip = ip_address(address)
+    try:
+        ip = ip_address(address)
+    except ValueError as exc:
+        raise RequestError("address: canonical unscoped IP address required") from exc
     if str(ip) != address or "%" in address:
-        raise ValueError("canonical unscoped IP required")
+        raise RequestError("address: canonical unscoped IP address required")
     if type(prefix_length) is not int or not 0 <= prefix_length <= ip.max_prefixlen:
-        raise ValueError("invalid address prefix")
+        raise RequestError("prefix_length: integer within the address family's prefix range required")
     at, assignment, operation = timestamp(now or utc_now()), identifier(), identifier()
     response_json({"assignment_id": assignment, "applied": True, "persisted": True}, store.policy.limits.output_bytes)
     with store.transaction():
@@ -213,6 +220,6 @@ def end_address(store: Store, assignment: str, *, now: datetime | None = None) -
     with store.transaction():
         row = store.connection.execute("SELECT * FROM addresses WHERE id=?", (assignment,)).fetchone()
         if row is None or row["ended_at"] is not None or at < row["first_seen"]:
-            raise ValueError("invalid assignment transition")
+            raise RequestError("assignment_id: select an active assignment with a valid transition time")
         store.connection.execute("UPDATE addresses SET ended_at=? WHERE id=?", (at, assignment))
         store.audit(operation, "address_ended", "user", at, entity=assignment)
