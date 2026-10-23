@@ -125,7 +125,10 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
             with ExitStack() as stack:
                 for target in ("subprocess.Popen", "socket.socket", "atlas_test_plugin.discovery.Store"):
                     stack.enter_context(patch(target, side_effect=AssertionError("preflight effects forbidden")))
-                with self.assertRaisesRegex(ValueError, "probe count"):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^limits\.observations: selected discovery scope exceeds configured record budget$",
+                ):
                     discovery.collect(policy, {"network": "lab", "mode": "ping"})
                 self.assertEqual(discovery.validate_request({"network": "lab", "mode": "passive"}, policy)[1], "passive")
                 with patch.object(tools, "load_policy", return_value=policy):

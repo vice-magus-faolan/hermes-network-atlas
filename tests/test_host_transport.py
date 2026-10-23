@@ -177,7 +177,10 @@ class HostTransportTests(unittest.TestCase):
     def test_combined_probe_bound_before_capability_or_transport(self):
         policy = self.policy(limits={'observations': 48})  # 8 * (5 + 1) + 1 = 49
         with patch('socket.socket', side_effect=AssertionError('pre-effect bound')):
-            with self.assertRaisesRegex(ValueError, 'probe count'):
+            with self.assertRaisesRegex(
+                ValueError,
+                r'^limits\.observations: selected discovery methods and scope exceed configured record budget$',
+            ):
                 discovery.collect(policy, {'network': 'lab', 'mode': 'ping'})
         self.assertFalse(policy.database.exists())
 
