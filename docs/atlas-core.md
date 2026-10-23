@@ -1,10 +1,8 @@
-# Atlas Core (Phase 1)
+# Atlas Core
 
-This guide describes the Phase 1 structured-knowledge milestone. Phase 2 now adds
-explicit discovery and reconciliation; see [Local Discovery](local-discovery.md).
-Phase 3 adds [Authorized SSH Inspection](authorized-ssh-inspection.md).
-Service enumeration, live installation and gateway changes are not part of these
-milestones. Independent review and cumulative acceptance retain their gates.
+Atlas stores structured knowledge, provenance and history in SQLite. Explicit
+collection and reconciliation are covered in [Local Discovery](local-discovery.md)
+and [Authorized SSH Inspection](authorized-ssh-inspection.md).
 
 ## Storage and profile boundary
 
@@ -45,16 +43,14 @@ relations, context-qualified aliases, access evidence, observations, immutable
 batches/probes, unique application/result metadata, and audit events. Triggers
 reject updates/deletes of observations, batches, probes, applications, access
 evidence, and audit events. Evidence insertions and their events are atomic.
-Application storage was established in Phase 1 and is now used by Phase 2;
-that algorithm/evidence is documented separately. Typed batch storage validates counts, times,
+Typed batch storage validates counts, times,
 allowlisted scope, per-probe outcomes, neighbor state and address scope before
 inserting anything, and never rewrites canonical identities.
 
 ## Operator updates and manual seeding
 
-These commands describe the native local CLI registered with Hermes, not a grant
-to install or seed a live profile. Use an explicitly isolated home for examples.
-All names and example addresses below are synthetic.
+Use the native local CLI to record operator-supplied knowledge. The following
+names and addresses are synthetic; select your profile with `hermes -p PROFILE`.
 
     hermes network-atlas create --name "Synthetic router"
 
@@ -103,11 +99,18 @@ confidence, operator flags, permissions, commands, and policy inputs are rejecte
 Retirement/reactivation is operator-only. A successful inference receipt means
 its evidence was persisted, not that it became a canonical fact.
 
-The per-field table in `contract-decisions.md` is implemented by `facts.py`:
-operator-friendly names/descriptions/type overrides remain operator-owned;
-hostname/OS/interface facts prefer fresh qualified direct evidence, then user
-assertions, aged qualified evidence, then inference. Within a source, later
-assertions supersede older assertions; same-time native appends use append order.
+Canonical values are selected per entity and field, not by one global source rank:
+
+| Field family | Highest to lowest precedence |
+| --- | --- |
+| Friendly name, description, device type, retirement/reactivation | Operator assertion only |
+| Hostname, OS, interface facts, other descriptive facts | Fresh qualified direct evidence; operator assertion; aged qualified direct evidence; inference |
+| Relationship, SSH alias assertion | Operator assertion; qualified direct evidence; inference |
+| Collection/SSH permissions, probe definitions, limits, sharing | Current local operator configuration only; never atlas assertions |
+
+Alias assertions still require the policy and identity checks above. Relationship
+endpoints must be valid; no assertion manufactures a physical link. Within a source,
+later assertions supersede older assertions; same-time native appends use append order.
 Across equally ranked sources, differing values remain a conflict and no winner
 is manufactured. Unqualified evidence is not direct truth. History retains
 superseded assertions, explanations, and sources. Qualified evidence/time comes
@@ -116,15 +119,16 @@ and same-subject evidence before invoking native core primitives.
 
 UUIDs are independent of names/IPs. A stable unicast globally administered MAC
 anchors an interface first. Local/randomized, multicast, zero, or colliding MACs
-remain uncertain. Explicit operator same-device association joins interfaces in the core; Phase 2
-also accepts direct local same-host evidence. Identical IPs or hostnames never merge devices.
+remain uncertain. Explicit operator association or direct local same-host evidence
+can join interfaces to a device. Identical IPs or hostnames never merge devices.
 Current IP collisions expose all bounded candidate owners. New address assertions
 preserve other valid IPv4/IPv6 assignments; only explicit end-address closes an
 assignment. Historical addresses and their provenance remain queryable. Address
 first_seen/last_seen columns track assignment evidence/assertion effective times,
 not proof of reachability; device sighting clocks advance only on qualifying
-positive direct evidence. Never-seen devices remain known. Freshness is computed
-read-only from an injected UTC clock and stale_after_days; retirement is sticky.
+positive direct evidence. Operator assertions and inference do not advance device
+sighting/check clocks. Never-seen devices remain known. Freshness is computed
+read-only from UTC time and stale_after_days (default 14 days); retirement is sticky.
 
 ## Read-only query and maps
 
@@ -212,17 +216,12 @@ a byte ceiling refuses without mutation). `last_inspection` retains its separate
 observation-bounded fixed-probe attempt evidence, not inventory pagination.
 Even eligible ping absence means only not observed in that exact run. Shared
 foreign batches do not claim a local last discovery. Availability flags and
-`stage=v1` describe implemented code, not executable installation, successful
-connectivity, cumulative acceptance, publication or live activation.
+`stage=v1` describe implemented code, not successful installation or connectivity.
 
 `/network help` lists exact command arities and the trusted local operator update
 route. Unknown commands/extra arguments return usage and apply nothing. Status,
 show, map, discover, inspect and reconcile share the same validated model/CLI
-core paths; slash updates still fail closed on unattested origin. Regression
-evidence: `tests/test_commands.py::OperatorStatusTests`.
-Full-size /24 and /25 complete/partial/failed, /26 control, lowered-limit passive/
-SSH, output-cap and fresh-process tool/slash/operator status regressions:
-`tests/test_status_remediation.py::StatusBatchBoundsTests`.
+core paths; slash updates still fail closed on unattested origin.
 
 `network_map` supports text, markdown and mermaid plus export=true. CLI equivalent:
 
@@ -242,37 +241,5 @@ completion event follows successful replacement. Each file replacement is atomic
 filesystem interruption between the two can leave mismatched generated files.
 Regenerate both from SQLite to recover. Symlink export destinations are refused.
 
-## Verification and evidence
-
-Follow current cumulative setup prerequisites in operator-guide.md, then:
-
-    python3 -m pytest -q tests/test_core.py tests/test_runtime.py
-    python3 -m pytest -q
-
-Tests use synthetic scratch homes and never live data/networks. Native smoke
-exercises supported directory discovery, all six registered tools, actual native
-slash/CLI handlers, applying operator/inference persistence, policy revocation,
-exports, and a second native process re-query/map without discovery. Independent
-fresh-process storage tests also retain IDs, assignments, relations, history and
-failed access evidence. The cumulative A01/A13 native directory-plugin and
-three-alias fixture scenario are now in tests/test_acceptance.py; see
-operator-guide.md. Provider chat/live network validation is not claimed.
-
-A02/A10: PersistenceTests and BatchTests (reopen, FK, immutable history, rollback,
-interrupts, bounded concurrent writers, schema refusal, atomic batch insertion,
-unique/immutable application metadata). A04/A05: IdentityAndProvenanceTests.
-A06: QueryUpdateMapTests plus existing boundary tests, including lowered response
-limits, exact byte boundaries, Unicode/JSON expansion, and atomic receipt refusal
-across tool/CLI mutations. A11: alias ambiguity and unambiguous controls, escaping/golden,
-stale/isolated nodes, deterministic exports, injection and overflow tests. A12:
-shared store with independent profile authority and no second-profile mutation.
-A01/A03 implemented surfaces: NativeRuntimeTests and PolicyTests. Phase 2 covers
-A07/A08 discovery/reconciliation separately; Phase 3 documents A09 inspection
-evidence. A13 is indexed in acceptance-matrix.md, not proved by Phase 1 alone.
-
-The current Docker path checks unmodified official Hermes v0.21.7 and v0.22.2
-on Python 3.14.7 within the declared compatibility range. It does not modify
-production dependencies.
-Exact-head hosted CI, other platforms, publication, target integration and live
-activation/scans/SSH remain unperformed. Complexity warns near 10 and requires
-justification or refactoring above 15; tests are not a complexity waiver.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for isolated behavioral tests and
+[SECURITY.md](../SECURITY.md) for the trust model and verification limits.

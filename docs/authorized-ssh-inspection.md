@@ -1,10 +1,8 @@
-# Authorized SSH Inspection (Phase 3)
+# Authorized SSH Inspection
 
-Phase 3 implements an explicitly invoked, fixed read-only Linux collector and
-SSH batch reconciliation. Cumulative synthetic V1 acceptance and supported
-PM-managed install/enable are documented in operator-guide.md. Independent final
-review, target integration and publication retain separate gates.
-No actual SSH host, LAN, live profile or private atlas was used for this work.
+Explicitly collect fixed read-only Linux inventory over SSH, then reconcile the
+returned batch. See the [operator runbook](operator-guide.md) for installation
+and profile selection.
 
 ## Input and authority
 
@@ -31,13 +29,13 @@ cannot silently reroute the attempt or partially insert it. Policy edits affect
 the next invocation; V1 does not watch config mid-command or cancel an in-flight
 inspection merely because the file changes.
 
-Synthetic policy example (illustrative, not authorization to inspect a host):
+Configure an existing OpenSSH alias, replacing this synthetic example:
 
     version: 1
     ssh:
       enabled: true
       hosts:
-        fixture:
+        lab-router:
           alias: lab-router
           inspect: true
 
@@ -156,13 +154,12 @@ output is discarded. Per-probe failed/unavailable/timeout/output_limit/parse_fai
 results are retained when finalization fits the operation budget; an operation
 that cannot atomically finalize refuses without a persisted batch.
 
-The issue #2 shared-runner accounting fix applies here too without changing SSH
-probes/permissions: not_started/operation_deadline_exceeded means no child launched
+not_started/operation_deadline_exceeded means no child launched
 after budget exhaustion; timeout/deadline_exceeded is started work interrupted at
 its effective deadline. Valid completed responses are not overwritten during
 postprocessing; success/completed_at_boundary retains their evidence. Remaining
 probes still cannot spawn late. The host/operation/atomic-finalization bounds above
-remain unchanged; this adds no inspection capability.
+still apply.
 
 The immutable SSH batch itself is attempt evidence. Query status exposes the
 last local-context attempt immediately, before reconciliation. This also allows
@@ -220,36 +217,5 @@ success/failure/time/completion/probes separately. Foreign associations remain
 knowledge without foreign access history being represented as local access.
 Maps still use only stored supported relationships; no edges are fabricated.
 
-## Offline verification and remaining gates
-
-Use stock supported Hermes and requirements-test.txt as documented in
-operator-guide.md; pytest supplies isolated scratch fixtures:
-
-    python3 -m pytest -q tests/test_inspection*.py tests/test_runtime.py
-    python3 -m pytest -q
-
-`tests/test_inspection.py` covers A03/A05/A08/A09/A12 exact schema/handler rejection,
-fixed argv/host keys/config channels, alias/device resolution, partial/failure
-preservation, malicious scalar/JSON/os-release parsing, provenance and replay.
-`tests/test_inspection_extra.py` covers foreign/inferred/multi-alias identity,
-MAC collisions/foreign ownership, failed unassociated attempts, concurrent
-mapping changes, latest/revoked-policy selection, access-write rollback/retry,
-actual scratch-child host deadlines/output cleanup and missing ssh without install.
-`tests/test_inspection_remediation.py` covers A02/A05/A09 multi-interface UP/DOWN
-and link-local inventory without per-address reachability, preserved alias success
-and history, exact-address ping positive control, reopened/fresh-process queries
-with network/process execution refused, and deterministic maps/fixed exports.
-The canonical verifier discovers these regressions with the other module tests.
-Existing Phase 2 tests exercise the shared runner/SQLite whole-operation boundary.
-
-`tests/test_runtime.py` and `tests/runtime_smoke.py` exercise actual native
-Hermes registration/schema/tool/slash/CLI dispatch with six tools. Transport is
-ONLY `tests/offline_ssh.py`, a scratch-marker-guarded synthetic executable which
-validates fixed argv and cannot run SSH. It simulates valid output and a client
-refusal; a fresh native process replays/queries/maps with that executable removed
-and a fixture-only PATH. No live host key or real reachability is claimed tested.
-
-Native directory-plugin registration and three-alias cumulative V1 evidence are
-indexed in acceptance-matrix.md. GitHub CI execution, other OS/OpenSSH/runtime
-versions, integration/publication and live installation,
-private seeding, scans/SSH or gateway restarts remain unperformed/downstream.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for isolated behavioral tests and
+[SECURITY.md](../SECURITY.md) for the trust model and verification limits.

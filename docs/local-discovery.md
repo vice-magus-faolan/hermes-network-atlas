@@ -1,9 +1,8 @@
-# Local Discovery and Reconciliation (Phase 2)
+# Local Discovery and Reconciliation
 
-V1 phases 1–3 and cumulative synthetic acceptance are implemented; not released.
-Independent final review, integration, publication and live activation remain
-separate gates. No real LAN was scanned
-and no live profile was installed, changed, seeded or restarted for this work.
+Collect a bounded LAN observation batch, then explicitly reconcile it into
+inventory. See the [operator runbook](operator-guide.md) for installation,
+profile selection and a passive-only quick start.
 
 ## Explicit lifecycle and policy
 
@@ -31,11 +30,11 @@ readable knowledge, not permission to apply its batches under this profile.
 No probes run during reconciliation. SSH batch application is documented in
 [Authorized SSH Inspection](authorized-ssh-inspection.md).
 
-Equivalent commands (synthetic examples, not permission for live effects):
+With a network named `home` enabled in local policy:
 
-    hermes network-atlas discover --network lab --mode passive
+    hermes network-atlas discover --network home --mode passive
     hermes network-atlas reconcile --batch-id <returned-batch-id>
-    /network discover lab passive
+    /network discover home passive
     /network reconcile <returned-batch-id>
 
 A successful reconciliation atomically writes canonical evidence references,
@@ -159,14 +158,10 @@ budget and is atomic: receipt/output/SQL/operation failure rolls back without
 claiming a persisted batch or changing prior history. Bounds are cooperative,
 not a guarantee against OS descheduling between the last check and a syscall.
 
-This is the minimal issue #2 fixed-argv/collector-contract amendment: /24 now
-needs 16 children rather than 256, preserving completed chunk evidence without
-cross-batch resumability. /25 needs eight; smaller scopes never expand. Fixed
-chunk size 16 and rate factor 8 are conservative code-owned design choices, not
-live-tuned measurements. The deterministic sparse fixture proves within-budget
-coverage including the last address; it does NOT guarantee real-world /24 completion.
-Slow/failing networks or lowered limits may still be partial. No live benchmark,
-scan, SSH, policy edit or richer scanning was performed for this change.
+A /24 uses 16 serial chunks; a /25 uses eight; smaller scopes never expand.
+Completed chunk evidence survives later failures, but collection does not resume
+across batches. Fixed chunk size 16 and rate factor 8 do not guarantee real-world
+/24 completion: slow/failing networks or lowered limits may leave partial results.
 
 The runner is POSIX with waitid/WNOWAIT (tested on Linux). It uses shell=False,
 null stdin, closed inherited descriptors and a new owned process group. Output
@@ -180,7 +175,7 @@ usefully without launching a child. No subprocess runs under a DB write lock.
 
 ## Opt-in ICMP/TCP host discovery
 
-The network-local issue-6 amendment selects direct socket collection whenever
+Network-local policy selects direct socket collection whenever
 icmp_echo is true or tcp_ports differs from [80,443]. It does not change old policy
 traffic or reinterpret old Nmap evidence. See [host-discovery-policy.md](host-discovery-policy.md)
 for the controlling datagram-only permission, strict four-port cap/4403 exclusion,
@@ -235,7 +230,7 @@ batch/probe/source/time/qualification/neighbor state, not edits to raw evidence.
 Operator assertions and losing values survive. Current assignment sets are
 additive. A new ping/neighbor IP does not end another valid IPv4/IPv6 assignment;
 complete ping is not a same-interface address inventory. Historical transitions
-remain explicit operator end-address actions in this milestone. Assignment times
+remain explicit operator end-address actions. Assignment times
 are evidence effective times, not claims of reachability; older batches cannot
 regress device or assignment clocks. IP movement preserves the same interface/
 device ID and old evidence; a new MAC at an old IP creates a conflict, not a stolen
@@ -259,44 +254,5 @@ migration is needed); reappearance advances clocks/status, but never reverses
 operator retirement. Natural age transitions can be recorded even when a failed
 batch provides no new sightings; failure itself is not evidence of absence.
 
-## Verification and remaining gates
-
-Use stock supported Hermes and requirements-test.txt as documented in
-operator-guide.md. Pytest supplies scratch fixtures; no live home/config/atlas
-is a test fixture. Canonical and focused commands:
-
-    python3 -m pytest -q
-    python3 -m pytest -q tests/test_discovery*.py tests/test_runtime.py
-
-A03: current allowlists/modes, no raw targets/options/policy inputs, configuration
-CIDR/IPv4/IPv6 and lowered bounds. A07: immutable new/changed/unchanged/missing/
-conflicting results, interface identity, multi-address sets, partial/failed scans,
-cached/failed neighbors, stale/never-seen/reappearance/retirement, old batches and
-idempotent replay. A08: exact argv, bounded machine-readable parsing, malicious
-output, actual output/host/operation deadlines, concurrency, direct-child reaping,
-descendant group cleanup and unrelated-process control, missing dependencies.
-A10: atomic rollback/receipt overflow, write-lock exclusion during subprocesses,
-busy writer retry, immutable application persistence and fresh native reopen.
-Review regressions in tests/test_discovery_remediation.py add duplicate-MAC rows
-in both orders, existing-interface preservation, multi-address/distinct-MAC
-controls, out-of-scope collision metadata, deterministic deadline rollback/reopen/
-retry, actual SQLite VM interruption, shared initialization/lock budgets, targeted
-selection and a 2,000-observation two-selection control. All are discovered by
-the canonical verifier; deterministic budget tests avoid tight timing assumptions.
-Issue #2 regressions in tests/test_discovery_chunks.py cover startup-cost RED/GREEN,
-sparse /24 tail responders, multi-host XML/accounting/hostile declarations, deadline
-mid-chunk, completed-at-boundary work, lowered intensity, failed chunk and persistence
-rollback. tests/test_status_remediation.py additionally preserves legacy per-address
-/24 and /25 totals across native public read surfaces and fresh-process restart.
-These are tests/test_discovery.py, tests/test_discovery_extra.py and the actual
-native fixture in tests/test_runtime.py / tests/runtime_smoke.py. The native
-loader/registry/handlers are real; transport is a scratch-only executable fixture
-tests/offline_probe.py, never the host's real ip/Nmap. Reopen removes that fake
-binary and uses a fixture-only PATH to prove stored querying/replay without
-collection. Synthetic output is explicitly a fixture, not reported live evidence.
-
-Phase 1 checks remain in the same verifier. Existing schema version 1 is retained.
-Native directory-plugin registration and three-alias A13 cumulative evidence are
-indexed in acceptance-matrix.md and operator-guide.md. GitHub CI execution,
-other runtime combinations, real network
-reachability, publication, main advancement and live activation are unperformed.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for isolated behavioral tests and
+[SECURITY.md](../SECURITY.md) for the trust model and verification limits.
