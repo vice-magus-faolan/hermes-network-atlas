@@ -8,7 +8,6 @@ import importlib
 import io
 import json
 from pathlib import Path
-import sys
 import unittest
 from unittest.mock import MagicMock, call, patch
 
@@ -51,7 +50,8 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
             policy = self.policy(**methods)
             self.assertFalse(policy.networks[0].icmp_echo)
             self.assertEqual(policy.networks[0].tcp_ports, (80, 443))
-            with patch.object(discovery, "run", transport), patch("socket.socket", side_effect=AssertionError("no implicit ICMP")):
+            with (patch.object(discovery, "run", transport),
+                  patch("socket.socket", side_effect=AssertionError("no implicit ICMP"))):
                 result = discovery.collect(policy, {"network": "lab", "mode": "ping"})
             self.assertEqual(result["completion"], "complete")
             self.assertEqual(len(result["probes"]), 9)
@@ -130,7 +130,8 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                     r"^limits\.observations: selected discovery scope exceeds configured record budget$",
                 ):
                     discovery.collect(policy, {"network": "lab", "mode": "ping"})
-                self.assertEqual(discovery.validate_request({"network": "lab", "mode": "passive"}, policy)[1], "passive")
+                self.assertEqual(
+                    discovery.validate_request({"network": "lab", "mode": "passive"}, policy)[1], "passive")
                 with patch.object(tools, "load_policy", return_value=policy):
                     handler = tools.Handlers(self.home)
                     for text in (handler.discover({"network": "lab", "mode": "ping"}, icmp_echo=False),
@@ -153,7 +154,8 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                    {"network": "lab", "mode": "icmp"}, {"network": "lab", "mode": "ping", "tcp_ports": [2222]},
                    {"network": "lab", "mode": "ping", "icmp_echo": True},
                    {"network": "lab", "mode": "ping", "options": "-PE"}]
-        with patch("subprocess.Popen", side_effect=AssertionError("invalid effects")), patch("socket.socket", side_effect=AssertionError("invalid effects")):
+        with (patch("subprocess.Popen", side_effect=AssertionError("invalid effects")),
+              patch("socket.socket", side_effect=AssertionError("invalid effects"))):
             for params in invalid:
                 with self.subTest(params=params), self.assertRaises(ValueError):
                     discovery.collect(policy, params)
@@ -200,8 +202,10 @@ class ICMPCapabilityTests(unittest.TestCase):
         sock.__enter__.return_value = sock
         factory = MagicMock(return_value=sock)
         result = self.capability(platform="linux", socket_factory=factory)
-        self.assertEqual((result.state, result.diagnostic_code), ("unverified", "icmp_socket_opened_transport_unverified"))
-        factory.assert_called_once_with(self.module.socket.AF_INET, self.module.socket.SOCK_DGRAM, self.module.socket.IPPROTO_ICMP)
+        self.assertEqual((result.state, result.diagnostic_code),
+                         ("unverified", "icmp_socket_opened_transport_unverified"))
+        factory.assert_called_once_with(
+            self.module.socket.AF_INET, self.module.socket.SOCK_DGRAM, self.module.socket.IPPROTO_ICMP)
         self.assertEqual(sock.mock_calls, [call.__enter__(), call.__exit__(None, None, None)])
         with self.assertRaises(FrozenInstanceError):
             result.state = "available"
@@ -218,7 +222,8 @@ class ICMPCapabilityTests(unittest.TestCase):
 
     def test_permission_protocol_resource_failures_are_bounded_no_retry_or_helper(self):
         for number, code in ((errno.EPERM, "icmp_permission_denied"), (errno.EACCES, "icmp_permission_denied"),
-                             (errno.EPROTONOSUPPORT, "icmp_protocol_unsupported"), (errno.EAFNOSUPPORT, "icmp_protocol_unsupported"),
+                             (errno.EPROTONOSUPPORT, "icmp_protocol_unsupported"),
+                             (errno.EAFNOSUPPORT, "icmp_protocol_unsupported"),
                              (errno.EMFILE, "icmp_socket_open_failed")):
             factory = MagicMock(side_effect=OSError(number, "private untrusted error"))
             with self.subTest(number=number), patch("subprocess.Popen", side_effect=AssertionError("no helper")):

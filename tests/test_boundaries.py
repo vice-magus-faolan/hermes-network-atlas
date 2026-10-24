@@ -73,7 +73,8 @@ class PolicyTests(unittest.TestCase):
                 config.validate_policy({"networks": {"lab": {"cidr": cidr}}}, self.home)
         config.validate_policy({"networks": {"v6": {"cidr": "2001:db8::/64"}}}, self.home)
         with self.assertRaises(config.ConfigError):
-            config.validate_policy({"networks": {"v6": {"cidr": "2001:db8::/64", "discovery": {"ping": True}}}}, self.home)
+            config.validate_policy(
+                {"networks": {"v6": {"cidr": "2001:db8::/64", "discovery": {"ping": True}}}}, self.home)
 
     def test_each_limit_rejects_zero_negative_bool_fraction_nan_and_over_ceiling(self):
         ceilings = config.Limits()
@@ -111,7 +112,8 @@ class PolicyTests(unittest.TestCase):
         directory = self.home / "network-atlas"
         directory.mkdir()
         path = directory / "config.yaml"
-        invalid = ["", "[]", "null", "version: 1\nversion: 1\n", "limits:\n  concurrent_probes: 1\n  concurrent_probes: 4\n",
+        invalid = ["", "[]", "null", "version: 1\nversion: 1\n",
+                   "limits:\n  concurrent_probes: 1\n  concurrent_probes: 4\n",
                    "version: [", "!!python/object:builtins.object {}", "store: {shared_sqlite_path: relative.sqlite3}",
                    "version: 1\n#" + "x" * config.MAX_CONFIG_BYTES]
         for text in invalid:
@@ -146,7 +148,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_unsupported_python_refused_before_any_registration(self):
         for version in ((3, 10), (3, 15)):
-            with self.subTest(version=version), patch.object(plugin.sys, "version_info", version), self.assertRaises(RuntimeError):
+            with (self.subTest(version=version), patch.object(plugin.sys, "version_info", version),
+                  self.assertRaises(RuntimeError)):
                 plugin.register(None)
 
     def test_schema_does_not_admit_authority_or_unknown_arguments(self):
@@ -167,7 +170,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_runtime_kwargs_do_not_attest_operator_origin(self):
         device = self.seed()
-        result = json.loads(self.handlers.update(proposal(device), source="user", operator=True, confidence="user_supplied"))
+        result = json.loads(self.handlers.update(
+            proposal(device), source="user", operator=True, confidence="user_supplied"))
         self.assertEqual(result["update"]["source"], "inference")
         self.assertEqual(result["update"]["confidence"], "inferred")
         self.assertTrue(result["applied"])
@@ -210,7 +214,8 @@ class BoundaryTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 updates.inference_update({**proposal(), **change}, self.policy)
         with self.assertRaises(ValueError):
-            updates.inference_update({key: value for key, value in proposal().items() if key != "explanation"}, self.policy)
+            updates.inference_update(
+                {key: value for key, value in proposal().items() if key != "explanation"}, self.policy)
 
     def test_alias_association_cannot_grant_permission(self):
         params = {**proposal(), "field": "ssh_alias", "value": "lab-router"}
@@ -234,7 +239,8 @@ class BoundaryTests(unittest.TestCase):
         directory.mkdir()
         path = directory / "config.yaml"
         path.write_text(json.dumps(synthetic_policy()))
-        self.assertEqual(json.loads(self.handlers.query({"view": "status"}))["authorized_for_atlas_ssh_inspection"], ["lab-router"])
+        self.assertEqual(json.loads(self.handlers.query({"view": "status"}))["authorized_for_atlas_ssh_inspection"],
+                         ["lab-router"])
         path.write_text("ssh: {enabled: true, command: bad}")
         self.assertIn("error", json.loads(self.handlers.query({"view": "status"})))
         self.assertIn("error", json.loads(self.handlers.update(proposal())))
@@ -315,7 +321,8 @@ class BoundaryTests(unittest.TestCase):
     def test_local_cli_operator_path_and_unknown_options(self):
         parser = argparse.ArgumentParser()
         commands.setup_parser(parser)
-        args = parser.parse_args(["validate-update", "--device-id", "fixture-router", "--field", "retired", "--value-json", "true"])
+        args = parser.parse_args([
+            "validate-update", "--device-id", "fixture-router", "--field", "retired", "--value-json", "true"])
         output = io.StringIO()
         with redirect_stdout(output):
             result = commands.run_command(args, self.home)
@@ -324,5 +331,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(receipt["update"]["source"], "user")
         self.assertFalse(receipt["applied"])
         for extra in (["--source", "user"], ["--permissions", "ssh"], ["--device", "lab"]):
-            with self.subTest(extra=extra), redirect_stdout(io.StringIO()), patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
-                parser.parse_args(["validate-update", "--device-id", "fixture-router", "--field", "retired", "--value-json", "true", *extra])
+            with (self.subTest(extra=extra), redirect_stdout(io.StringIO()), patch("sys.stderr", io.StringIO()),
+                  self.assertRaises(SystemExit)):
+                parser.parse_args(["validate-update", "--device-id", "fixture-router", "--field", "retired",
+                                   "--value-json", "true", *extra])

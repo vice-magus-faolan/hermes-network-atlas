@@ -37,7 +37,8 @@ def _plans(network: Network, window: int, *, endpoints: bool = False) -> Iterato
     passes, later methods do not wait behind 256 initial attempts. A host deadline
     begins at its first attempt and never resets. No retries.
     """
-    methods = list(network.endpoint_ports) if endpoints else ([None] if network.icmp_echo else []) + list(network.tcp_ports)
+    methods = (list(network.endpoint_ports) if endpoints
+               else ([None] if network.icmp_echo else []) + list(network.tcp_ports))
     addresses = list(ip_network(network.cidr))
     for offset in range(0, len(addresses), window):
         for turn in range(len(methods)):
@@ -49,7 +50,8 @@ def _name(index: int, port: int | None) -> str:
     return 'icmp_' + str(index) if port is None else 'tcp_' + str(port) + '_' + str(index)
 
 
-def _probe(index: int, address: str, port: int | None, started: str, result: transport.Outcome, *, endpoints: bool = False) -> Probe:
+def _probe(index: int, address: str, port: int | None, started: str, result: transport.Outcome, *,
+           endpoints: bool = False) -> Probe:
     outcome, code, positive = result
     at = timestamp(utc_now())
     observations = ()
@@ -132,7 +134,8 @@ class Scheduler:
             selector.unregister(sock)
         finally:
             sock.close()
-        self.results[(index, attempt.port)] = _probe(index, attempt.address, attempt.port, started, result, endpoints=self.endpoints)
+        self.results[(index, attempt.port)] = _probe(
+            index, attempt.address, attempt.port, started, result, endpoints=self.endpoints)
 
     def _expire(self, selector):
         for sock, (attempt, _, _) in list(self.active.items()):

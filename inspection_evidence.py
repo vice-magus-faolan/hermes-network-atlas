@@ -28,7 +28,8 @@ def latest_inspection(store: Store, alias: str | None = None) -> dict | None:
                                      " ORDER BY ended_at DESC,rowid DESC LIMIT 1", args).fetchone()
     if batch is None:
         return None
-    rows = store.connection.execute("SELECT probe_name,outcome,diagnostic_code FROM probes WHERE batch_id=? ORDER BY rowid LIMIT ?",
+    rows = store.connection.execute(
+        "SELECT probe_name,outcome,diagnostic_code FROM probes WHERE batch_id=? ORDER BY rowid LIMIT ?",
                                      (batch["id"], store.policy.limits.observations + 1)).fetchall()
     if len(rows) > store.policy.limits.observations:
         raise ValueError("inspection probe detail exceeds bound")

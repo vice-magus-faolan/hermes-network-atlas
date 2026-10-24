@@ -61,7 +61,8 @@ def _addresses(device: dict, policy: Policy) -> str:
 
 def _access(device: dict) -> str:
     authorized = [entry["alias"] for entry in device["access"] if entry["authorized_for_atlas_ssh_inspection"]]
-    result = "Atlas SSH inspection authorized: " + ", ".join(authorized) if authorized else "not authorized by this profile"
+    result = ("Atlas SSH inspection authorized: " + ", ".join(authorized) if authorized
+              else "not authorized by this profile")
     conflicts = _alias_conflicts(device)
     if conflicts:
         result += "; SSH alias identity unresolved: " + ", ".join(conflicts)
@@ -76,7 +77,8 @@ def _uncertain(device: dict) -> bool:
     return (any(field["conflict"] for field in device["fields"].values())
             or bool(_alias_conflicts(device))
             or any(item["identity_uncertain"] for item in device["interfaces"])
-            or any(address["ownership_conflict"] for interface in device["interfaces"] for address in interface["addresses"]))
+            or any(address["ownership_conflict"] for interface in device["interfaces"]
+                   for address in interface["addresses"]))
 
 
 def _state(device: dict) -> str:
@@ -111,8 +113,10 @@ def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
     edges = _edges(devices)
     linked = {edge[key] for edge in edges for key in ("source_device", "target_device")}
     text = ["Network Atlas — stored knowledge, not live reachability", ""]
-    md = ["# Network Atlas", "", "Stored knowledge only. Authorization is not reachability. Unknown links remain unknown.", "",
-          "| Device (stable ID) | Type | Address | Status | Provenance | Access |", "| --- | --- | --- | --- | --- | --- |"]
+    md = ["# Network Atlas", "",
+          "Stored knowledge only. Authorization is not reachability. Unknown links remain unknown.", "",
+          "| Device (stable ID) | Type | Address | Status | Provenance | Access |",
+          "| --- | --- | --- | --- | --- | --- |"]
     mm = ["graph TD"]
     for device in devices:
         name = _field(device, "canonical_name", device["id"])
@@ -121,7 +125,8 @@ def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
         label = name + " [" + state + "; " + _provenance(device) + "]"
         text.append(_plain(label + " | " + _addresses(device, policy) + " | " + _access(device)))
         md.append("| " + " | ".join(markdown(value) for value in
-                  (name + " (" + device["id"] + ")", _field(device, "device_type"), _addresses(device, policy), state, _provenance(device), _access(device))) + " |")
+                  (name + " (" + device["id"] + ")", _field(device, "device_type"), _addresses(device, policy),
+                   state, _provenance(device), _access(device))) + " |")
         mm.append(f'  {_node(device)}["{mermaid(label)}"]')
         if policy.include_interfaces:
             _interface_lines(md, text, device)
@@ -141,7 +146,8 @@ def _interface_lines(md: list, text: list, device: dict) -> None:
     for interface in device["interfaces"]:
         field = interface["fields"].get("name")
         name = field["value"] if field and not field["conflict"] else "unknown/conflicting"
-        line = "Interface " + str(name) + " (" + interface["id"] + "): " + str(interface["mac_address"] or "unknown MAC")
+        line = ("Interface " + str(name) + " (" + interface["id"] + "): "
+                + str(interface["mac_address"] or "unknown MAC"))
         md.append("\n" + markdown(line) + "\n")
         text.append("  " + _plain(line))
 
@@ -149,7 +155,8 @@ def _interface_lines(md: list, text: list, device: dict) -> None:
 def _edge_lines(md: list, text: list, mm: list, edge: dict, devices: dict) -> None:
     source, target = devices[edge["source_device"]], devices[edge["target_device"]]
     label = _edge_label(edge)
-    line = _field(source, "canonical_name", source["id"]) + " -- " + label + " --> " + _field(target, "canonical_name", target["id"])
+    line = (_field(source, "canonical_name", source["id"]) + " -- " + label + " --> "
+            + _field(target, "canonical_name", target["id"]))
     md.append("- " + markdown(line))
     text.append(_plain(line))
     fact = edge["facts"]["relationship"]
@@ -164,7 +171,8 @@ def render_map(policy: Policy, *, now: datetime | None = None) -> dict[str, str]
     devices = []
     if policy.database.exists():
         with Store(policy) as store, store.snapshot():
-            rows = store.connection.execute("SELECT * FROM devices ORDER BY id LIMIT ?", (policy.limits.observations + 1,)).fetchall()
+            rows = store.connection.execute(
+                "SELECT * FROM devices ORDER BY id LIMIT ?", (policy.limits.observations + 1,)).fetchall()
             if len(rows) > policy.limits.observations:
                 raise ValueError("map device bound exceeded")
             devices = [device_detail(store, row, clock) for row in rows]

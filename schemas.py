@@ -1,20 +1,25 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Model-facing bounded schemas; authority/provenance are never parameters."""
 
-UPDATE_FIELDS = ("canonical_name", "description", "device_type", "hostname", "os", "ssh_alias", "relationship", "retired")
+UPDATE_FIELDS = (
+    "canonical_name", "description", "device_type", "hostname", "os", "ssh_alias", "relationship", "retired")
 TOOL_UPDATE_FIELDS = tuple(field for field in UPDATE_FIELDS if field != "retired")
 
 QUERY_SCHEMA = {
     "name": "network_query",
-    "description": "Read stored devices, endpoints, relations, provenance, status or original unresolved evidence with identity lineage. Historical evidence does not establish current reachability or access. Never performs discovery.",
+    "description": ("Read stored devices, endpoints, relations, provenance, status or original unresolved evidence "
+                    "with identity lineage. Historical evidence does not establish current reachability or access. "
+                    "Never performs discovery."),
     "parameters": {
         "type": "object", "additionalProperties": False,
         "properties": {
             "view": {"type": "string", "enum": ["devices", "status", "history", "unresolved", "endpoints"]},
             "batch_id": {"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
-                         "description": "Optional exact stored batch filter for unresolved/endpoints views; foreign origin remains read-only knowledge."},
+                         "description": ("Optional exact stored batch filter for unresolved/endpoints views; "
+                                         "foreign origin remains read-only knowledge.")},
             **{key: {"type": "string", "maxLength": 4096} for key in
-               ("device_id", "name", "address", "device_type", "status", "access_method", "relationship", "related_to", "text")},
+               ("device_id", "name", "address", "device_type", "status", "access_method",
+                "relationship", "related_to", "text")},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100},
             "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
         },
@@ -24,7 +29,8 @@ QUERY_SCHEMA = {
 
 UPDATE_SCHEMA = {
     "name": "network_update",
-    "description": "Persist an explained inference about an existing device. Does not override operator-owned facts, retire devices, or grant permission.",
+    "description": ("Persist an explained inference about an existing device. "
+                    "Does not override operator-owned facts, retire devices, or grant permission."),
     "parameters": {
         "type": "object", "additionalProperties": False,
         "properties": {
@@ -45,7 +51,8 @@ UPDATE_SCHEMA = {
 
 MAP_SCHEMA = {
     "name": "network_map",
-    "description": "Render stored topology without invented links or live reachability claims. Optional fixed profile-local exports.",
+    "description": ("Render stored topology without invented links or live reachability claims. "
+                    "Optional fixed profile-local exports."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"format": {"type": "string", "enum": ["text", "markdown", "mermaid"]},
                                   "export": {"type": "boolean"}}, "required": []},
@@ -53,7 +60,8 @@ MAP_SCHEMA = {
 
 DISCOVER_SCHEMA = {
     "name": "network_discover",
-    "description": "Collect a bounded immutable LAN batch for a configured network/mode. Does not reconcile. Passive neighbors are cached, not reachability.",
+    "description": ("Collect a bounded immutable LAN batch for a configured network/mode. "
+                    "Does not reconcile. Passive neighbors are cached, not reachability."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"network": {"type": "string", "maxLength": 64},
                                   "mode": {"type": "string", "enum": ["passive", "ping"]}},
@@ -62,14 +70,16 @@ DISCOVER_SCHEMA = {
 
 RECONCILE_SCHEMA = {
     "name": "network_reconcile",
-    "description": "Apply a stored locally authorized LAN/SSH batch (or latest unapplied). Exact retries are idempotent. Missing means not observed, never offline/deleted.",
+    "description": ("Apply a stored locally authorized LAN/SSH batch (or latest unapplied). "
+                    "Exact retries are idempotent. Missing means not observed, never offline/deleted."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"batch_id": {"type": "string", "maxLength": 64}}, "required": []},
 }
 
 INSPECT_SCHEMA = {
     "name": "network_inspect",
-    "description": "Collect one currently authorized SSH alias or uniquely mapped device with fixed read-only Linux probes. Stores an immutable attempt, does not reconcile or grant access.",
+    "description": ("Collect one currently authorized SSH alias or uniquely mapped device with fixed read-only "
+                    "Linux probes. Stores an immutable attempt, does not reconcile or grant access."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 64,
                                               "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}},
@@ -78,9 +88,12 @@ INSPECT_SCHEMA = {
 
 ENDPOINT_SCHEMA = {
     "name": "network_check_endpoints",
-    "description": "Check separately enabled configured TCP endpoints, persist, project and read back historical evidence. Select network OR resume exact batch_id without collecting again. No service identity, greetings or SSH authority.",
+    "description": ("Check separately enabled configured TCP endpoints, persist, project and read back historical "
+                    "evidence. Select network OR resume exact batch_id without collecting again. "
+                    "No service identity, greetings or SSH authority."),
     "parameters": {"type": "object", "additionalProperties": False,
-                   "properties": {key: {"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}
+                   "properties": {key: {"type": "string", "maxLength": 64,
+                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}
                                   for key in ("network", "batch_id")},
                    "oneOf": [{"required": ["network"]}, {"required": ["batch_id"]}]},
 }

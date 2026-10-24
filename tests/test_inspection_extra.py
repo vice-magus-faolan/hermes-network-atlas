@@ -8,14 +8,11 @@ import json
 import importlib
 import os
 from pathlib import Path
-import sqlite3
 import subprocess
 import sys
-import time
-import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, scratch_home
+from helpers import ROOT
 import test_inspection as fixtures
 from test_inspection import (outputs, ALIAS, MAC, MAC2, inspection, core, config,
                              runner, reconcile, query, storage, tools, updates)
@@ -41,13 +38,16 @@ class ExtraInspectionTests(AtlasFixture):
 
     def test_foreign_same_alias_cannot_anchor_local_device_and_inference_not_mapping(self):
         self.update("ssh_alias", ALIAS, operator=False)
-        with patch.object(inspection, "run", side_effect=AssertionError("no inferred access")), self.assertRaises(ValueError):
+        with (patch.object(inspection, "run", side_effect=AssertionError("no inferred access")),
+              self.assertRaises(ValueError)):
             inspection.collect(self.policy, {"target": self.device})
         other = config.validate_policy(self.raw, self.home / "foreign")
         other = replace(other, database=self.policy.database)
         with storage.Store(other, writable=True) as store:
-            core.apply_update(store, updates.operator_update({"device_id": self.device, "field": "ssh_alias", "value": ALIAS}, other), now=NOW)
-        with patch.object(inspection, "run", side_effect=AssertionError("no foreign access")), self.assertRaises(ValueError):
+            core.apply_update(store, updates.operator_update(
+                {"device_id": self.device, "field": "ssh_alias", "value": ALIAS}, other), now=NOW)
+        with (patch.object(inspection, "run", side_effect=AssertionError("no foreign access")),
+              self.assertRaises(ValueError)):
             inspection.collect(self.policy, {"target": self.device})
         receipt = self.collect()
         result = reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
@@ -61,8 +61,10 @@ class ExtraInspectionTests(AtlasFixture):
         raw["ssh"]["hosts"]["second"] = {"alias": "second", "inspect": True}
         policy = config.validate_policy(raw, self.home)
         with storage.Store(policy, writable=True) as store:
-            core.apply_update(store, updates.operator_update({"device_id": self.device, "field": "ssh_alias", "value": "second"}, policy), now=NOW)
-        with patch.object(inspection, "run", side_effect=AssertionError("must select alias")), self.assertRaises(ValueError):
+            core.apply_update(store, updates.operator_update(
+                {"device_id": self.device, "field": "ssh_alias", "value": "second"}, policy), now=NOW)
+        with (patch.object(inspection, "run", side_effect=AssertionError("must select alias")),
+              self.assertRaises(ValueError)):
             inspection.collect(policy, {"target": self.device})
         self.assertEqual(self.collect(policy)["completion"], "complete")
 
@@ -78,7 +80,8 @@ class ExtraInspectionTests(AtlasFixture):
         self.assertEqual({i["mac_address"] for i in self.detail(now=storage.utc_now())["interfaces"]}, {MAC2})
         payloads = outputs()
         payloads["ip -j address"] = b'[]'
-        payloads["ip -j link"] = json.dumps([{"ifname": "one", "address": MAC2}, {"ifname": "two", "address": MAC2}]).encode()
+        payloads["ip -j link"] = json.dumps([
+            {"ifname": "one", "address": MAC2}, {"ifname": "two", "address": MAC2}]).encode()
         before = self.detail(now=storage.utc_now())["interfaces"]
         receipt = self.collect(payloads=payloads)
         result = reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
@@ -87,7 +90,8 @@ class ExtraInspectionTests(AtlasFixture):
 
     def test_partial_malformed_oversized_and_empty_ip_success_qualifies_target_only(self):
         self.associate()
-        payloads = {"hostname": b'good\n', "ip -j address": b'[{"ifname":"x","addr_info":[{"local":"bad","prefixlen":24}]}]',
+        payloads = {"hostname": b'good\n',
+                    "ip -j address": b'[{"ifname":"x","addr_info":[{"local":"bad","prefixlen":24}]}]',
                     "ip -j route": b'[{"dst":"192.0.2.0/23"}]', "ip -j neigh": b'[{"dst":"bad"}]',
                     "cat /etc/os-release": b'x' * (self.policy.limits.output_bytes + 1)}
         receipt = self.collect(payloads=payloads)
@@ -152,7 +156,8 @@ class ExtraInspectionTests(AtlasFixture):
             original(app)
             self.assertEqual(app.store.connection.execute("SELECT COUNT(*) FROM access_evidence").fetchone()[0], 1)
             clock = 1000.0
-        with patch.object(reconcile.time, "monotonic", lambda: clock), patch.object(reconcile, "_ssh_access", expire), self.assertRaises(ValueError):
+        with (patch.object(reconcile.time, "monotonic", lambda: clock),
+              patch.object(reconcile, "_ssh_access", expire), self.assertRaises(ValueError)):
             reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
         self.assertEqual(self.counts(), before)
         self.assertEqual(self.store.connection.execute("SELECT COUNT(*) FROM applications").fetchone()[0], 0)
@@ -178,14 +183,17 @@ class ExtraInspectionTests(AtlasFixture):
         alias_removed["ssh"]["hosts"] = {}
         before = list(self.store.connection.iterdump())
         handlers = tools.Handlers(self.home)
-        with patch.object(inspection, "run") as transport, patch("subprocess.Popen") as spawn, patch("socket.socket") as socket:
+        with (patch.object(inspection, "run") as transport, patch("subprocess.Popen") as spawn,
+              patch("socket.socket") as socket):
             for raw in (disabled, alias_disabled, alias_removed):
                 path.write_text(json.dumps(raw))
                 code, operator = self.cli(["reconcile", "--batch-id", receipt["batch_id"]])
                 self.assertEqual(code, 2)
                 for result in (json.loads(handlers.reconcile({"batch_id": receipt["batch_id"]})),
                                json.loads(handlers.command("reconcile " + receipt["batch_id"])), operator):
-                    self.assertEqual(result, {"error": "ssh.enabled/ssh.hosts.inspect: stored alias is not currently authorized; restore intended policy or select an eligible batch",
+                    self.assertEqual(result, {"error": "ssh.enabled/ssh.hosts.inspect: "
+                                              "stored alias is not currently authorized; "
+                                              "restore intended policy or select an eligible batch",
                                               "applied": False})
                 self.assertEqual(list(self.store.connection.iterdump()), before)
             path.write_text(json.dumps(self.raw))
@@ -202,13 +210,15 @@ class ExtraInspectionTests(AtlasFixture):
         mapped = query.query(self.policy, {"access_method": "ssh"})["devices"]
         self.assertEqual(len(mapped), 1)
         self.assertFalse(query.query(policy, {"access_method": "ssh"})["devices"])
-        self.assertFalse(query.query(policy, {"device_id": mapped[0]["id"]})["devices"][0]["access"][0]["authorized_for_atlas_ssh_inspection"])
+        self.assertFalse(query.query(policy, {"device_id": mapped[0]["id"]})["devices"][0]["access"][0][
+            "authorized_for_atlas_ssh_inspection"])
 
     def test_later_legacy_access_record_is_not_hidden_by_older_attempt(self):
         self.associate()
         self.collect(payloads={})
         batches = importlib.import_module("atlas_test_plugin.batches")
-        recorded = batches.record_access(self.store, self.device, ALIAS, True, "fixture", now=storage.utc_now() + timedelta(seconds=1))
+        recorded = batches.record_access(self.store, self.device, ALIAS, True, "fixture",
+                                         now=storage.utc_now() + timedelta(seconds=1))
         detail = self.detail(now=storage.utc_now())
         self.assertEqual(detail["access"][0]["last_inspection"]["id"], recorded)
         self.assertEqual(query.query(self.policy, {"view": "status"})["last_inspection"]["id"], recorded)
@@ -218,7 +228,8 @@ class ActualInspectionBoundsTests(AtlasFixture):
     def test_shared_runner_completion_and_not_started_are_not_relabelled_after_parsing(self):
         for result in (runner.CommandResult("success", b'fixture\n'),
                        runner.CommandResult("not_started", diagnostic_code="operation_deadline_exceeded")):
-            with patch.object(inspection, "run", return_value=result), patch.object(inspection.time, "monotonic", return_value=2.0):
+            with (patch.object(inspection, "run", return_value=result),
+                  patch.object(inspection.time, "monotonic", return_value=2.0)):
                 probe = inspection._probe(self.policy, ALIAS, inspection.PROBES[0], 1.0)
             self.assertEqual(probe.outcome, result.outcome)
             if result.outcome == "success":
@@ -239,9 +250,12 @@ class ActualInspectionBoundsTests(AtlasFixture):
             spawned.append(child)
             return child
         def fake(argv, limits, deadline, **kwargs):
-            return runner.run((sys.executable, str(ROOT / "tests/offline_probe.py"), "sleep"), limits, deadline, **kwargs)
-        policy = replace(self.policy, limits=replace(self.policy.limits, host_timeout_seconds=1, operation_timeout_seconds=4))
-        with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}), patch.object(inspection, "run", fake), patch.object(runner.subprocess, "Popen", own):
+            return runner.run(
+                (sys.executable, str(ROOT / "tests/offline_probe.py"), "sleep"), limits, deadline, **kwargs)
+        policy = replace(self.policy, limits=replace(
+            self.policy.limits, host_timeout_seconds=1, operation_timeout_seconds=4))
+        with (patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}),
+              patch.object(inspection, "run", fake), patch.object(runner.subprocess, "Popen", own)):
             receipt = inspection.collect(policy, {"target": ALIAS})
         self.assertEqual(len(spawned), 1)
         self.assertIsNotNone(spawned[0].returncode)
@@ -256,9 +270,11 @@ class ActualInspectionBoundsTests(AtlasFixture):
         fixture.mkdir()
         (fixture / "offline-fixture").touch()
         def fake(argv, limits, deadline, **kwargs):
-            return runner.run((sys.executable, str(ROOT / "tests/offline_probe.py"), "flood"), limits, deadline, **kwargs)
+            return runner.run(
+                (sys.executable, str(ROOT / "tests/offline_probe.py"), "flood"), limits, deadline, **kwargs)
         policy = replace(self.policy, limits=replace(self.policy.limits, output_bytes=4096))
-        with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}), patch.object(inspection, "run", fake):
+        with (patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}),
+              patch.object(inspection, "run", fake)):
             receipt = inspection.collect(policy, {"target": ALIAS})
         self.assertEqual({probe["outcome"] for probe in receipt["probes"]}, {"output_limit"})
         with patch.dict(os.environ, {"PATH": str(fixture)}):
@@ -272,6 +288,7 @@ class ActualInspectionBoundsTests(AtlasFixture):
             nonlocal deadline
             deadline = 1000.0
             return runner.CommandResult("success", b'fixture\n')
-        with patch.object(inspection.time, "monotonic", lambda: deadline), patch.object(inspection, "run", expired), self.assertRaises(ValueError):
+        with (patch.object(inspection.time, "monotonic", lambda: deadline),
+              patch.object(inspection, "run", expired), self.assertRaises(ValueError)):
             inspection.collect(self.policy, {"target": ALIAS})
         self.assertEqual(self.counts(), before)

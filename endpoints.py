@@ -20,7 +20,8 @@ from .storage import Store, encode, identifier, response_json, timestamp, utc_no
 
 STATES = ('open', 'closed', 'no_response', 'unavailable', 'not_started')
 RECOVERY_ERRORS = {
-    'observations': 'limits.observations: endpoint address/port grid exceeds configured record budget; restore sufficient limits and resume this batch',
+    'observations': ('limits.observations: endpoint address/port grid exceeds configured record budget; '
+                     'restore sufficient limits and resume this batch'),
     'policy': 'endpoint policy: check current network/port authorization and resume this batch',
     'store': 'endpoint store: check database availability and compatible schema; resume this batch',
     'io': 'endpoint local I/O: check store access and available space; resume this batch',
@@ -35,7 +36,8 @@ RESULTS = {
     ('not_started', 'operation_deadline_exceeded'): ('not_started', False),
     ('not_started', 'host_deadline_before_start'): ('not_started', False),
     **{('unavailable', code): ('unavailable', False) for code in (
-        'destination_excluded', 'transport_permission_denied', 'transport_protocol_unsupported', 'transport_socket_failed')},
+        'destination_excluded', 'transport_permission_denied',
+        'transport_protocol_unsupported', 'transport_socket_failed')},
 }
 
 
@@ -58,7 +60,8 @@ def network_policy(policy: Policy, name: str) -> Network:
     """Refuse over-budget collection before planning or transport effects."""
     network = _authorized_network(policy, name)
     if ip_network(network.cidr).num_addresses * len(network.endpoint_ports) > policy.limits.observations:
-        raise EndpointObservationLimitError('limits.observations: endpoint address/port grid exceeds configured record budget')
+        raise EndpointObservationLimitError(
+            'limits.observations: endpoint address/port grid exceeds configured record budget')
     return network
 
 
@@ -79,7 +82,8 @@ def validate_probes(policy: Policy, name: str, probes: tuple[Probe, ...]) -> dic
         raise RequestError('network.endpoints.tcp_ports: endpoint evidence grid must match current port policy')
     expected = plans(network_policy(policy, name))
     for probe in probes:
-        if (probe.outcome, probe.diagnostic_code) not in RESULTS or probe.observations or probe.evidence_kind != 'tcp_endpoint':
+        if ((probe.outcome, probe.diagnostic_code) not in RESULTS
+                or probe.observations or probe.evidence_kind != 'tcp_endpoint'):
             raise ValueError('invalid endpoint evidence')
     return expected
 
@@ -109,8 +113,10 @@ def _project(store: Store, batch) -> dict:
     probes = tuple(Probe(row['probe_name'], row['outcome'], row['started_at'], row['ended_at'], row['coverage_kind'],
                          row['coverage_value'], row['evidence_kind'], row['diagnostic_code']) for row in rows)
     grid = validate_probes(store.policy, batch['scope_name'], probes)
-    _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'], batch['ended_at'], batch['completion'], probes)
-    previous = store.connection.execute('SELECT result_json FROM applications WHERE batch_id=?', (batch['id'],)).fetchone()
+    _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'],
+                     batch['ended_at'], batch['completion'], probes)
+    previous = store.connection.execute(
+        'SELECT result_json FROM applications WHERE batch_id=?', (batch['id'],)).fetchone()
     if previous is not None:
         return json.loads(previous[0])
     counts: dict[str, int] = dict.fromkeys(STATES, 0)
@@ -124,8 +130,10 @@ def _project(store: Store, batch) -> dict:
     result = {'id': application, 'batch_id': batch['id'], 'applied': True, 'projected': True,
               'observation_count': len(rows), 'state_counts': counts, 'applied_at': at}
     response_json(result, store.policy.limits.output_bytes)
-    store.connection.execute('INSERT INTO applications VALUES (?,?,?,?,?)', (application, batch['id'], 1, at, encode(result)))
-    store.audit(application, 'endpoints_projected', 'tcp_endpoint', at, batch=batch['id'], details={'observation_count': len(rows)})
+    store.connection.execute(
+        'INSERT INTO applications VALUES (?,?,?,?,?)', (application, batch['id'], 1, at, encode(result)))
+    store.audit(application, 'endpoints_projected', 'tcp_endpoint', at, batch=batch['id'],
+                details={'observation_count': len(rows)})
     return result
 
 
@@ -164,7 +172,8 @@ def check(policy: Policy, params: object) -> dict:
         probes = Scheduler(network, policy, deadline - reserve, endpoints=True).run()
         completion = collection_completion(probes)
         with Store(policy, writable=True, deadline=deadline) as store:
-            batch_id = store_batch(store, 'tcp_endpoint', value, started, timestamp(utc_now()), completion, probes, deadline=deadline)
+            batch_id = store_batch(store, 'tcp_endpoint', value, started, timestamp(utc_now()),
+                                   completion, probes, deadline=deadline)
             if not isinstance(batch_id, str):
                 raise ValueError('endpoint persistence did not return a batch ID')
         receipt = {**_receipt(batch_id), 'collection_performed': True, 'completion': completion}
@@ -190,7 +199,8 @@ def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
         receipt.update(applied=True, projected=True, completion=completion)
         receipt['stage'] = 'readback'
         # New connection + snapshot after commit, with the SAME aggregate deadline.
-        readback = query_endpoints(policy, {'batch_id': receipt['batch_id'], 'limit': 1, 'offset': 0}, deadline=deadline)
+        readback = query_endpoints(
+            policy, {'batch_id': receipt['batch_id'], 'limit': 1, 'offset': 0}, deadline=deadline)
         if readback['total_count'] != result['observation_count']:
             raise ValueError('endpoint readback mismatch')
         receipt.update(queryable=True, stage='queryable', observation_count=result['observation_count'],
@@ -202,7 +212,8 @@ def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
         # probe just because projection/query/output failed after persistence.
         category = ('observations' if isinstance(exc, EndpointObservationLimitError) else
                     'policy' if isinstance(exc, (ConfigError, RequestError)) else
-                    'store' if isinstance(exc, (sqlite3.Error, StoreError)) else 'io' if isinstance(exc, OSError) else 'state')
+                    'store' if isinstance(exc, (sqlite3.Error, StoreError)) else
+                    'io' if isinstance(exc, OSError) else 'state')
         receipt['error'] = RECOVERY_ERRORS[category]
         # Keep this recovery receipt small even when final result exceeded output.
         receipt.pop('state_counts', None)
@@ -213,13 +224,16 @@ def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
 def endpoint_counts(store: Store) -> dict:
     """Global knowledge counters; these never confer local collection authority."""
     batches = store.connection.execute("SELECT COUNT(*) FROM batches WHERE collector='tcp_endpoint'").fetchone()[0]
-    pending = store.connection.execute("SELECT COUNT(*) FROM batches b WHERE collector='tcp_endpoint' "
-                                       "AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.batch_id=b.id)").fetchone()[0]
+    pending = store.connection.execute(
+        "SELECT COUNT(*) FROM batches b WHERE collector='tcp_endpoint' "
+        "AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.batch_id=b.id)").fetchone()[0]
     if store.schema_version < 2:
         return {'endpoint_count': 0, 'endpoint_observation_count': 0, 'endpoint_evidence_batches': batches,
                 'responding_endpoint_count': 0, 'unprojected_endpoint_batches': pending}
-    row = store.connection.execute('SELECT COUNT(*),COUNT(DISTINCT address || char(0) || port),'
-        'COUNT(DISTINCT CASE WHEN qualified=1 THEN address || char(0) || port END) FROM endpoint_observations').fetchone()
+    row = store.connection.execute(
+        'SELECT COUNT(*),COUNT(DISTINCT address || char(0) || port),'
+        'COUNT(DISTINCT CASE WHEN qualified=1 THEN address || char(0) || port END) '
+        'FROM endpoint_observations').fetchone()
     return {'endpoint_count': row[1], 'endpoint_observation_count': row[0], 'endpoint_evidence_batches': batches,
             'responding_endpoint_count': row[2], 'unprojected_endpoint_batches': pending}
 
@@ -243,12 +257,14 @@ def query_endpoints(policy: Policy, args: dict, *, deadline: float | None = None
         where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
         source = ' FROM endpoint_observations e JOIN probes p ON p.id=e.probe_id JOIN batches b ON b.id=p.batch_id'
         total = store.connection.execute('SELECT COUNT(*)' + source + where, bindings).fetchone()[0]
-        rows = store.connection.execute('SELECT e.*,p.batch_id,p.probe_name,p.outcome,p.diagnostic_code,p.started_at,p.ended_at AS checked_at,'
+        rows = store.connection.execute(
+            'SELECT e.*,p.batch_id,p.probe_name,p.outcome,p.diagnostic_code,p.started_at,p.ended_at AS checked_at,'
             'b.collector,b.source,b.policy_context,b.scope_name,b.scope_value,b.completion' + source + where +
             ' ORDER BY p.ended_at,e.probe_id LIMIT ? OFFSET ?', (*bindings, limit + 1, offset)).fetchall()
         result = {**empty, 'endpoints': [{**dict(row), 'qualified': bool(row['qualified']),
                     'qualification': 'historical_tcp_response_only' if row['qualified'] else 'no_response_or_no_check',
-                    'coverage': 'not_checked' if row['state'] in {'not_started', 'unavailable'} else 'attempted_address_port_only',
+                    'coverage': ('not_checked' if row['state'] in {'not_started', 'unavailable'}
+                                 else 'attempted_address_port_only'),
                     'historical': True, 'device_id': None} for row in rows[:limit]],
                   'total_count': total, 'has_more': len(rows) > limit}
         response_json(result, policy.limits.output_bytes)

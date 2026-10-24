@@ -39,7 +39,8 @@ class NativeRuntimeTests(unittest.TestCase):
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
             (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
             # Explicit native opt-in selection. No production configuration is copied.
-            (home / "config.yaml").write_text(json.dumps({"plugins": {"enabled": ["network-atlas"] if mode != "disabled" else [],
+            (home / "config.yaml").write_text(json.dumps({
+                "plugins": {"enabled": ["network-atlas"] if mode != "disabled" else [],
                                                                         "disabled": []}}), encoding="utf-8")
             env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(scratch / "user"),
                    "HERMES_HOME": str(home), "TMPDIR": str(scratch), "PYTHONDONTWRITEBYTECODE": "1",
@@ -70,7 +71,8 @@ class NativeRuntimeTests(unittest.TestCase):
                     # may be resolved, never the host's actual ip/nmap commands.
                     (fixture_bin / binary).unlink()
                     env["PATH"] = str(fixture_bin)
-                restarted = subprocess.run([sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), reopen_mode],
+                restarted = subprocess.run(
+                    [sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), reopen_mode],
                                            env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
                 self.assertEqual(restarted.returncode, 0, restarted.stdout + restarted.stderr)
                 persistence = json.loads(restarted.stdout.strip().splitlines()[-1])
@@ -110,7 +112,8 @@ class NativeRuntimeTests(unittest.TestCase):
                 (home / 'network-atlas').mkdir()
                 raw: dict = {} if mode == 'isolated' else {'store': {'shared_sqlite_path': str(shared)}}
                 if mode == 'collect':
-                    raw['networks'] = {'lab': {'cidr': '192.0.2.8/31', 'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
+                    raw['networks'] = {'lab': {'cidr': '192.0.2.8/31',
+                                              'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
                 (home / 'network-atlas' / 'config.yaml').write_text(json.dumps(raw))
                 (home / 'config.yaml').write_text(json.dumps({'plugins': {'enabled': ['network-atlas']}}))
                 env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(scratch / 'user'),

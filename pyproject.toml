@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[tool.ruff]
+required-version = "==0.17.2"
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Assertions are intentional in tests and their synthetic child-process helpers.
+"tests/**" = ["S101"]

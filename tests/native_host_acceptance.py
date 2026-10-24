@@ -63,7 +63,8 @@ def _scenario(atlas, methods, kind, error):
         if kind == 'icmp':
             assert all(row['probe']['probe_name'].startswith('icmp_') for row in rows)
         if kind == 'tcp':
-            assert all(row['probe']['probe_name'].startswith('tcp_' + str(methods['tcp_ports'][0]) + '_') for row in rows)
+            assert all(row['probe']['probe_name'].startswith('tcp_' + str(methods['tcp_ports'][0]) + '_')
+                       for row in rows)
         records.append({'batch_id': result['batch_id'], 'evidence': evidence})
     return records
 

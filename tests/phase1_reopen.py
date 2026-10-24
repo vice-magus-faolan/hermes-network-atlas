@@ -4,18 +4,16 @@
 from datetime import datetime, timezone
 import importlib
 import json
-import os
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tests"))
 from helpers import load_package
 
 
 def deny_network(event, args):
     # A fresh read process must not rediscover/inspect even through an executable.
-    if event in {"socket.connect", "socket.getaddrinfo", "socket.bind", "subprocess.Popen", "os.system", "os.exec", "os.posix_spawn"}:
+    if event in {"socket.connect", "socket.getaddrinfo", "socket.bind", "subprocess.Popen",
+                 "os.system", "os.exec", "os.posix_spawn"}:
         raise RuntimeError("offline read-only fixture only")
 
 

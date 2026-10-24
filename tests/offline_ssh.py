@@ -28,7 +28,8 @@ payloads = {"hostname": "fixture-ssh-host\n", "hostnamectl --static": "fixture-s
             "ip -j address": json.dumps([{"ifname": "ssh0", "address": "00:11:22:33:44:77", "operstate": "UP",
                                          "addr_info": [{"local": "198.51.100.7", "prefixlen": 24}]}]),
             "ip -j link": json.dumps([{"ifname": "ssh0", "address": "00:11:22:33:44:77", "operstate": "UP"}]),
-            "ip -j route": "[]", "ip -j neigh": '[{"dst":"198.51.100.20","lladdr":"00:11:22:33:44:99","state":["STALE"]}]'}
+            "ip -j route": "[]",
+            "ip -j neigh": '[{"dst":"198.51.100.20","lladdr":"00:11:22:33:44:99","state":["STALE"]}]'}
 assert args[-1] in payloads, args
 outcome = root / "ssh-outcome"
 if outcome.is_file():

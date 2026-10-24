@@ -79,7 +79,8 @@ def run(argv: tuple[str, ...], limits: Limits, operation_deadline: float, *, hos
     Per-host invocations are bounded independently of a tool's own timeout flags.
     The collector passes one shared monotonic whole-operation deadline.
     """
-    duration = min(limits.command_timeout_seconds, limits.host_timeout_seconds) if host else limits.command_timeout_seconds
+    duration = (min(limits.command_timeout_seconds, limits.host_timeout_seconds)
+                if host else limits.command_timeout_seconds)
     deadline = min(operation_deadline, time.monotonic() + duration)
     if time.monotonic() >= deadline:
         return CommandResult("not_started", diagnostic_code="operation_deadline_exceeded")

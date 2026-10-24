@@ -8,7 +8,6 @@ from contextlib import redirect_stdout
 import io
 from ipaddress import ip_address, ip_network
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -157,12 +156,15 @@ class StatusBatchBoundsTests(unittest.TestCase):
             size = ip_network(self.policy.networks[0].cidr).num_addresses
             at = storage.timestamp(NOW)
             probes = tuple(batches.Probe(f"ping_{i}", "success" if i < size - 1 else "timeout", at, at,
-                                         "none", "", "ping_response", "ok" if i < size - 1 else "operation_deadline_exceeded")
+                                         "none", "", "ping_response",
+                                         "ok" if i < size - 1 else "operation_deadline_exceeded")
                            for i in range(size))
-            coverage = batches.Probe("ping_coverage", "command_failed", at, at, "none", "", "ping_response", "incomplete_scope")
+            coverage = batches.Probe(
+                "ping_coverage", "command_failed", at, at, "none", "", "ping_response", "incomplete_scope")
             with storage.Store(self.policy, writable=True) as store:
                 core.create_device(store, "Synthetic known host", now=NOW)
-                receipt = batches.store_batch(store, "ping", "lab", at, at, "partial", probes + (coverage,), receipt=True)
+                receipt = batches.store_batch(
+                    store, "ping", "lab", at, at, "partial", probes + (coverage,), receipt=True)
             results = self.assert_public_reopen(receipt, 1)
             counts = results["direct"]["last_discovery"]["probe_summary"]
             self.assertEqual(counts["address_count"], size)
@@ -175,9 +177,12 @@ class StatusBatchBoundsTests(unittest.TestCase):
         with storage.Store(self.policy, writable=True) as store:
             core.create_device(store, "Synthetic known host", now=NOW)
             passive = batches.store_batch(store, "local_passive", "lab", at, at, "partial", (
-                batches.Probe("ip_addr", "success", at, at, "local_host", self.policy.networks[0].cidr, "local_interface"),
+                batches.Probe(
+                    "ip_addr", "success", at, at, "local_host", self.policy.networks[0].cidr, "local_interface"),
                 batches.Probe("ip_route", "unavailable", at, at, "none", "", "none", "missing_executable"),
-                batches.Probe("ip_neigh", "parse_failed", at, at, "none", "", "cached_neighbor", "invalid_bounded_output")), receipt=True)
+                batches.Probe("ip_neigh", "parse_failed", at, at, "none", "", "cached_neighbor",
+                              "invalid_bounded_output")),
+                receipt=True)
             ssh_probes = tuple(batches.Probe(f"probe_{i}", outcome, at, at, "none", "", "ssh_response", outcome)
                                for i, outcome in enumerate(batches.OUTCOMES))
             ssh = batches.store_batch(store, "ssh", "lab-router", at, at, "partial", ssh_probes, receipt=True)
@@ -203,7 +208,8 @@ class StatusBatchBoundsTests(unittest.TestCase):
                                    for i in range(count))
                     with storage.Store(self.policy, writable=True) as store:
                         core.create_device(store, "Synthetic known host", now=NOW)
-                        receipt = batches.store_batch(store, collector, "lab" if collector == "local_passive" else "lab-router",
+                        receipt = batches.store_batch(
+                            store, collector, "lab" if collector == "local_passive" else "lab-router",
                                                       at, at, completion, probes, receipt=True)
                     results = self.assert_public_reopen(receipt, 1)
                     result = results["direct"]
@@ -220,7 +226,8 @@ class StatusBatchBoundsTests(unittest.TestCase):
         at = storage.timestamp(NOW)
         with storage.Store(self.policy, writable=True) as store:
             batches.store_batch(store, "ping", "lab", at, at, "complete", (
-                batches.Probe("ping_coverage", "success", at, at, "exact_network", self.policy.networks[0].cidr, "ping_response"),))
+                batches.Probe("ping_coverage", "success", at, at, "exact_network", self.policy.networks[0].cidr,
+                              "ping_response"),))
         before = self.policy.database.read_bytes()
         self.raw["limits"]["output_bytes"] = 128
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))

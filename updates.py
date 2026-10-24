@@ -39,8 +39,9 @@ def _text(value: object, limit: int, label: str = "text") -> str:
 def _relation(value: object, policy: Policy) -> tuple[tuple[str, str], ...]:
     keys = {"target_device", "relationship_type", "source_interface", "target_interface"}
     if not isinstance(value, dict) or not {"target_device", "relationship_type"} <= set(value) <= keys:
-        raise RequestError("value.relationship: target_device and relationship_type required; only documented endpoints supported")
-    for key, item in value.items():
+        raise RequestError("value.relationship: target_device and relationship_type required; "
+                           "only documented endpoints supported")
+    for item in value.values():
         if not isinstance(item, str) or re.fullmatch(NAME_PATTERN, item) is None:
             raise RequestError("value.relationship: endpoints and type must be stable names")
         if len(item) > policy.limits.input_chars:
@@ -69,7 +70,8 @@ def _validate_value(field: str, value: object, policy: Policy) -> str | bool | t
 def _validate(params: object, policy: Policy, *, operator: bool) -> Update:
     keys = {"device_id", "field", "value"} | (set() if operator else {"explanation"})
     if not isinstance(params, Mapping) or set(params) != keys:
-        raise RequestError("update arguments: device_id, field and value required; inference also requires explanation; no other arguments")
+        raise RequestError("update arguments: device_id, field and value required; "
+                           "inference also requires explanation; no other arguments")
     device_id = params["device_id"]
     if not isinstance(device_id, str) or re.fullmatch(NAME_PATTERN, device_id) is None:
         raise RequestError("device_id: stable atlas device ID required")

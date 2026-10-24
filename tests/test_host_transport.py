@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Issue-6 host-only transport, accounting and atomic historical evidence regressions."""
-from contextlib import ExitStack
 from dataclasses import replace
 import errno
 import importlib
-import json
 from pathlib import Path
-import socket
 import struct
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -57,16 +53,19 @@ class HostTransportTests(unittest.TestCase):
         self.assertEqual(len(evidence), 6)
         self.assertTrue(all(row['probe']['probe_name'].startswith('icmp_') for row in evidence))
         self.assertTrue(all(row['historical_responder_evidence'] for row in evidence))
-        self.assertTrue(all(row['probe']['started_at'] <= row['observed_at'] <= row['probe']['ended_at'] for row in evidence))
+        self.assertTrue(all(row['probe']['started_at'] <= row['observed_at'] <= row['probe']['ended_at']
+                            for row in evidence))
         self.assertFalse(reconcile.reconcile(policy, {'batch_id': result['batch_id']})['missing'])
         self.assertEqual(query.query(policy, {})['devices'], [])
 
     def test_tcp_2222_and_optional_22000_only_positives(self):
         for port in (2222, 22000):
             policy = self.policy(icmp_echo=False, tcp_ports=[port])
-            fixture = SyntheticSockets(lambda address, selected: 'positive' if selected == port else 'filtered')
+            fixture = SyntheticSockets(lambda address, selected, port=port:
+                                       'positive' if selected == port else 'filtered')
             result = self.collect(policy, fixture)
-            self.assertEqual({row['probe']['probe_name'].split('_')[1] for row in self.evidence(policy, result)}, {str(port)})
+            self.assertEqual({row['probe']['probe_name'].split('_')[1] for row in self.evidence(policy, result)},
+                             {str(port)})
             self.assertEqual({call[2] for call in fixture.calls}, {port})
             self.assertEqual(result['completion'], 'partial')  # excluded network/broadcast, never absence
 
@@ -95,7 +94,8 @@ class HostTransportTests(unittest.TestCase):
         self.assertEqual(query.query(policy, {})['devices'], [])
         with storage.Store(policy) as store:
             totals = query._probe_totals(store, result['batch_id'])
-            self.assertEqual((totals['address_count'], totals['responding_address_count'], totals['total_count']), (2, 2, 13))
+            self.assertEqual(
+                (totals['address_count'], totals['responding_address_count'], totals['total_count']), (2, 2, 13))
             self.assertEqual(store.connection.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
         self.assertEqual(reconcile.reconcile(policy, {'batch_id': result['batch_id']}), applied)
         self.assertEqual(len(self.evidence(policy, result)), 10)
@@ -108,7 +108,8 @@ class HostTransportTests(unittest.TestCase):
             self.assertEqual(result['completion'], 'partial')
             self.assertEqual(len(self.evidence(policy, result)), 6)
             self.assertTrue(all(call[2] == 2222 for call in fixture.calls))
-            self.assertTrue(all(row['probe']['probe_name'].startswith('tcp_2222_') for row in self.evidence(policy, result)))
+            self.assertTrue(all(row['probe']['probe_name'].startswith('tcp_2222_')
+                                for row in self.evidence(policy, result)))
 
     def test_all_filtered_timeouts_not_offline_or_packets_for_unstarted(self):
         policy = self.policy(cidr='192.0.2.0/24', limits={'operation_timeout_seconds': 2, 'host_timeout_seconds': 1})
@@ -120,7 +121,8 @@ class HostTransportTests(unittest.TestCase):
         self.assertIn('timeout', codes)
         self.assertIn('not_started', codes)
         self.assertFalse(reconcile.reconcile(policy, {'batch_id': result['batch_id']})['missing'])
-        attempts = sum(probe['name'].startswith(('tcp_', 'icmp_')) and probe['outcome'] == 'timeout' for probe in result['probes'])
+        attempts = sum(probe['name'].startswith(('tcp_', 'icmp_')) and probe['outcome'] == 'timeout'
+                       for probe in result['probes'])
         self.assertEqual(attempts, len(fixture.calls))
 
     def test_scope_and_4403_caller_forgery_refuse_before_transport(self):
@@ -145,7 +147,7 @@ class HostTransportTests(unittest.TestCase):
         policy = self.policy(tcp_ports=[2222])
         original = transport._initiate
         for failed_method in ('tcp', 'icmp'):
-            def initiate(attempt):
+            def initiate(attempt, failed_method=failed_method):
                 if (attempt.port is None) == (failed_method == 'icmp'):
                     raise PermissionError(errno.EPERM, 'synthetic runtime denial')
                 return original(attempt)
@@ -193,7 +195,8 @@ class HostTransportTests(unittest.TestCase):
         self.assertEqual([call[1] for call in fixture.calls[:3]], [f'192.0.2.{i}' for i in range(1, 4)])
         self.assertEqual(len({call[2] for call in fixture.calls[:15]}), 5)
         spacing = 1 / (8 * policy.limits.concurrent_probes)
-        self.assertTrue(all(b[0] - a[0] >= spacing - 1e-7 for a, b in zip(fixture.calls, fixture.calls[1:])))
+        self.assertTrue(all(b[0] - a[0] >= spacing - 1e-7
+                            for a, b in zip(fixture.calls, fixture.calls[1:], strict=False)))
         self.assertEqual(len(result['probes']), 1537)
         with storage.Store(policy) as store:
             self.assertEqual(query._probe_totals(store, result['batch_id'])['responding_address_count'], 254)
@@ -222,14 +225,16 @@ class HostTransportTests(unittest.TestCase):
     def test_interruption_selector_failure_and_expired_before_send_close_only_owned(self):
         policy = self.policy()
         fixture = SyntheticSockets(lambda *_: 'filtered')
-        with fixture.install(schedule, transport, capability), patch.object(schedule.selectors, 'DefaultSelector') as factory:
+        with (fixture.install(schedule, transport, capability),
+              patch.object(schedule.selectors, 'DefaultSelector') as factory):
             selector = MagicMock()
             factory.return_value.__enter__.return_value = selector
             selector.register.side_effect = KeyboardInterrupt
             with self.assertRaises(KeyboardInterrupt):
                 schedule.collect_methods(policy.networks[0], policy, fixture.clock.now + 20)
         self.assertTrue(all(sock.closed for sock in fixture.sockets))
-        with patch('socket.socket', side_effect=AssertionError('expired no socket')), patch.object(transport.time, 'monotonic', return_value=10):
+        with (patch('socket.socket', side_effect=AssertionError('expired no socket')),
+              patch.object(transport.time, 'monotonic', return_value=10)):
             attempt, result = transport.begin(policy.networks[0], '192.0.2.1', 2222, 10)
             self.assertIsNone(attempt)
             self.assertEqual(result[0], 'not_started')
@@ -257,7 +262,8 @@ class HostTransportTests(unittest.TestCase):
         fixture = SyntheticSockets(lambda *_: 'refused')
         result = self.collect(policy, fixture)
         self.assertEqual(len(self.evidence(policy, result)), 6)
-        self.assertTrue(all(row['probe']['diagnostic_code'] == 'tcp_refused_response' for row in self.evidence(policy, result)))
+        self.assertTrue(all(row['probe']['diagnostic_code'] == 'tcp_refused_response'
+                            for row in self.evidence(policy, result)))
 
     def test_persistence_failure_retains_history_and_output_receipt_rolls_back(self):
         policy = self.policy(cidr='192.0.2.8/31')

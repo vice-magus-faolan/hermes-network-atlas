@@ -97,17 +97,20 @@ class PersistenceTests(AtlasFixture):
             with self.assertRaises(sqlite3.OperationalError):
                 reader.connection.execute("DELETE FROM devices")
         with self.store.transaction(), self.assertRaises(sqlite3.IntegrityError):
-            self.store.connection.execute("INSERT INTO interfaces VALUES (?,?,?,?,?)", ("bad", "missing", None, 0, storage.timestamp(NOW)))
+            self.store.connection.execute(
+                "INSERT INTO interfaces VALUES (?,?,?,?,?)", ("bad", "missing", None, 0, storage.timestamp(NOW)))
         self.assertEqual(self.detail()["status"], "known")
         self.assertIsNone(self.detail()["last_seen"])
 
     def test_mutation_audit_failure_rolls_back_all_state(self):
         before = self.counts()
-        with patch.object(self.store, "audit", side_effect=RuntimeError("synthetic interruption")), self.assertRaises(RuntimeError):
+        with (patch.object(self.store, "audit", side_effect=RuntimeError("synthetic interruption")),
+              self.assertRaises(RuntimeError)):
             self.update("description", "Must roll back")
         self.assertEqual(self.counts(), before)
         with storage.Store(self.policy) as reopened:
-            self.assertEqual(reopened.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0], before["observations"])
+            self.assertEqual(reopened.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0],
+                             before["observations"])
         with self.store.transaction():
             self.store.audit(storage.identifier(), "test", "user", storage.timestamp(NOW))
 
@@ -148,7 +151,8 @@ class PersistenceTests(AtlasFixture):
         old = self.update("description", "Original operator fact")
         self.update("description", "Replacement", now=NOW + timedelta(seconds=1))
         self.assertEqual(self.detail(now=NOW + timedelta(seconds=1))["fields"]["description"]["value"], "Replacement")
-        row = self.store.connection.execute("SELECT * FROM observations WHERE id=?", (old["observation_id"],)).fetchone()
+        row = self.store.connection.execute(
+            "SELECT * FROM observations WHERE id=?", (old["observation_id"],)).fetchone()
         self.assertEqual(json.loads(row["value_json"]), "Original operator fact")
         for table in ("observations", "audit_events"):
             for operation in ("UPDATE", "DELETE"):
@@ -191,9 +195,11 @@ class IdentityAndProvenanceTests(AtlasFixture):
         self.assertEqual(self.detail()["fields"]["os"]["value"], "Operator OS")
         self.assertIsNone(self.detail()["last_seen"])
         with self.assertRaises(ValueError):
-            core.append_fact(self.store, "device", self.device, "os", "Bad", "user", "user_supplied", storage.timestamp(NOW))
+            core.append_fact(
+                self.store, "device", self.device, "os", "Bad", "user", "user_supplied", storage.timestamp(NOW))
         with self.store.transaction(), self.assertRaises(ValueError):
-            core.append_fact(self.store, "device", self.device, "os", "Bad", "ssh:lab-router", "observed", storage.timestamp(NOW),
+            core.append_fact(self.store, "device", self.device, "os", "Bad", "ssh:lab-router", "observed",
+                             storage.timestamp(NOW),
                              qualified=True, evidence_kind="cached_neighbor")
 
     def test_ip_hostname_never_merge_and_mac_anchors_interface_only(self):
@@ -228,8 +234,10 @@ class IdentityAndProvenanceTests(AtlasFixture):
         self.update("ssh_alias", "lab-router", operator=False)
         self.assertFalse(identity.resolve_alias(self.store.connection, str(self.home), "lab-router")["resolved"])
         self.update("ssh_alias", "lab-router")
-        self.assertEqual(identity.resolve_alias(self.store.connection, str(self.home), "lab-router")["device_id"], self.device)
-        self.assertFalse(identity.resolve_alias(self.store.connection, str(self.home / "another"), "lab-router")["resolved"])
+        self.assertEqual(
+            identity.resolve_alias(self.store.connection, str(self.home), "lab-router")["device_id"], self.device)
+        self.assertFalse(
+            identity.resolve_alias(self.store.connection, str(self.home / "another"), "lab-router")["resolved"])
         other = core.create_device(self.store, "Other", now=NOW)["device_id"]
         self.update("ssh_alias", "lab-router", device=other)
         self.assertFalse(identity.resolve_alias(self.store.connection, str(self.home), "lab-router")["resolved"])
@@ -238,9 +246,11 @@ class IdentityAndProvenanceTests(AtlasFixture):
     def test_field_precedence_assertions_preserved_and_same_source_supersession(self):
         self.update("description", "Operator description")
         self.update("description", "Inferred replacement", operator=False, now=NOW + timedelta(seconds=1))
-        self.assertEqual(self.detail(now=NOW + timedelta(seconds=1))["fields"]["description"]["value"], "Operator description")
+        self.assertEqual(self.detail(now=NOW + timedelta(seconds=1))["fields"]["description"]["value"],
+                         "Operator description")
         self.update("os", "Operator OS")
-        core.record_direct_fact(self.store, "device", self.device, "os", "Direct OS", "ssh:lab-router", "ssh_response", now=NOW)
+        core.record_direct_fact(
+            self.store, "device", self.device, "os", "Direct OS", "ssh:lab-router", "ssh_response", now=NOW)
         self.assertEqual(self.detail()["fields"]["os"]["value"], "Direct OS")
         later = NOW + timedelta(days=15)
         self.assertEqual(self.detail(now=later)["fields"]["os"]["value"], "Operator OS")
@@ -249,12 +259,14 @@ class IdentityAndProvenanceTests(AtlasFixture):
         self.assertEqual(inferred["explanation"], "synthetic inference explanation")
         self.assertTrue(any(item["value"] == "Direct OS" for item in history))
         self.assertEqual(self.detail(now=later)["status"], "stale")
-        core.record_direct_fact(self.store, "device", self.device, "os", "Direct OS 2", "ssh:lab-router", "ssh_response", now=later)
+        core.record_direct_fact(
+            self.store, "device", self.device, "os", "Direct OS 2", "ssh:lab-router", "ssh_response", now=later)
         self.assertEqual(self.detail(now=later)["fields"]["os"]["value"], "Direct OS 2")
 
     def test_equal_rank_cross_source_disagreement_has_no_arbitrary_winner(self):
         for source, value, day in (("ssh:lab-router", "one", 0), ("local_passive", "two", 1)):
-            core.record_direct_fact(self.store, "device", self.device, "hostname", value, source, "ssh_response", now=NOW + timedelta(days=day))
+            core.record_direct_fact(self.store, "device", self.device, "hostname", value, source, "ssh_response",
+                                    now=NOW + timedelta(days=day))
         result = self.detail(now=NOW + timedelta(days=1))["fields"]["hostname"]
         self.assertTrue(result["conflict"])
         self.assertIsNone(result["value"])
@@ -266,7 +278,8 @@ class IdentityAndProvenanceTests(AtlasFixture):
         for field in ("description", "hostname", "os"):
             self.update(field, "Assertion")
         self.assertIsNone(self.detail()["last_seen"])
-        core.record_direct_fact(self.store, "device", self.device, "hostname", "Seen", "ssh:lab-router", "ssh_response", now=NOW)
+        core.record_direct_fact(
+            self.store, "device", self.device, "hostname", "Seen", "ssh:lab-router", "ssh_response", now=NOW)
         self.assertEqual(self.detail()["status"], "retired")
         self.assertEqual(self.detail()["first_seen"], storage.timestamp(NOW))
         self.update("retired", False, now=NOW + timedelta(seconds=1))
@@ -278,7 +291,8 @@ class IdentityAndProvenanceTests(AtlasFixture):
         core.add_address(self.store, interface, "2001:db8::1", 64, now=NOW)
         core.end_address(self.store, old, now=NOW + timedelta(seconds=1))
         self.assertEqual(len(self.detail()["interfaces"][0]["addresses"]), 2)
-        self.assertFalse(next(item for item in self.detail()["interfaces"][0]["addresses"] if item["id"] == old)["current"])
+        self.assertFalse(
+            next(item for item in self.detail()["interfaces"][0]["addresses"] if item["id"] == old)["current"])
         self.assertEqual(query.query(self.policy, {"address": "192.0.2.1"}, now=NOW)["devices"], [])
         self.assertEqual(query.query(self.policy, {"address": "2001:db8::1"}, now=NOW)["devices"][0]["id"], self.device)
 
@@ -350,7 +364,8 @@ class QueryUpdateMapTests(AtlasFixture):
                 self.assertEqual(code, 2)
                 self.assertFalse(result["applied"])
                 self.assertEqual(self.counts(), before)
-                self.assertIsNone(self.store.connection.execute("SELECT ended_at FROM addresses WHERE id=?", (assignment,)).fetchone()[0])
+                self.assertIsNone(self.store.connection.execute(
+                    "SELECT ended_at FROM addresses WHERE id=?", (assignment,)).fetchone()[0])
 
     def test_cli_status_respects_output_bound(self):
         self.set_output_limit(128)
@@ -419,7 +434,7 @@ class QueryUpdateMapTests(AtlasFixture):
             self.assertFalse(device["access"][0]["authorized_for_atlas_ssh_inspection"])
         self.assertEqual(query.query(self.policy, {"access_method": "ssh"}, now=NOW)["devices"], [])
         files = render.export_map(self.policy, outputs, now=NOW)
-        for path, format_name in zip(files, ("markdown", "mermaid")):
+        for path, format_name in zip(files, ("markdown", "mermaid"), strict=True):
             self.assertEqual(Path(path).read_text(), outputs[format_name])
 
     def test_golden_text_markdown_mermaid_and_negative_label_cases(self):
@@ -493,7 +508,8 @@ class QueryUpdateMapTests(AtlasFixture):
 
     def test_tool_provenance_no_policy_edits_existing_reference_required(self):
         handlers = tools.Handlers(self.home)
-        params = {"device_id": self.device, "field": "description", "value": "Model proposal", "explanation": "Model rationale"}
+        params = {"device_id": self.device, "field": "description", "value": "Model proposal",
+                  "explanation": "Model rationale"}
         receipt = json.loads(handlers.update(params, source="user", confidence="user_supplied", operator=True))
         self.assertTrue(receipt["persisted"])
         self.assertEqual(receipt["update"]["source"], "inference")
@@ -508,7 +524,8 @@ class QueryUpdateMapTests(AtlasFixture):
     def test_cli_create_operator_update_and_validated_interface_relations(self):
         code, created = self.cli(["create", "--name", "Manual seed"])
         self.assertEqual(code, 0)
-        code, result = self.cli(["update", "--device-id", created["device_id"], "--field", "description", "--value-json", '"Operator fact"'])
+        code, result = self.cli([
+            "update", "--device-id", created["device_id"], "--field", "description", "--value-json", '"Operator fact"'])
         self.assertEqual(code, 0)
         self.assertEqual(result["update"]["confidence"], "user_supplied")
         interface = core.add_interface(self.store, self.device, "eth0", now=NOW)
@@ -537,7 +554,8 @@ class QueryUpdateMapTests(AtlasFixture):
             self.assertEqual(tuple(self.store.connection.iterdump()), history)
         for value in ({"target_device": "missing", "relationship_type": "physical"},
                       {"target_device": self.device, "relationship_type": "parent"},
-                      {"target_device": created["device_id"], "source_interface": other_interface, "relationship_type": "virtual"}):
+                      {"target_device": created["device_id"], "source_interface": other_interface,
+                       "relationship_type": "virtual"}):
             before = self.counts()
             with self.assertRaises(ValueError):
                 self.update("relationship", value)
@@ -552,7 +570,8 @@ class QueryUpdateMapTests(AtlasFixture):
         hostile = 'Host\"] --> evil["X\"]\n%%{init: {securityLevel: loose}}%% <script>|`雪'
         self.update("canonical_name", hostile)
         other = core.create_device(self.store, "Isolated node", now=NOW)["device_id"]
-        core.record_direct_fact(self.store, "device", self.device, "hostname", "Seen", "ssh:lab-router", "ssh_response", now=NOW)
+        core.record_direct_fact(
+            self.store, "device", self.device, "hostname", "Seen", "ssh:lab-router", "ssh_response", now=NOW)
         before = render.render_map(self.policy, now=NOW + timedelta(days=15))
         self.assertIn("stale", before["text"])
         self.assertIn("isolated", before["text"])
@@ -568,7 +587,7 @@ class QueryUpdateMapTests(AtlasFixture):
         self.assertEqual(after["mermaid"].count("-.->"), 1)
         files = render.export_map(self.policy, after, now=NOW)
         self.assertEqual([Path(path).name for path in files], ["network_map.md", "network_map.mmd"])
-        for path, format_name in zip(files, ("markdown", "mermaid")):
+        for path, format_name in zip(files, ("markdown", "mermaid"), strict=True):
             self.assertEqual(Path(path).read_text(), after[format_name])
             self.assertEqual(Path(path).stat().st_mode & 0o777, 0o600)
         render.export_map(self.policy, after, now=NOW)
@@ -594,7 +613,8 @@ class QueryUpdateMapTests(AtlasFixture):
     def test_shared_knowledge_never_transfers_inspection_authority(self):
         self.update("ssh_alias", "lab-router")
         batches.record_access(self.store, self.device, "lab-router", False, "timeout", now=NOW)
-        second = config.validate_policy({"store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "second")
+        second = config.validate_policy(
+            {"store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "second")
         shared = query.query(second, {}, now=NOW)["devices"][0]
         self.assertEqual(shared["id"], self.device)
         self.assertFalse(shared["access"][0]["authorized_for_atlas_ssh_inspection"])
@@ -618,22 +638,27 @@ class BatchTests(AtlasFixture):
                                    ("device", "retired", "true")):
             observation = batches.Observation(kind, batches.Anchor("unresolved", "synthetic"), field, value, at)
             with self.assertRaises(ValueError):
-                batches.store_batch(self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
-        observation = batches.Observation("device", batches.Anchor("alias", "lab-router", str(self.home)), "hostname", "test", at)
+                batches.store_batch(
+                    self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
+        observation = batches.Observation(
+            "device", batches.Anchor("alias", "lab-router", str(self.home)), "hostname", "test", at)
         with self.assertRaises(ValueError):
-            batches.store_batch(self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
+            batches.store_batch(
+                self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
         self.assertEqual(self.counts(), before)
 
     def test_partial_batch_positive_evidence_without_absence_or_state_application(self):
         at = storage.timestamp(NOW)
         observation = batches.Observation("device", batches.Anchor("unresolved", "synthetic-unresolved"),
                                           "hostname", "Synthetic response", at)
-        success = batches.Probe("ping", "success", at, at, "exact_network", "192.0.2.0/24", "ping_response", observations=(observation,))
+        success = batches.Probe("ping", "success", at, at, "exact_network", "192.0.2.0/24", "ping_response",
+                                observations=(observation,))
         failure = batches.Probe("optional", "timeout", at, at, "none", "", "none", "timeout")
         batch = batches.store_batch(self.store, "ping", "lab", at, at, "partial", (success, failure))
         rows = self.store.connection.execute("SELECT * FROM probes WHERE batch_id=?", (batch,)).fetchall()
         self.assertTrue(all(not row["absence_eligible"] for row in rows))
-        self.assertEqual(self.store.connection.execute("SELECT COUNT(*) FROM observations WHERE batch_id=?", (batch,)).fetchone()[0], 1)
+        self.assertEqual(self.store.connection.execute(
+            "SELECT COUNT(*) FROM observations WHERE batch_id=?", (batch,)).fetchone()[0], 1)
         self.assertIsNone(self.detail()["last_seen"])
         self.assertEqual(self.counts()["devices"], 1)
         with storage.Store(self.policy) as reopened:
@@ -651,7 +676,8 @@ class BatchTests(AtlasFixture):
                                 (("address", "198.51.100.1"), ("address", "192.0.2.10"), ("prefix_length", 24)))):
             observation = batches.Observation("address", anchor, "assignment", value, at)
             with self.assertRaises(ValueError):
-                batches.store_batch(self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
+                batches.store_batch(
+                    self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
         self.assertEqual(self.counts(), before)
 
     def probe(self, outcome="success", observations=()):
@@ -664,7 +690,8 @@ class BatchTests(AtlasFixture):
         observation = batches.Observation("address", batches.Anchor("mac", "00:11:22:33:44:55"), "assignment",
                                           (("address", "192.0.2.10"), ("prefix_length", 24)), at, "STALE")
         before_device = self.detail()
-        batch = batches.store_batch(self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
+        batch = batches.store_batch(
+            self.store, "local_passive", "lab", at, at, "complete", (self.probe(observations=(observation,)),))
         self.assertEqual(self.detail(), before_device)
         self.assertEqual(self.counts()["batches"], 1)
         self.assertEqual(self.counts()["probes"], 1)
@@ -678,7 +705,8 @@ class BatchTests(AtlasFixture):
             with self.store.transaction(), self.assertRaises(sqlite3.IntegrityError):
                 self.store.connection.execute(f"DELETE FROM {table}")
         before = self.counts()
-        with patch.object(self.store, "audit", side_effect=RuntimeError("batch interruption")), self.assertRaises(RuntimeError):
+        with (patch.object(self.store, "audit", side_effect=RuntimeError("batch interruption")),
+              self.assertRaises(RuntimeError)):
             batches.store_batch(self.store, "local_passive", "lab", at, at, "failed", (self.probe("timeout"),))
         self.assertEqual(self.counts(), before)
 
@@ -706,10 +734,12 @@ class BatchTests(AtlasFixture):
         at = storage.timestamp(NOW)
         batch = batches.store_batch(self.store, "local_passive", "lab", at, at, "failed", (self.probe("timeout"),))
         with self.store.transaction():
-            self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)", (storage.identifier(), batch, 1, at, "{}"))
+            self.store.connection.execute(
+                "INSERT INTO applications VALUES (?,?,?,?,?)", (storage.identifier(), batch, 1, at, "{}"))
             self.store.audit(storage.identifier(), "application_fixture", "test", at, batch=batch)
         with self.store.transaction(), self.assertRaises(sqlite3.IntegrityError):
-            self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)", (storage.identifier(), batch, 1, at, "{}"))
+            self.store.connection.execute(
+                "INSERT INTO applications VALUES (?,?,?,?,?)", (storage.identifier(), batch, 1, at, "{}"))
         for operation in ("UPDATE applications SET result_json='bad'", "DELETE FROM applications"):
             with self.store.transaction(), self.assertRaises(sqlite3.IntegrityError):
                 self.store.connection.execute(operation)

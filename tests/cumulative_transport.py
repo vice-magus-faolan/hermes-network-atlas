@@ -12,7 +12,8 @@ MACS = {"lab-a": "00:11:22:33:44:11", "lab-b": "00:11:22:33:44:22", "lab-c": "00
 
 
 def nmap(args: list[str], stage: str) -> str:
-    assert args[:-1] == ["-sn", "-n", "-PS80,443", "--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-"]
+    assert args[:-1] == ["-sn", "-n", "-PS80,443", "--host-timeout", "10s", "--max-parallelism", "4",
+                        "--max-rate", "32", "-oX", "-"]
     assert args[-1] == "192.0.2.0/29"
     records = {1: MACS["lab-a"], 2: MACS["lab-b"], 3: MACS["lab-c"], 4: None, 5: "00:11:22:33:44:55"}
     if stage == "changed":
@@ -24,7 +25,8 @@ def nmap(args: list[str], stage: str) -> str:
             host += f'<address addr="{mac}" addrtype="mac"/>'
         hosts.append(host + "</host>")
     return ('<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun>' + ''.join(hosts) +
-            f'<runstats><finished exit="success"/><hosts up="{len(records)}" down="{8 - len(records)}" total="8"/></runstats></nmaprun>')
+            f'<runstats><finished exit="success"/><hosts up="{len(records)}" down="{8 - len(records)}" '
+            'total="8"/></runstats></nmaprun>')
 
 
 def ssh(args: list[str], stage: str) -> str:
@@ -50,7 +52,8 @@ def ssh(args: list[str], stage: str) -> str:
     payloads = {"hostname": alias + "\n", "hostnamectl --static": alias + "\n",
                 "cat /etc/os-release": 'PRETTY_NAME="Fixture Linux $(do-not-execute)"\nID=fixture\n',
                 "ip -j address": json.dumps([interface]), "ip -j link": json.dumps([interface]),
-                "ip -j route": "[]", "ip -j neigh": '[{"dst":"198.51.100.99","lladdr":"00:11:22:33:44:99","state":["STALE"]}]'}
+                "ip -j route": "[]",
+                "ip -j neigh": '[{"dst":"198.51.100.99","lladdr":"00:11:22:33:44:99","state":["STALE"]}]'}
     assert command in payloads
     return payloads[command]
 

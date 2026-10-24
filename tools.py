@@ -20,7 +20,8 @@ from .inspection import collect as inspect_host
 from .endpoints import check as check_endpoints
 
 COMMAND_USAGE = ("status|show <id>|map [text|markdown|mermaid]|discover <network> <passive|ping>|"
-                 "inspect <alias-or-id>|reconcile [batch-id]|check-endpoints <network>|resume-endpoints <batch-id>|help")
+                 "inspect <alias-or-id>|reconcile [batch-id]|check-endpoints <network>|"
+                 "resume-endpoints <batch-id>|help")
 
 
 def update_receipt(update: Update) -> str:
@@ -52,7 +53,8 @@ class Handlers:
         del runtime_context
         try:
             policy = load_policy(self.home)
-            return status(self.home) if params == {"view": "status"} else response_json(query(policy, params), policy.limits.output_bytes)
+            return (status(self.home) if params == {"view": "status"}
+                    else response_json(query(policy, params), policy.limits.output_bytes))
         except (OSError, ValueError, sqlite3.Error) as exc:
             return json.dumps({"error": error_message(exc), "applied": False})
 
@@ -83,7 +85,8 @@ class Handlers:
                 raise RequestError("export: boolean required")
             policy = load_policy(self.home)
             outputs = render_map(policy)
-            files = [str(policy.exports / name) for name in ("network_map.md", "network_map.mmd")] if params.get("export", False) else []
+            files = ([str(policy.exports / name) for name in ("network_map.md", "network_map.mmd")]
+                     if params.get("export", False) else [])
             result = response_json({"format": format_name, "content": outputs[format_name], "exports": files,
                                     "discovery_performed": False}, policy.limits.output_bytes)
             if params.get("export", False):
@@ -144,7 +147,8 @@ class Handlers:
         collected = self._collection_command(parts)
         if collected is not None:
             return collected
-        error = "slash update origin cannot be attested; use the local operator CLI" if parts and parts[0] == "update" else "invalid network command"
+        error = ("slash update origin cannot be attested; use the local operator CLI"
+                 if parts and parts[0] == "update" else "invalid network command")
         return json.dumps({"error": error, "usage": COMMAND_USAGE, "applied": False})
 
     def _collection_command(self, parts: list[str]) -> str | None:
