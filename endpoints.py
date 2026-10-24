@@ -13,7 +13,7 @@ import sqlite3
 import time
 
 from .batches import Probe, _scope, _validate_probes, store_batch
-from .config import ConfigError, NAME_PATTERN, Network, Policy, validate_network
+from .config import ConfigError, Limits, NAME_PATTERN, Network, Policy, validate_network
 from .errors import RequestError, StoreError
 from .host_schedule import Scheduler
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
@@ -43,7 +43,7 @@ class EndpointObservationLimitError(RequestError):
     """The saved endpoint grid no longer fits the current observation budget."""
 
 
-def network_policy(policy: Policy, name: str) -> Network:
+def _authorized_network(policy: Policy, name: str) -> Network:
     """Endpoint grants are independent of ping, ICMP, legacy ports and SSH."""
     network = next((item for item in policy.networks if item.name == name), None)
     if network is None:
@@ -51,6 +51,12 @@ def network_policy(policy: Policy, name: str) -> Network:
     validate_network(network)
     if not network.endpoint_ports:
         raise RequestError('network.endpoints: explicit enablement and nonempty tcp_ports required')
+    return network
+
+
+def network_policy(policy: Policy, name: str) -> Network:
+    """Refuse over-budget collection before planning or transport effects."""
+    network = _authorized_network(policy, name)
     if ip_network(network.cidr).num_addresses * len(network.endpoint_ports) > policy.limits.observations:
         raise EndpointObservationLimitError('limits.observations: endpoint address/port grid exceeds configured record budget')
     return network
@@ -64,9 +70,14 @@ def plans(network: Network) -> dict[str, tuple[str, int]]:
 
 def validate_probes(policy: Policy, name: str, probes: tuple[Probe, ...]) -> dict[str, tuple[str, int]]:
     """Reject missing/duplicate/forged evidence before storage or projection."""
-    expected = plans(network_policy(policy, name))
-    if len(probes) != len(expected) or {probe.probe_name for probe in probes} != set(expected):
+    network = _authorized_network(policy, name)
+    addresses = ip_network(network.cidr).num_addresses
+    # Compare saved authorization before budget: expansion is not a request to
+    # increase collection limits. Only matching, in-budget grids become plans.
+    if len(probes) != addresses * len(network.endpoint_ports) or {probe.probe_name for probe in probes} != {
+            f'tcp_{port}_{index}' for index in range(addresses) for port in network.endpoint_ports}:
         raise RequestError('network.endpoints.tcp_ports: endpoint evidence grid must match current port policy')
+    expected = plans(network_policy(policy, name))
     for probe in probes:
         if (probe.outcome, probe.diagnostic_code) not in RESULTS or probe.observations or probe.evidence_kind != 'tcp_endpoint':
             raise ValueError('invalid endpoint evidence')
@@ -82,7 +93,7 @@ def _owned_batch(store: Store, batch_id: str):
 
 def _stored(store: Store, batch_id: str):
     batch = _owned_batch(store, batch_id)
-    network_policy(store.policy, batch['scope_name'])
+    _authorized_network(store.policy, batch['scope_name'])
     kind, scope, _ = _scope(store, 'tcp_endpoint', batch['scope_name'])
     if (batch['scope_kind'], batch['scope_value']) != (kind, scope):
         raise RequestError('network.cidr: saved endpoint scope must match current network policy')
@@ -91,12 +102,14 @@ def _stored(store: Store, batch_id: str):
 
 def _project(store: Store, batch) -> dict:
     """One transaction serializes double resumes and prevents partial projections."""
+    # Historical identity must remain visible after a policy limit is lowered.
+    # The immutable hard ceiling bounds reads; current limits still gate use.
     rows = store.connection.execute('SELECT * FROM probes WHERE batch_id=? ORDER BY probe_name LIMIT ?',
-                                    (batch['id'], store.policy.limits.observations + 1)).fetchall()
+                                    (batch['id'], Limits().observations + 1)).fetchall()
     probes = tuple(Probe(row['probe_name'], row['outcome'], row['started_at'], row['ended_at'], row['coverage_kind'],
                          row['coverage_value'], row['evidence_kind'], row['diagnostic_code']) for row in rows)
-    _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'], batch['ended_at'], batch['completion'], probes)
     grid = validate_probes(store.policy, batch['scope_name'], probes)
+    _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'], batch['ended_at'], batch['completion'], probes)
     previous = store.connection.execute('SELECT result_json FROM applications WHERE batch_id=?', (batch['id'],)).fetchone()
     if previous is not None:
         return json.loads(previous[0])

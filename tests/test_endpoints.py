@@ -260,7 +260,7 @@ class EndpointTests(unittest.TestCase):
             self.rows(small)
 
     def test_shared_knowledge_no_foreign_resume_or_revoked_policy_and_isolated_store(self):
-        policy = self.policy()
+        policy = self.policy(limits={'observations': 4})
         result = self.collect(policy)
         other = config.validate_policy({'store': {'shared_sqlite_path': str(policy.database)}}, self.home / 'reader')
         self.assertEqual(self.rows(other), self.rows(policy))
@@ -281,32 +281,41 @@ class EndpointTests(unittest.TestCase):
         page = self.rows(policy)
         with storage.Store(policy) as store:
             history = tuple(store.connection.iterdump())
-        for change in ('ports', 'disabled', 'removed', 'cidr', 'observations'):
+        # Enlargements exceed the SAME budget that admitted the saved batch.
+        # Port replacement and a one-record limit also require full saved-name
+        # identity, not just a count comparison or a current-limit-sized prefix.
+        for change, network_change, budget in (
+                ('ports', {'endpoints': {'enabled': True, 'tcp_ports': [22]}}, 4),
+                ('disabled', {'endpoints': {'enabled': False}}, 4),
+                ('removed', {}, 4),
+                ('cidr', {'cidr': '192.0.2.10/31'}, 4),
+                ('observations', {}, 3),
+                ('observations_minimum', {}, 1),
+                ('widen_cidr', {'cidr': '192.0.2.8/30'}, 4),
+                ('widen_ports', {'endpoints': {'enabled': True, 'tcp_ports': [22, 2222, 443]}}, 4),
+                ('widen_cidr_lower_budget', {'cidr': '192.0.2.8/30'}, 1),
+                ('widen_ports_lower_budget', {'endpoints': {'enabled': True, 'tcp_ports': [22, 2222, 443]}}, 1),
+                ('replace_ports_lower_budget', {'endpoints': {'enabled': True, 'tcp_ports': [22, 443]}}, 1)):
             raw = json.loads(original)
-            network = raw['networks']['lab']
-            if change == 'ports':
-                network['endpoints']['tcp_ports'] = [22]
-            elif change == 'disabled':
-                network['endpoints'] = {'enabled': False}
-            elif change == 'removed':
+            if change == 'removed':
                 raw['networks'] = {}
-            elif change == 'observations':
-                raw['limits'] = {'observations': 3, 'output_bytes': 500}
             else:
-                network['cidr'] = '192.0.2.10/31'
+                raw['networks']['lab'].update(network_change)
+            raw['limits'] = {'observations': budget, 'output_bytes': 500}
             path.write_text(json.dumps(raw))
             with self.subTest(change=change), patch.object(endpoints.Scheduler, 'run') as collect, \
                     patch.object(transport.socket, 'socket') as socket, patch('subprocess.Popen') as spawn:
                 emitted = tools.Handlers(self.home).check_endpoints({'batch_id': result['batch_id']})
                 failed = json.loads(emitted)
-                if change == 'observations':
+                if change.startswith('observations'):
                     self.assertTrue(failed['error'].startswith('limits.observations:'), failed)
                     self.assertIn('record budget', failed['error'])
                     self.assertNotIn('network/port authorization', failed['error'])
-                    self.assertLessEqual(len(emitted.encode()), 500)
                 else:
                     self.assertTrue(failed['error'].startswith('endpoint policy:'), failed)
                     self.assertIn('network/port authorization', failed['error'])
+                    self.assertNotIn('limits.observations', failed['error'])
+                self.assertLessEqual(len(emitted.encode()), 500)
                 self.assertEqual(failed['batch_id'], result['batch_id'])
                 self.assertEqual(failed['completion'], result['completion'])
                 self.assertEqual(failed['stage'], 'projection')
