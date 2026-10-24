@@ -34,6 +34,6 @@ def copy_plugin(destination: Path) -> None:
     """Copy plugin source and metadata so native admission sees the shipped files."""
     import shutil
     destination.mkdir(parents=True)
-    for pattern in ("*.py", "*.sql", "plugin.yaml", "pyproject.toml"):
+    for pattern in ("*.py", "*.sql", "plugin.yaml", "ruff.toml"):
         for source in ROOT.glob(pattern):
             shutil.copy2(source, destination / source.name)

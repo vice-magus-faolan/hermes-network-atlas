@@ -32,6 +32,8 @@ then run `ruff check .` from the repository root. The same check runs in the
 ordinary Docker/CI verification path. Ruff checks E/F errors, Bugbear warnings
 and production assertions, with a 120-column line limit to accommodate SQL and
 structured fixtures. Intentional assertions are allowed only under `tests/`.
+Settings live in `ruff.toml`, separate from Python packaging metadata so the
+lint configuration does not affect Hermes plugin dependency resolution.
 This is a lint check, not a required formatter pass.
 
 Prefer simple standard-library Python, small typed boundaries, and focused
