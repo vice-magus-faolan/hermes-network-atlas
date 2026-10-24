@@ -54,7 +54,8 @@ def main():
         assert atlas.cli(['query', '--query-json', '{"view":"endpoints"}']) == data['page']
         assert atlas.tool('network_query', {'view': 'endpoints'}) == data['page']
         status = atlas.slash('status')
-        assert status['known_devices'] == 0 and status['endpoint_count'] == 4 and status['endpoint_observation_count'] == 12
+        assert (status['known_devices'] == 0 and status['endpoint_count'] == 4
+                and status['endpoint_observation_count'] == 12)
         assert status['authorized_for_atlas_ssh_inspection'] == [] and status['configured_networks'] == []
         for batch in data['batches']:
             result = atlas.cli(['resume-endpoints', batch], expected_code=2)

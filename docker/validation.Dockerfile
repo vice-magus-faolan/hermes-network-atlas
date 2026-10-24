@@ -27,4 +27,4 @@ ENV HOME=/home/atlas HERMES_HOME=/home/atlas/hermes-test PYTHONDONTWRITEBYTECODE
 # Real fresh-home enablement resolves dependencies and therefore needs network.
 # A failing installer assertion fails the ordinary image build, including CI.
 RUN python3 -m pytest -q -rP tests/test_compatibility.py
-CMD ["sh", "-ec", "hermes --version && hermes plugins validate . && hermes plugins doctor . --ci && python3 -m pytest -q -rP --ignore=tests/test_compatibility.py"]
+CMD ["sh", "-ec", "ruff check . && hermes --version && hermes plugins validate . && hermes plugins doctor . --ci && python3 -m pytest -q -rP --ignore=tests/test_compatibility.py"]

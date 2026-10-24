@@ -29,12 +29,13 @@ class CumulativeHostTests(unittest.TestCase):
                         policy = self.policy(cidr='192.0.2.8/31', icmp_echo=icmp, tcp_ports=ports,
                                              limits={'concurrent_probes': concurrency, 'host_timeout_seconds': 1,
                                                      'operation_timeout_seconds': 2})
-                        fixture = SyntheticSockets(lambda *_: state)
+                        fixture = SyntheticSockets(lambda *_, state=state: state)
                         # Reproduce the fractional-origin reserve-boundary rounding regression.
                         fixture.clock.now = 254.4186405
                         beginnings = []
                         original = transport.begin
-                        def begin(network, address, port, deadline):
+                        def begin(network, address, port, deadline, *,
+                                  beginnings=beginnings, fixture=fixture, original=original):
                             beginnings.append((address, fixture.clock.now, deadline))
                             return original(network, address, port, deadline)
                         started = fixture.clock.now
@@ -46,9 +47,10 @@ class CumulativeHostTests(unittest.TestCase):
                         self.assertLessEqual(fixture.clock.now - started, 2)
                         self.assertLessEqual(fixture.peak, concurrency)
                         self.assertEqual(len(result['probes']), 2 * (len(ports) + int(icmp) + 1) + 1)
-                        self.assertEqual(len(set((address, port) for _, address, port in fixture.calls)), len(fixture.calls))
+                        self.assertEqual(len(set((address, port) for _, address, port in fixture.calls)),
+                                         len(fixture.calls))
                         self.assertTrue(all(b[0] - a[0] >= 1 / (8 * concurrency) - 1e-7
-                                            for a, b in zip(fixture.calls, fixture.calls[1:])))
+                                            for a, b in zip(fixture.calls, fixture.calls[1:], strict=False)))
                         first = {}
                         for address, now, deadline in beginnings:
                             first.setdefault(address, now)
@@ -63,7 +65,7 @@ class CumulativeHostTests(unittest.TestCase):
         for port in (None, 80, 443, 2222, 22000):
             with self.subTest(port=port):
                 policy = self.policy(cidr='192.0.2.0/24', limits={'host_timeout_seconds': 1})
-                fixture = SyntheticSockets(lambda address, method:
+                fixture = SyntheticSockets(lambda address, method, port=port:
                                            'positive' if address == '192.0.2.254' and method == port else 'filtered')
                 result = self.collect(policy, fixture)
                 rows = self.evidence(policy, result)

@@ -128,7 +128,8 @@ def _active(scope: str, policy: Policy, deadline: float) -> tuple[Probe, ...]:
     for chunk in chunks:
         if time.monotonic() >= deadline:
             at = timestamp(utc_now())
-            probe = Probe("ping_chunk", "not_started", at, at, "none", "", "ping_response", "operation_deadline_exceeded")
+            probe = Probe(
+                "ping_chunk", "not_started", at, at, "none", "", "ping_response", "operation_deadline_exceeded")
         else:
             probe = _ping(str(chunk), policy, deadline)
         results.extend(_chunk_addresses(chunk, probe, len(results)))
@@ -166,6 +167,7 @@ def _batch_bound(probes: tuple[Probe, ...], policy: Policy) -> tuple[Probe, ...]
             overflow = True
         remaining -= len(probe.observations)
         if overflow and probe.probe_name == "ping_coverage":
-            probe = replace(probe, outcome="parse_failed", coverage_kind="none", coverage_value="", diagnostic_code="batch_observation_limit")
+            probe = replace(probe, outcome="parse_failed", coverage_kind="none", coverage_value="",
+                            diagnostic_code="batch_observation_limit")
         result.append(probe)
     return tuple(result)

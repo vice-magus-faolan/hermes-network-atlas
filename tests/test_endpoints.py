@@ -16,7 +16,8 @@ from synthetic_sockets import SyntheticSockets
 load_package()
 config, endpoints, schedule, transport, capability, storage, query, tools, core, reconcile, batches = (
     importlib.import_module('atlas_test_plugin.' + name) for name in
-    ('config', 'endpoints', 'host_schedule', 'host_transport', 'host_discovery', 'storage', 'query', 'tools', 'core', 'reconcile', 'batches'))
+    ('config', 'endpoints', 'host_schedule', 'host_transport', 'host_discovery',
+     'storage', 'query', 'tools', 'core', 'reconcile', 'batches'))
 
 
 class EndpointTests(unittest.TestCase):
@@ -49,13 +50,16 @@ class EndpointTests(unittest.TestCase):
     def counts(self, policy):
         with storage.Store(policy) as store:
             return {table: store.connection.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] for table in
-                    ('batches', 'probes', 'applications', 'audit_events', 'endpoint_observations', 'devices', 'observations')}
+                    ('batches', 'probes', 'applications', 'audit_events',
+                     'endpoint_observations', 'devices', 'observations')}
 
     def test_primary_durable_open_closed_timestamp_provenance_overview_no_identity(self):
         policy = self.policy()
         result = self.collect(policy)
-        self.assertTrue(result['persisted'] and result['applied'] and result['projected'] and result['queryable'], result)
-        self.assertEqual(result['state_counts'], {'open': 2, 'closed': 2, 'no_response': 0, 'unavailable': 0, 'not_started': 0})
+        self.assertTrue(
+            result['persisted'] and result['applied'] and result['projected'] and result['queryable'], result)
+        self.assertEqual(result['state_counts'],
+                         {'open': 2, 'closed': 2, 'no_response': 0, 'unavailable': 0, 'not_started': 0})
         page = self.rows(policy)
         self.assertEqual(page['total_count'], 4)
         self.assertEqual({row['batch_id'] for row in page['endpoints']}, {result['batch_id']})
@@ -67,7 +71,8 @@ class EndpointTests(unittest.TestCase):
             self.assertIsNone(row['device_id'])
             self.assertEqual(row['scope_value'], '192.0.2.8/31')
         status = query.query(policy, {'view': 'status'})
-        self.assertEqual((status['known_devices'], status['endpoint_count'], status['endpoint_observation_count']), (0, 4, 4))
+        self.assertEqual(
+            (status['known_devices'], status['endpoint_count'], status['endpoint_observation_count']), (0, 4, 4))
         self.assertNotIn('endpoint_query_available', status)
         self.assertIsNone(status['last_discovery'])
         self.assertEqual(self.counts(policy)['observations'], 0)
@@ -82,37 +87,46 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(self.rows(policy), page)
 
     def test_policy_separate_opt_in_and_strict_ports_and_no_greeting_surface(self):
-        legacy = config.validate_policy({'networks': {'lab': {'cidr': '192.0.2.8/31', 'discovery': {'ping': True}}}}, self.home)
+        legacy = config.validate_policy(
+            {'networks': {'lab': {'cidr': '192.0.2.8/31', 'discovery': {'ping': True}}}}, self.home)
         self.assertEqual(legacy.networks[0].endpoint_ports, ())
         with patch.object(transport.socket, 'socket', side_effect=AssertionError('unauthorized socket')):
             with self.assertRaises(ValueError):
                 endpoints.check(legacy, {'network': 'lab'})
         invalid = [{'enabled': True}, {'tcp_ports': [22]}, {'enabled': False, 'tcp_ports': [22]},
                    {'enabled': 1, 'tcp_ports': [22]}, {'enabled': True, 'tcp_ports': [4403]},
-                   *({'enabled': True, 'tcp_ports': ports} for ports in ([True], [0], [-1], [65536], [22, 22], [1, 2, 3, 4, 5], ['22'], [22.0])),
+                   *({'enabled': True, 'tcp_ports': ports}
+                     for ports in ([True], [0], [-1], [65536], [22, 22], [1, 2, 3, 4, 5], ['22'], [22.0])),
                    {'enabled': True, 'tcp_ports': [22], 'ssh_greeting': 'SSH-2.0-evil\n' * 4096}]
         for settings in invalid:
             with self.subTest(settings=str(settings)[:100]), self.assertRaises(config.ConfigError):
-                config.validate_policy({'networks': {'lab': {'cidr': '192.0.2.8/31', 'endpoints': settings}}}, self.home)
+                config.validate_policy(
+                    {'networks': {'lab': {'cidr': '192.0.2.8/31', 'endpoints': settings}}}, self.home)
         policy = self.policy()
         self.assertFalse(policy.networks[0].ping)
         with self.assertRaises(config.ConfigError):
-            config.validate_policy({'networks': {'lab': {'cidr': '2001:db8::/64', 'endpoints': {'enabled': True, 'tcp_ports': [22]}}}}, self.home)
+            config.validate_policy({'networks': {'lab': {'cidr': '2001:db8::/64',
+                                                       'endpoints': {'enabled': True, 'tcp_ports': [22]}}}}, self.home)
 
     def test_all_public_request_injections_refuse_before_effects(self):
         policy = self.policy()
         handler = tools.Handlers(self.home)
         with patch.object(transport.socket, 'socket', side_effect=AssertionError('unexpected socket')):
-            for params in ({}, {'network': 'lab', 'batch_id': 'x'}, {'network': '192.0.2.8'}, {'network': '-oProxyCommand=id'},
+            for params in ({}, {'network': 'lab', 'batch_id': 'x'}, {'network': '192.0.2.8'},
+                           {'network': '-oProxyCommand=id'},
                            {'batch_id': "x' OR 1=1--"}, {'network': 'lab; id'}, {'network': 'unknown'},
-                           *({'network': 'lab', key: 'bad' * 4096} for key in ('target', 'port', 'ports', 'flags', 'source', 'command', 'limits', 'ssh_greeting', 'banner'))):
+                           *({'network': 'lab', key: 'bad' * 4096} for key in (
+                               'target', 'port', 'ports', 'flags', 'source', 'command', 'limits',
+                               'ssh_greeting', 'banner'))):
                 result = json.loads(handler.check_endpoints(params))
                 self.assertIn('error', result)
                 self.assertFalse(result['persisted'])
-            for text in ('check-endpoints', 'check-endpoints lab extra', 'resume-endpoints', 'resume-endpoints x extra'):
+            for text in ('check-endpoints', 'check-endpoints lab extra', 'resume-endpoints',
+                         'resume-endpoints x extra'):
                 self.assertIn('error', json.loads(handler.command(text)))
             network = policy.networks[0]
-            for target, port in [('example.invalid', 22), ('192.0.2.10', 22), ('192.0.2.8', 4403), ('192.0.2.8', 443), ('127.0.0.1', 22)]:
+            for target, port in [('example.invalid', 22), ('192.0.2.10', 22), ('192.0.2.8', 4403),
+                                 ('192.0.2.8', 443), ('127.0.0.1', 22)]:
                 with self.assertRaises(ValueError):
                     transport.begin_endpoint(network, target, port, 1e20)
             forged = replace(network, endpoint_ports=(4403,))
@@ -135,9 +149,11 @@ class EndpointTests(unittest.TestCase):
         calls = fixture.calls
         self.assertEqual(len(calls), len({(address, port) for _, address, port in calls}))
         self.assertLessEqual(fixture.clock.now - calls[0][0], 1.5 + 1e-6)
-        self.assertTrue(all(later[0] - earlier[0] >= 1 / 32 - 1e-7 for earlier, later in zip(calls, calls[1:])))
+        self.assertTrue(all(later[0] - earlier[0] >= 1 / 32 - 1e-7
+                            for earlier, later in zip(calls, calls[1:], strict=False)))
         small = self.policy()
-        with patch.object(transport.socket, 'socket', side_effect=PermissionError(errno.EACCES, 'private remote diagnostic')):
+        with patch.object(transport.socket, 'socket', side_effect=PermissionError(
+                errno.EACCES, 'private remote diagnostic')):
             failed = endpoints.check(small, {'network': 'lab'})
         self.assertEqual(failed['completion'], 'failed')
         self.assertEqual(failed['state_counts']['unavailable'], 4)
@@ -167,7 +183,7 @@ class EndpointTests(unittest.TestCase):
             with self.subTest(state=state):
                 fixture = SyntheticSockets(lambda address, port: 'positive' if port == 22 else 'filtered')
                 original = transport.begin_endpoint
-                def begin(network, address, port, deadline):
+                def begin(network, address, port, deadline, *, state=state, original=original):
                     if port == 2222 and state != 'filtered':
                         return None, (('unavailable', 'transport_permission_denied', False) if state == 'unavailable'
                                       else ('not_started', 'effective_deadline_before_start', False))
@@ -187,14 +203,16 @@ class EndpointTests(unittest.TestCase):
         policy = self.policy()
         original = self.collect(policy)
         before = self.counts(policy)
-        with patch.object(storage.Store, 'audit', side_effect=sqlite3.OperationalError('synthetic persistence failure')):
+        with patch.object(storage.Store, 'audit', side_effect=sqlite3.OperationalError(
+                'synthetic persistence failure')):
             with self.assertRaises(sqlite3.Error):
                 self.collect(policy)
         self.assertEqual(self.counts(policy), before)
         with patch.object(endpoints, 'store_batch', return_value={}), self.assertRaises(ValueError):
             self.collect(policy)
         self.assertEqual(self.counts(policy), before)
-        with patch.object(endpoints, 'query_endpoints', side_effect=sqlite3.OperationalError('synthetic readback failure')):
+        with patch.object(endpoints, 'query_endpoints', side_effect=sqlite3.OperationalError(
+                'synthetic readback failure')):
             failed = self.collect(policy)
         self.assertTrue(failed['persisted'] and failed['projected'] and failed['applied'])
         self.assertFalse(failed['queryable'])
@@ -226,7 +244,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(query.query(policy, {'view': 'status'})['unprojected_endpoint_batches'], 1)
         with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('resume collected')):
             with ThreadPoolExecutor(max_workers=2) as executor:
-                results = list(executor.map(lambda _: endpoints.check(policy, {'batch_id': failed['batch_id']}), range(2)))
+                results = list(executor.map(
+                    lambda _: endpoints.check(policy, {'batch_id': failed['batch_id']}), range(2)))
         self.assertTrue(all(result['queryable'] for result in results), results)
         counts = self.counts(policy)
         self.assertEqual((counts['endpoint_observations'], counts['applications'], counts['audit_events']), (4, 1, 2))
@@ -251,7 +270,8 @@ class EndpointTests(unittest.TestCase):
         pages = [self.rows(policy, limit=1, offset=index) for index in range(8)]
         self.assertEqual([p['endpoints'][0] for p in pages], all_rows)
         self.assertFalse(pages[-1]['has_more'])
-        for params in ({'limit': True}, {'limit': 101}, {'offset': -1}, {'name': 'x'}, {'batch_id': "' OR 1=1--"}, {'address': 'hostname'}):
+        for params in ({'limit': True}, {'limit': 101}, {'offset': -1}, {'name': 'x'},
+                       {'batch_id': "' OR 1=1--"}, {'address': 'hostname'}):
             with self.assertRaises(ValueError):
                 self.rows(policy, **params)
         self.assertEqual(self.rows(policy, batch_id='unknown')['endpoints'], [])
@@ -344,7 +364,8 @@ class EndpointTests(unittest.TestCase):
         for error in (OSError('selector failed'), KeyboardInterrupt()):
             fixture = SyntheticSockets()
             with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock), \
-                    patch('synthetic_sockets.SyntheticSelector.register', side_effect=error), self.assertRaises(type(error)):
+                    patch('synthetic_sockets.SyntheticSelector.register', side_effect=error), \
+                    self.assertRaises(type(error)):
                 endpoints.check(policy, {'network': 'lab'})
             self.assertTrue(all(sock.closed for sock in fixture.sockets))
         self.assertFalse(policy.database.exists())
@@ -363,7 +384,8 @@ class EndpointTests(unittest.TestCase):
         recovery = {'batch_id': '0' * 36, 'persisted': True, 'applied': False, 'projected': False,
                     'queryable': False, 'stage': 'projection', 'collection_performed': False,
                     'completion': 'complete',
-                    'error': 'limits.observations: endpoint address/port grid exceeds configured record budget; restore sufficient limits and resume this batch'}
+                    'error': ('limits.observations: endpoint address/port grid exceeds configured record budget; '
+                              'restore sufficient limits and resume this batch')}
         minimum = len(storage.response_json(recovery, config.Limits().output_bytes).encode())
         self.policy(limits={'output_bytes': minimum - 1})
         with patch.object(endpoints.Scheduler, 'run') as collect, patch.object(transport.socket, 'socket') as socket:
@@ -426,14 +448,17 @@ class EndpointTests(unittest.TestCase):
             for code, state, diagnostic in cases:
                 with self.subTest(completed=completed, code=code):
                     fixture = SyntheticSockets()
-                    def connected(sock, target):
+                    def connected(sock, target, *, completed=completed, code=code):
                         sock._start(*target)
                         return errno.EINPROGRESS if completed else code
-                    with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock), \
-                            patch('synthetic_sockets.SyntheticSocket.connect_ex', connected), \
-                            patch('synthetic_sockets.SyntheticSocket.getsockopt', return_value=code), \
-                            patch('synthetic_sockets.SyntheticSocket.recvfrom', side_effect=AssertionError('TCP payload read')), \
-                            patch('synthetic_sockets.SyntheticSocket.sendto', side_effect=AssertionError('TCP payload sent')):
+                    with (fixture.install(schedule, transport, capability),
+                          patch.object(endpoints, 'time', fixture.clock),
+                          patch('synthetic_sockets.SyntheticSocket.connect_ex', connected),
+                          patch('synthetic_sockets.SyntheticSocket.getsockopt', return_value=code),
+                          patch('synthetic_sockets.SyntheticSocket.recvfrom',
+                                side_effect=AssertionError('TCP payload read')),
+                          patch('synthetic_sockets.SyntheticSocket.sendto',
+                                side_effect=AssertionError('TCP payload sent'))):
                         result = endpoints.check(policy, {'network': 'lab'})
                     self.assertEqual(result['state_counts'][state], 2)
                     self.assertEqual(result['completion'], 'complete' if state in {'open', 'closed'} else 'failed')
@@ -454,7 +479,8 @@ class EndpointTests(unittest.TestCase):
             # Build an otherwise genuine v1 store, including shipped immutable guards.
             for table in storage.IMMUTABLE_TABLES:
                 for action in ('UPDATE', 'DELETE'):
-                    connection.execute(f"CREATE TRIGGER immutable_{table}_{action} BEFORE {action} ON {table} BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
+                    connection.execute(f"CREATE TRIGGER immutable_{table}_{action} BEFORE {action} ON {table} "
+                                       "BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
         with patch.object(storage, '_migrate_endpoints', side_effect=AssertionError('read-only attempted migration')):
             with storage.Store(policy) as old:
                 self.assertEqual(old.schema_version, 1)
@@ -466,11 +492,13 @@ class EndpointTests(unittest.TestCase):
             with storage.Store(policy, writable=True) as old:
                 core.create_device(old, 'historical')
                 at = storage.timestamp(storage.utc_now())
-                observation = batches.Observation('address', batches.Anchor('unresolved', 'legacy_address'), 'assignment',
+                observation = batches.Observation(
+                    'address', batches.Anchor('unresolved', 'legacy_address'), 'assignment',
                     (('address', '192.0.2.8'), ('prefix_length', 32)), at)
                 probe = batches.Probe('ping_0', 'success', at, at, 'none', '', 'ping_response', 'ok', (observation,))
                 batches.store_batch(old, 'ping', 'lab', at, at, 'complete', (probe,))
-                history = {table: [tuple(row) for row in old.connection.execute(f'SELECT * FROM {table}')] for table in storage.IMMUTABLE_TABLES}
+                history = {table: [tuple(row) for row in old.connection.execute(f'SELECT * FROM {table}')]
+                           for table in storage.IMMUTABLE_TABLES}
         real_migrate = storage._migrate_endpoints
         def interrupted(connection):
             real_migrate(connection)
@@ -479,7 +507,8 @@ class EndpointTests(unittest.TestCase):
             storage.Store(policy, writable=True)
         with storage.Store(policy) as old:
             self.assertEqual(old.schema_version, 1)
-            self.assertIsNone(old.connection.execute("SELECT 1 FROM sqlite_master WHERE name='endpoint_observations'").fetchone())
+            self.assertIsNone(old.connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='endpoint_observations'").fetchone())
         result = self.collect(policy)
         self.assertTrue(result['queryable'])
         with storage.Store(policy, writable=True) as migrated:
@@ -490,4 +519,5 @@ class EndpointTests(unittest.TestCase):
             for table in ('batches', 'probes', 'observations', 'applications', 'audit_events', 'endpoint_observations'):
                 for operation in ('UPDATE', 'DELETE'):
                     with migrated.transaction(), self.assertRaises(sqlite3.IntegrityError):
-                        migrated.connection.execute(f'UPDATE {table} SET rowid=rowid' if operation == 'UPDATE' else f'DELETE FROM {table}')
+                        migrated.connection.execute(
+                            f'UPDATE {table} SET rowid=rowid' if operation == 'UPDATE' else f'DELETE FROM {table}')

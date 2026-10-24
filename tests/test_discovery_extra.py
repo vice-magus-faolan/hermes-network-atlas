@@ -37,7 +37,8 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         fixture.reconcile.reconcile(self.policy, {"batch_id": boundary["batch_id"]}, now=fixture.NOW)
         ping = fixture.batches.store_batch(self.store, "ping", "lab", at, at, "complete", (probe,))
         later = fixture.storage.timestamp(fixture.NOW + timedelta(seconds=1))
-        passive = replace(probe, probe_name="ip_neigh", started_at=later, ended_at=later, coverage_kind="local_host", evidence_kind="cached_neighbor")
+        passive = replace(probe, probe_name="ip_neigh", started_at=later, ended_at=later,
+                          coverage_kind="local_host", evidence_kind="cached_neighbor")
         fixture.batches.store_batch(self.store, "local_passive", "lab", later, later, "complete", (passive,))
         self.raw["networks"]["lab"]["discovery"]["passive"] = False
         policy = fixture.config.validate_policy(self.raw, self.home)
@@ -74,9 +75,12 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
             children.append(child)
             return child
         def sleeping(argv, limits, deadline, **kwargs):
-            return fixture.runner.run((sys.executable, str(fixture.ROOT / "tests" / "offline_probe.py"), "sleep"), limits, deadline, host=True)
+            return fixture.runner.run((sys.executable, str(fixture.ROOT / "tests" / "offline_probe.py"), "sleep"),
+                                      limits, deadline, host=True)
         started = time.monotonic()
-        with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(self.home)}), patch.object(fixture.discovery, "run", sleeping), patch.object(fixture.runner.subprocess, "Popen", record):
+        with (patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(self.home)}),
+              patch.object(fixture.discovery, "run", sleeping),
+              patch.object(fixture.runner.subprocess, "Popen", record)):
             receipt = fixture.discovery.collect(policy, {"network": "lab", "mode": "ping"})
         self.assertLess(time.monotonic() - started, 1.4)
         self.assertEqual(receipt["completion"], "failed")
@@ -91,7 +95,8 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         at = fixture.storage.timestamp(fixture.NOW)
         probes = tuple(fixture.batches.Probe("ping_" + str(i), "success", at, at, "none", "", "ping_response",
                        observations=(fixture.observation(),) * 2) for i in range(4))
-        coverage = fixture.batches.Probe("ping_coverage", "success", at, at, "exact_network", "192.0.2.0/24", "ping_response")
+        coverage = fixture.batches.Probe(
+            "ping_coverage", "success", at, at, "exact_network", "192.0.2.0/24", "ping_response")
         limited = fixture.discovery._batch_bound(probes + (coverage,), policy)
         self.assertLessEqual(sum(len(probe.observations) for probe in limited), 5)
         self.assertEqual(limited[-1].outcome, "parse_failed")
@@ -99,20 +104,25 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
 
     def test_local_same_host_multi_interface_state_and_no_existing_device_merge(self):
         at = fixture.storage.timestamp(fixture.NOW)
-        observations = (fixture.observation(prefix=24), fixture.observation(mac=fixture.MAC2, address="192.0.2.20", prefix=24),
-                        fixture.batches.Observation("interface", fixture.batches.Anchor("mac", fixture.MAC), "state", "UP", at))
-        probe = fixture.batches.Probe("ip_addr", "success", at, at, "local_host", "192.0.2.0/24", "local_interface", observations=observations)
+        observations = (fixture.observation(prefix=24),
+                        fixture.observation(mac=fixture.MAC2, address="192.0.2.20", prefix=24),
+                        fixture.batches.Observation(
+                            "interface", fixture.batches.Anchor("mac", fixture.MAC), "state", "UP", at))
+        probe = fixture.batches.Probe("ip_addr", "success", at, at, "local_host", "192.0.2.0/24", "local_interface",
+                                     observations=observations)
         batch = fixture.batches.store_batch(self.store, "local_passive", "lab", at, at, "complete", (probe,))
         result = fixture.reconcile.reconcile(self.policy, {"batch_id": batch}, now=fixture.NOW)
         self.assertEqual(len(result["new"]), 1)
         device = result["new"][0]
         detail = self.detail(device=device)
         self.assertEqual(len(detail["interfaces"]), 2)
-        self.assertEqual(next(i for i in detail["interfaces"] if i["mac_address"] == fixture.MAC)["fields"]["state"]["value"], "UP")
+        self.assertEqual(
+            next(i for i in detail["interfaces"] if i["mac_address"] == fixture.MAC)["fields"]["state"]["value"], "UP")
         other = fixture.core.create_device(self.store, "other local fixture", now=fixture.NOW)["device_id"]
         third_mac = "00:11:22:33:44:77"
         fixture.core.add_interface(self.store, other, "other", third_mac, now=fixture.NOW)
-        second_probe = replace(probe, observations=(fixture.observation(), fixture.observation(mac=third_mac, address="192.0.2.30")))
+        second_probe = replace(probe, observations=(
+            fixture.observation(), fixture.observation(mac=third_mac, address="192.0.2.30")))
         second = fixture.batches.store_batch(self.store, "local_passive", "lab", at, at, "complete", (second_probe,))
         answer = fixture.reconcile.reconcile(self.policy, {"batch_id": second}, now=fixture.NOW)
         self.assertIn("local_host_multiple_devices", {entry["reason"] for entry in answer["conflicting"]})
@@ -122,7 +132,8 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
 
     def test_reconcile_concurrent_writer_busy_and_failure_leaves_retryable_batch(self):
         at = fixture.storage.timestamp(fixture.NOW)
-        probe = fixture.batches.Probe("ping", "success", at, at, "exact_network", "192.0.2.0/24", "ping_response", observations=(fixture.observation(),))
+        probe = fixture.batches.Probe("ping", "success", at, at, "exact_network", "192.0.2.0/24", "ping_response",
+                                     observations=(fixture.observation(),))
         batch = fixture.batches.store_batch(self.store, "ping", "lab", at, at, "complete", (probe,))
         before = self.counts()
         with self.store.transaction(), self.assertRaises(sqlite3.OperationalError):
@@ -134,7 +145,9 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         new_time = fixture.NOW + timedelta(days=2)
         def batch(at):
             stamp = fixture.storage.timestamp(at)
-            probe = fixture.batches.Probe("ping", "success", stamp, stamp, "exact_network", "192.0.2.0/24", "ping_response", observations=(fixture.observation(at=at),))
+            probe = fixture.batches.Probe("ping", "success", stamp, stamp, "exact_network", "192.0.2.0/24",
+                                         "ping_response",
+                                         observations=(fixture.observation(at=at),))
             return fixture.batches.store_batch(self.store, "ping", "lab", stamp, stamp, "complete", (probe,))
         newer = fixture.reconcile.reconcile(self.policy, {"batch_id": batch(new_time)}, now=new_time)
         device = newer["new"][0]
@@ -155,7 +168,9 @@ class AdditionalRunnerTests(unittest.TestCase):
             (home / "offline-fixture").touch()
             argv = (sys.executable, str(fixture.ROOT / "tests" / "offline_probe.py"))
             with patch.dict(os.environ, {"NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(home)}):
-                unrelated = subprocess.Popen((*argv, "sleep"), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                unrelated = subprocess.Popen((*argv, "sleep"), stdin=subprocess.DEVNULL,
+                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                             start_new_session=True)
                 try:
                     result = fixture.runner.run((*argv, "fork_exit"), fixture.config.Limits(), time.monotonic() + 3)
                     self.assertEqual(result.outcome, "success")

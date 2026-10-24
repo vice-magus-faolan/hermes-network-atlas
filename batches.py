@@ -67,7 +67,9 @@ def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str
     _code(scope_name)
     if collector == "ssh":
         if scope_name not in store.policy.authorized_aliases:
-            raise RequestError("ssh.enabled/ssh.hosts.inspect: stored alias is not currently authorized; restore intended policy or select an eligible batch")
+            raise RequestError(
+                "ssh.enabled/ssh.hosts.inspect: stored alias is not currently authorized; "
+                "restore intended policy or select an eligible batch")
         return "ssh_alias", scope_name, "ssh:" + scope_name
     mode = {"local_passive": "passive", "ping": "ping", "tcp_endpoint": "endpoint_ports"}.get(collector)
     if mode is None:
@@ -76,7 +78,9 @@ def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str
     if network is None or not getattr(network, mode):
         setting = {"passive": "network.discovery.passive", "ping": "network.discovery.ping",
                    "endpoint_ports": "network.endpoints"}[mode]
-        raise RequestError(f"{setting}: stored scope requires a configured network and enabled collection mode; restore intended policy or select an eligible batch")
+        raise RequestError(
+            f"{setting}: stored scope requires a configured network and enabled collection mode; "
+            "restore intended policy or select an eligible batch")
     return "network", network.cidr, collector
 
 
@@ -93,14 +97,16 @@ def _probe(probe: Probe, collector: str, scope: str, start: str, end: str) -> No
     _times(probe.started_at, probe.ended_at, start, end)
     if probe.outcome not in OUTCOMES or probe.evidence_kind not in EVIDENCE_KINDS:
         raise ValueError("invalid probe outcome/evidence")
-    permitted = {"local_passive": {"local_host", "none"}, "ping": {"exact_network", "none"}, "ssh": {"exact_target", "none"}, "tcp_endpoint": {"none"}}
+    permitted = {"local_passive": {"local_host", "none"}, "ping": {"exact_network", "none"},
+                 "ssh": {"exact_target", "none"}, "tcp_endpoint": {"none"}}
     if probe.coverage_kind not in permitted[collector]:
         raise ValueError("invalid collector coverage")
     if probe.coverage_kind != "none" and probe.coverage_value != scope:
         raise ValueError("out-of-scope probe")
     if probe.coverage_kind == "none" and probe.coverage_value != "":
         raise ValueError("unexamined coverage must be empty")
-    expected = {"local_passive": {"local_interface", "cached_neighbor", "none"}, "ping": {"ping_response", "none"}, "ssh": {"ssh_response", "none"}, "tcp_endpoint": {"tcp_endpoint"}}
+    expected = {"local_passive": {"local_interface", "cached_neighbor", "none"}, "ping": {"ping_response", "none"},
+                "ssh": {"ssh_response", "none"}, "tcp_endpoint": {"tcp_endpoint"}}
     if probe.evidence_kind not in expected[collector]:
         raise ValueError("inconsistent collector evidence")
     if probe.outcome != "success" and probe.observations:
@@ -155,7 +161,8 @@ def _observation(obs: Observation, probe: Probe, store: Store, kind: str, scope:
     else:
         _scalar_value(obs, store)
     if obs.neighbor_state is not None:
-        if probe.evidence_kind != "cached_neighbor" or obs.neighbor_state not in {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT", "NOARP", "INCOMPLETE", "FAILED", "NONE"}:
+        if probe.evidence_kind != "cached_neighbor" or obs.neighbor_state not in {
+                "REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT", "NOARP", "INCOMPLETE", "FAILED", "NONE"}:
             raise ValueError("invalid neighbor evidence state")
 
 
@@ -188,7 +195,8 @@ def store_batch(store: Store, collector: str, scope_name: str, started_at: str, 
             if collector != "ssh" or resolve_in_store(store, inspection_target) != scope_name:
                 raise ValueError("inspection mapping changed during collection")
         store.connection.execute("INSERT INTO batches VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-          (batch, 1, collector, source, str(store.policy.home), kind, scope_name, scope, started_at, ended_at, completion))
+          (batch, 1, collector, source, str(store.policy.home), kind, scope_name, scope,
+           started_at, ended_at, completion))
         for probe in probes:
             _insert_probe(store, batch, probe, collector, source, completion)
         store.audit(operation, "batch_stored", source, ended_at, batch=batch,
@@ -260,7 +268,8 @@ def record_access(store: Store, device: str, alias: str, succeeded: bool, diagno
         store.require("devices", device)
         if batch is not None:
             row = store.require("batches", batch)
-            if row["collector"] != "ssh" or row["scope_value"] != alias or row["policy_context"] != str(store.policy.home):
+            if (row["collector"] != "ssh" or row["scope_value"] != alias
+                    or row["policy_context"] != str(store.policy.home)):
                 raise ValueError("access batch mismatch")
         store.connection.execute("INSERT INTO access_evidence VALUES (?,?,?,?,?,?,?,?)",
           (record, device, str(store.policy.home), alias, int(succeeded), at, diagnostic_code, batch))

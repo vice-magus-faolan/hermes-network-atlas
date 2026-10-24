@@ -6,7 +6,6 @@ from dataclasses import replace
 import importlib
 import json
 from pathlib import Path
-import time
 import unittest
 from unittest.mock import patch
 
@@ -35,7 +34,8 @@ def outputs():
     return {"hostname": b"fixture-host\n", "hostnamectl --static": b"fixture-host\n",
             "cat /etc/os-release": b'NAME="Fixture Linux"\nPRETTY_NAME="Fixture Linux 1"\nID=fixture\n',
             "ip -j address": json.dumps([{"ifname": "fixture0", "address": MAC, "operstate": "UP",
-                "addr_info": [{"local": "198.51.100.1", "prefixlen": 24}, {"local": "2001:db8::1", "prefixlen": 64}]}]).encode(),
+                "addr_info": [{"local": "198.51.100.1", "prefixlen": 24},
+                              {"local": "2001:db8::1", "prefixlen": 64}]}]).encode(),
             "ip -j link": json.dumps([{"ifname": "fixture0", "address": MAC, "operstate": "UP"},
                                       {"ifname": "fixture1", "address": MAC2, "operstate": "DOWN"}]).encode(),
             "ip -j route": b'[{"dst":"203.0.113.0/24","gateway":"198.51.100.254","dev":"fixture0"}]',
@@ -70,7 +70,8 @@ class InspectionTests(AtlasFixture):
                {"target": "user@lab-router"}, {"target": "192.0.2.10"}, {"target": "lab-router\n"},
                {"target": "lab-router host"}, {"target": "x" * 65}]
         bad += [{"target": ALIAS, key: "x"} for key in
-                ("hostname", "username", "port", "command", "flags", "options", "probe", "source", "limits", "permissions")]
+                ("hostname", "username", "port", "command", "flags", "options", "probe", "source", "limits",
+                 "permissions")]
         before = self.counts()
         with patch.object(inspection, "run", side_effect=AssertionError("unauthorized transport")):
             for params in bad:
@@ -88,7 +89,8 @@ class InspectionTests(AtlasFixture):
                              "ClearAllForwardings=yes", "ForwardAgent=no", "ForwardX11=no", "ForwardX11Trusted=no",
                              "ControlMaster=no", "ControlPath=none", "ControlPersist=no", "RequestTTY=no",
                              "RemoteCommand=none", "Tunnel=no", "UpdateHostKeys=no", "ForkAfterAuthentication=no",
-                             "AddKeysToAgent=no", "NoHostAuthenticationForLocalhost=no", "KnownHostsCommand=none"} <= values)
+                             "AddKeysToAgent=no", "NoHostAuthenticationForLocalhost=no",
+                             "KnownHostsCommand=none"} <= values)
             self.assertNotIn("sudo", argv)
             self.assertNotIn("sh", command)
         with self.assertRaises(ValueError):
@@ -103,14 +105,16 @@ class InspectionTests(AtlasFixture):
         self.assertFalse(receipt["applied"])
         self.assertEqual(self.counts()["devices"], before["devices"])
         self.assertEqual(self.counts()["interfaces"], before["interfaces"])
-        self.assertEqual(query.query(self.policy, {"view": "status"})["last_inspection"]["batch_id"], receipt["batch_id"])
+        self.assertEqual(
+            query.query(self.policy, {"view": "status"})["last_inspection"]["batch_id"], receipt["batch_id"])
         result = reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
         self.assertEqual(len(result["new"]), 1)
         detail = query.query(self.policy, {"device_id": result["new"][0]})["devices"][0]
         self.assertEqual(detail["fields"]["hostname"]["value"], "fixture-host")
         self.assertEqual(detail["fields"]["os"]["value"], "Fixture Linux 1")
         self.assertEqual(len(detail["interfaces"]), 2)
-        self.assertEqual({a["address"] for i in detail["interfaces"] for a in i["addresses"]}, {"198.51.100.1", "2001:db8::1"})
+        self.assertEqual({a["address"] for i in detail["interfaces"] for a in i["addresses"]},
+                         {"198.51.100.1", "2001:db8::1"})
         self.assertTrue(detail["access"][0]["authorized_for_atlas_ssh_inspection"])
         self.assertTrue(detail["access"][0]["last_inspection"]["succeeded"])
         facts = query.query(self.policy, {"view": "history", "device_id": detail["id"]})["observations"]
@@ -133,7 +137,9 @@ class InspectionTests(AtlasFixture):
         self.assertEqual(detail["fields"]["hostname"]["value"], "fixture-host")
         failed = self.collect(payloads={})
         self.assertEqual(failed["completion"], "failed")
-        self.assertFalse(query.query(self.policy, {"device_id": self.device})["devices"][0]["access"][0]["last_inspection"]["succeeded"])
+        self.assertFalse(
+            query.query(self.policy, {"device_id": self.device})["devices"][0]["access"][0][
+                "last_inspection"]["succeeded"])
         applied = reconcile.reconcile(self.policy, {"batch_id": failed["batch_id"]})
         self.assertFalse(applied["missing"])
         self.assertEqual(self.detail()["last_seen"], seen)
@@ -142,7 +148,8 @@ class InspectionTests(AtlasFixture):
     def test_disabled_revoked_shared_profile_and_ambiguous_mappings_fail_closed(self):
         self.associate()
         receipt = self.collect()
-        shared = config.validate_policy({"store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "second")
+        shared = config.validate_policy(
+            {"store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "second")
         denied = replace(self.policy, ssh_enabled=False)
         before = self.counts()
         with patch.object(inspection, "run", side_effect=AssertionError("denied transport")):
@@ -166,13 +173,16 @@ class InspectionTests(AtlasFixture):
         self.associate()
         before = self.counts()
         tiny = replace(self.policy, limits=replace(self.policy.limits, observations=1))
-        with patch.object(inspection, "run", side_effect=AssertionError("count preflight")), self.assertRaises(ValueError):
+        with (patch.object(inspection, "run", side_effect=AssertionError("count preflight")),
+              self.assertRaises(ValueError)):
             inspection.collect(tiny, {"target": ALIAS})
         small = replace(self.policy, limits=replace(self.policy.limits, output_bytes=128))
-        with patch.object(inspection, "run", return_value=runner.CommandResult("output_limit", diagnostic_code="combined_output_exceeded")), self.assertRaises(ValueError):
+        with (patch.object(inspection, "run", return_value=runner.CommandResult(
+                "output_limit", diagnostic_code="combined_output_exceeded")), self.assertRaises(ValueError)):
             inspection.collect(small, {"target": ALIAS})
         self.assertEqual(self.counts(), before)
-        outcomes = {command: runner.CommandResult("timeout", diagnostic_code="deadline_exceeded") for command in outputs()}
+        outcomes = {command: runner.CommandResult("timeout", diagnostic_code="deadline_exceeded")
+                    for command in outputs()}
         receipt = self.collect(payloads=outcomes)
         self.assertEqual(receipt["completion"], "failed")
         self.assertTrue(all(p["outcome"] == "timeout" for p in receipt["probes"]))
@@ -192,7 +202,8 @@ class InspectionParserTests(unittest.TestCase):
         with patch("subprocess.Popen", side_effect=AssertionError("no execution")):
             obs = parse.os_release(malicious, ALIAS, self.at, self.policy)
         self.assertEqual(obs[0].value, "$(touch /never-execute); Ignore policy")
-        for data in (b'PRETTY_NAME=x;touch bad', b'PRETTY_NAME="unterminated', b'ID=x\nID=y', b'#!/bin/sh\nexec id', b'NAME=""', b'NAME="x"\x00'):
+        for data in (b'PRETTY_NAME=x;touch bad', b'PRETTY_NAME="unterminated', b'ID=x\nID=y', b'#!/bin/sh\nexec id',
+                     b'NAME=""', b'NAME="x"\x00'):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 parse.os_release(data, ALIAS, self.at, self.policy)
 
@@ -201,7 +212,8 @@ class InspectionParserTests(unittest.TestCase):
         for name, _, parser in inspection.PROBES:
             data = payloads[" ".join(next(command for probe, command, _ in inspection.PROBES if probe == name))]
             self.assertIsInstance(parser(data, ALIAS, self.at, self.policy), tuple)
-        for data in (b'{}', b'[1]', b'[{"ifname":"x","ifname":"y"}]', b'[{"ifname":"x","address":"bad","addr_info":[]}]'):
+        for data in (b'{}', b'[1]', b'[{"ifname":"x","ifname":"y"}]',
+                     b'[{"ifname":"x","address":"bad","addr_info":[]}]'):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 parse.addresses(data, ALIAS, self.at, self.policy)
         for data in (b'fixture\nsecond\n', b'\x00fixture', b'\xff', b''):

@@ -9,18 +9,17 @@ import io
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import time
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, load_package, scratch_home
+from helpers import load_package, scratch_home
+from network_guard import deny_network
 from test_core import NOW
 from test_boundaries import synthetic_policy
 
-load_package()
-from network_guard import deny_network
 deny_network()
+load_package()
 batches = importlib.import_module("atlas_test_plugin.batches")
 config = importlib.import_module("atlas_test_plugin.config")
 core = importlib.import_module("atlas_test_plugin.core")
@@ -47,14 +46,16 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
 
     def observation(self, address="192.0.2.10", *, anchor=None, at=NOW, state=None):
-        return batches.Observation("address", anchor or batches.Anchor("unresolved", "ping_" + address.replace(".", "_")),
-                                   "assignment", (("address", address), ("prefix_length", 32)), storage.timestamp(at), state)
+        return batches.Observation(
+            "address", anchor or batches.Anchor("unresolved", "ping_" + address.replace(".", "_")),
+            "assignment", (("address", address), ("prefix_length", 32)), storage.timestamp(at), state)
 
     def batch(self, observations=(), *, at=NOW, collector="ping", partial=False, store=None):
         stamp = storage.timestamp(at)
         probe = batches.Probe("positive", "success", stamp, stamp,
                              "exact_network" if collector == "ping" else "local_host", "192.0.2.0/24",
-                             "ping_response" if collector == "ping" else "cached_neighbor", observations=tuple(observations))
+                             "ping_response" if collector == "ping" else "cached_neighbor",
+                             observations=tuple(observations))
         probes = (probe,)
         if partial:
             probes += (batches.Probe("failed", "timeout", stamp, stamp, "none", "", "none"),)
@@ -72,7 +73,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
 
     def snapshot(self):
         return {table: [tuple(row) for row in self.store.connection.execute("SELECT * FROM " + table)]
-                for table in (*storage.IMMUTABLE_TABLES, "devices", "interfaces", "addresses", "aliases", "sqlite_master")}
+                for table in (
+                    *storage.IMMUTABLE_TABLES, "devices", "interfaces", "addresses", "aliases", "sqlite_master")}
 
     def test_zero_devices_multiple_responses_and_stored_reasons(self):
         batch = self.batch([self.observation("192.0.2." + str(n)) for n in range(10, 17)])
@@ -176,14 +178,18 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         for completion in ("complete", "partial", "failed"):
             legacy = "legacy-" + completion
             with self.store.transaction():
-                self.store.connection.execute("INSERT INTO batches SELECT ?,schema_version,collector,source,policy_context,scope_kind,scope_name,scope_value,started_at,ended_at,? FROM batches WHERE id=?", (legacy, completion, batch))
-                self.store.connection.execute("INSERT INTO probes VALUES (?,?,?,?,?,?,?,?,?,?,?)", (legacy, legacy, "legacy", "unavailable", stamp, stamp, "none", "", "none", 0, "missing"))
+                self.store.connection.execute(
+                    "INSERT INTO batches SELECT ?,schema_version,collector,source,policy_context,scope_kind,"
+                    "scope_name,scope_value,started_at,ended_at,? FROM batches WHERE id=?", (legacy, completion, batch))
+                self.store.connection.execute("INSERT INTO probes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (legacy, legacy, "legacy", "unavailable", stamp, stamp, "none", "", "none", 0, "missing"))
             self.assertEqual(self.rows(batch_id=legacy), [])
 
     def test_later_resolution_exact_anchor_not_ip_and_original_copies_labeled(self):
         ip_only = self.batch([self.observation()])
         self.apply(ip_only)
-        stable = self.batch([self.observation(anchor=batches.Anchor("mac", MAC), at=NOW + timedelta(days=1))], at=NOW + timedelta(days=1))
+        stable = self.batch([self.observation(anchor=batches.Anchor("mac", MAC), at=NOW + timedelta(days=1))],
+                            at=NOW + timedelta(days=1))
         applied = self.apply(stable, NOW + timedelta(days=1))
         # Same IP with a different anchor is NOT an identity resolution of the ping row.
         old = self.rows(batch_id=ip_only, now=NOW + timedelta(days=1))[0]
@@ -192,9 +198,11 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         own = self.rows(batch_id=stable, now=NOW + timedelta(days=1))[0]
         self.assertEqual(own["identity_state"], "resolved_in_batch")
         self.assertEqual(own["resolved_device_ids"], applied["new"])
-        later = self.batch([self.observation(anchor=batches.Anchor("mac", MAC), at=NOW + timedelta(days=2))], at=NOW + timedelta(days=2))
+        later = self.batch([self.observation(anchor=batches.Anchor("mac", MAC), at=NOW + timedelta(days=2))],
+                           at=NOW + timedelta(days=2))
         self.apply(later, NOW + timedelta(days=2))
-        self.assertEqual(self.rows(batch_id=stable, now=NOW + timedelta(days=2))[0]["identity_state"], "subsequently_resolved")
+        self.assertEqual(self.rows(batch_id=stable, now=NOW + timedelta(days=2))[0]["identity_state"],
+                         "subsequently_resolved")
         self.assertEqual(len(self.rows(now=NOW + timedelta(days=2))), 3)
 
     def test_unreconciled_then_same_anchor_resolved_and_later_conflict(self):
@@ -229,7 +237,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         before = self.snapshot()
         with self.assertRaises(ValueError):
             self.apply(batch, policy=reader)
-        with patch.object(inspection, "run", side_effect=AssertionError("foreign inspection")), self.assertRaises(ValueError):
+        with (patch.object(inspection, "run", side_effect=AssertionError("foreign inspection")),
+              self.assertRaises(ValueError)):
             inspection.collect(reader, {"target": "lab-router"})
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.rows(policy=config.validate_policy({}, home)), [])
@@ -238,7 +247,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
     def test_foreign_same_mac_does_not_resolve_local_lineage(self):
         anchor = batches.Anchor("mac", MAC)
         batch = self.batch([self.observation(anchor=anchor)])
-        reader = config.validate_policy({**self.raw, "store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "other")
+        reader = config.validate_policy(
+            {**self.raw, "store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "other")
         with storage.Store(reader, writable=True) as store:
             foreign = self.batch([self.observation(anchor=anchor)], store=store)
         self.apply(foreign, policy=reader)
@@ -252,10 +262,13 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         parser = argparse.ArgumentParser(allow_abbrev=False)
         commands.setup_parser(parser)
         output = io.StringIO()
-        with patch.object(tools, "collect", side_effect=AssertionError("query collected")), patch.object(tools, "reconcile", side_effect=AssertionError("query reconciled")), patch.object(tools, "inspect_host", side_effect=AssertionError("query inspected")):
+        with (patch.object(tools, "collect", side_effect=AssertionError("query collected")),
+              patch.object(tools, "reconcile", side_effect=AssertionError("query reconciled")),
+              patch.object(tools, "inspect_host", side_effect=AssertionError("query inspected"))):
             self.assertEqual(len(json.loads(handler.query({"view": "unresolved"}))["evidence"]), 1)
             with redirect_stdout(output):
-                self.assertEqual(commands.run_command(parser.parse_args(["query", "--query-json", '{"view":"unresolved"}']), self.home), 0)
+                self.assertEqual(commands.run_command(
+                    parser.parse_args(["query", "--query-json", '{"view":"unresolved"}']), self.home), 0)
             self.assertEqual(len(json.loads(output.getvalue())["evidence"]), 1)
         self.raw["limits"] = {"output_bytes": 128}
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
@@ -266,7 +279,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.batch([self.observation()])
         before = self.snapshot()
         query.validate_query({"view": "unresolved"}, self.policy)
-        with patch.object(storage.time, "monotonic", side_effect=[0, 1000]), self.assertRaisesRegex(ValueError, "deadline"):
+        with (patch.object(storage.time, "monotonic", side_effect=[0, 1000]),
+              self.assertRaisesRegex(ValueError, "deadline")):
             self.read()
         self.assertEqual(self.snapshot(), before)
 
@@ -275,9 +289,11 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         before = self.snapshot()
         small = replace(self.policy, limits=replace(self.policy.limits, operation_timeout_seconds=0.05))
         def expensive(store, params, now):
-            store.connection.execute("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n").fetchone()
+            store.connection.execute("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000000) "
+                                     "SELECT sum(x) FROM n").fetchone()
         started = time.monotonic()
-        with patch.object(unresolved, "_page", expensive), self.assertRaisesRegex(sqlite3.OperationalError, "interrupted"):
+        with (patch.object(unresolved, "_page", expensive),
+              self.assertRaisesRegex(sqlite3.OperationalError, "interrupted")):
             self.read(policy=small)
         self.assertLess(time.monotonic() - started, 1)
         self.assertEqual(self.snapshot(), before)
@@ -285,15 +301,19 @@ class UnresolvedEvidenceTests(unittest.TestCase):
     def test_reconciled_unresolved_later_resolved_same_interface_anchor(self):
         stamp = storage.timestamp(NOW)
         anchor = batches.Anchor("mac", MAC)
-        observations = tuple(batches.Observation("interface", anchor, "name", name, stamp) for name in ("fixture0", "fixture1"))
-        probe = batches.Probe("interfaces", "success", stamp, stamp, "local_host", "192.0.2.0/24", "local_interface", observations=observations)
+        observations = tuple(batches.Observation("interface", anchor, "name", name, stamp)
+                             for name in ("fixture0", "fixture1"))
+        probe = batches.Probe("interfaces", "success", stamp, stamp, "local_host", "192.0.2.0/24", "local_interface",
+                              observations=observations)
         first = batches.store_batch(self.store, "local_passive", "lab", stamp, stamp, "complete", (probe,))
         self.apply(first)
         self.assertEqual({row["identity_state"] for row in self.rows(batch_id=first)}, {"reconciled_unresolved"})
         later_stamp = storage.timestamp(NOW + timedelta(days=1))
         positive = batches.Observation("interface", anchor, "name", "fixture0", later_stamp)
-        later_probe = batches.Probe("interfaces", "success", later_stamp, later_stamp, "local_host", "192.0.2.0/24", "local_interface", observations=(positive,))
-        later = batches.store_batch(self.store, "local_passive", "lab", later_stamp, later_stamp, "complete", (later_probe,))
+        later_probe = batches.Probe("interfaces", "success", later_stamp, later_stamp, "local_host", "192.0.2.0/24",
+                                    "local_interface", observations=(positive,))
+        later = batches.store_batch(
+            self.store, "local_passive", "lab", later_stamp, later_stamp, "complete", (later_probe,))
         device = self.apply(later, NOW + timedelta(days=1))["new"][0]
         old = self.rows(batch_id=first, now=NOW + timedelta(days=1))
         self.assertEqual({row["identity_state"] for row in old}, {"subsequently_resolved"})
@@ -329,7 +349,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
     def test_applied_without_identity_result_is_not_labeled_unresolved(self):
         batch = self.batch([self.observation()])
         with self.store.transaction():
-            self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)", ("empty-application", batch, 1, storage.timestamp(NOW), storage.encode({"unresolved": []})))
+            self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
+                ("empty-application", batch, 1, storage.timestamp(NOW), storage.encode({"unresolved": []})))
         row = self.rows(batch_id=batch)[0]
         self.assertEqual(row["identity_state"], "applied_without_identity_result")
         self.assertIsNone(row["identity_reason"])
@@ -353,8 +374,10 @@ class UnresolvedEvidenceTests(unittest.TestCase):
     def test_ssh_address_inventory_is_qualified_but_not_address_response(self):
         stamp = storage.timestamp(NOW)
         obs = self.observation(anchor=batches.Anchor("mac", MAC))
-        alias = batches.Observation("device", batches.Anchor("alias", "lab-router", str(self.home)), "ssh_alias", "lab-router", stamp)
-        probe = batches.Probe("synthetic", "success", stamp, stamp, "exact_target", "lab-router", "ssh_response", observations=(obs, alias))
+        alias = batches.Observation(
+            "device", batches.Anchor("alias", "lab-router", str(self.home)), "ssh_alias", "lab-router", stamp)
+        probe = batches.Probe("synthetic", "success", stamp, stamp, "exact_target", "lab-router", "ssh_response",
+                              observations=(obs, alias))
         batch = batches.store_batch(self.store, "ssh", "lab-router", stamp, stamp, "complete", (probe,))
         rows = self.rows(batch_id=batch)
         address = next(row for row in rows if row["address"])
@@ -369,10 +392,17 @@ class UnresolvedEvidenceTests(unittest.TestCase):
             batch = "legacy-positive-" + completion
             original = self.batch([self.observation()])
             with self.store.transaction():
-                self.store.connection.execute("INSERT INTO batches SELECT ?,schema_version,collector,source,policy_context,scope_kind,scope_name,scope_value,started_at,ended_at,? FROM batches WHERE id=?", (batch, completion, original))
+                self.store.connection.execute(
+                    "INSERT INTO batches SELECT ?,schema_version,collector,source,policy_context,scope_kind,"
+                    "scope_name,scope_value,started_at,ended_at,? FROM batches WHERE id=?",
+                    (batch, completion, original))
                 for outcome in batches.OUTCOMES:
-                    self.store.connection.execute("INSERT INTO probes VALUES (?,?,?,?,?,?,?,?,?,?,?)", (batch + "-" + outcome, batch, outcome, outcome, stamp, stamp, "none", "", "none", 0, "legacy"))
-                self.store.connection.execute("INSERT INTO observations SELECT ?,?,NULL,subject_kind,subject_anchor,entity_id,field,value_json,source,confidence,observed_at,evidence_kind,explanation,neighbor_state,qualified FROM observations WHERE batch_id=?", (batch + "-observation", batch, original))
+                    self.store.connection.execute("INSERT INTO probes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (batch + "-" + outcome, batch, outcome, outcome, stamp, stamp, "none", "", "none", 0, "legacy"))
+                self.store.connection.execute(
+                    "INSERT INTO observations SELECT ?,?,NULL,subject_kind,subject_anchor,entity_id,field,value_json,"
+                    "source,confidence,observed_at,evidence_kind,explanation,neighbor_state,qualified "
+                    "FROM observations WHERE batch_id=?", (batch + "-observation", batch, original))
             row = self.rows(batch_id=batch)[0]
             self.assertEqual(row["batch"]["completion"], completion)
             self.assertEqual(row["batch"]["probe_summary"]["outcome_counts"], dict.fromkeys(batches.OUTCOMES, 1))
@@ -399,7 +429,10 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         for name, payload in (("large", storage.encode({"address": "192.0.2.10", "data": "x" * 2048})),
                               ("wrong-type", storage.encode("not an address object"))):
             with self.store.transaction():
-                self.store.connection.execute("INSERT INTO observations SELECT ?,batch_id,probe_id,subject_kind,subject_anchor,entity_id,field,?,source,confidence,observed_at,evidence_kind,explanation,neighbor_state,qualified FROM observations WHERE batch_id=? ORDER BY id LIMIT 1", (name, payload, first))
+                self.store.connection.execute(
+                    "INSERT INTO observations SELECT ?,batch_id,probe_id,subject_kind,subject_anchor,entity_id,field,?,"
+                    "source,confidence,observed_at,evidence_kind,explanation,neighbor_state,qualified "
+                    "FROM observations WHERE batch_id=? ORDER BY id LIMIT 1", (name, payload, first))
         before = self.snapshot()
         small = replace(self.policy, limits=replace(self.policy.limits, output_bytes=1024))
         with self.assertRaisesRegex(ValueError, "byte bound"):
@@ -452,7 +485,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                 return runner.CommandResult("timeout", diagnostic_code="deadline_exceeded")
             clock[0] += 1
             return runner.CommandResult("success", xml(argv[-1], mac=mac))
-        with patch.object(discovery.time, "monotonic", side_effect=lambda: clock[0]), patch.object(discovery, "utc_now", return_value=NOW), patch.object(discovery, "run", transport):
+        with (patch.object(discovery.time, "monotonic", side_effect=lambda: clock[0]),
+              patch.object(discovery, "utc_now", return_value=NOW), patch.object(discovery, "run", transport)):
             receipt = discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
         self.assertEqual(len(calls), 2 if partial else 16)
         return receipt
@@ -512,6 +546,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.assertFalse(foreign["batch"]["scope_absence_eligible"])
         with self.assertRaises(ValueError):
             self.apply(batch, policy=reader)
-        with patch.object(inspection, "run", side_effect=AssertionError("foreign inspection")), self.assertRaises(ValueError):
+        with (patch.object(inspection, "run", side_effect=AssertionError("foreign inspection")),
+              self.assertRaises(ValueError)):
             inspection.collect(reader, {"target": "lab-router"})
         self.assertEqual(self.snapshot(), before)

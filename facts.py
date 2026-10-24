@@ -68,7 +68,8 @@ def selected_facts(connection: sqlite3.Connection, kind: str, entity: str,
     # Restrict indexed history before windowing, not just the final chosen rows.
     cte, params = selection_cte(now, stale_days, subject=(kind, entity), field=field)
     rows = connection.execute(cte + "SELECT * FROM chosen WHERE subject_kind=? AND entity_id=? "
-                              "ORDER BY field,source,observed_at,id LIMIT ?", (*params, kind, entity, maximum + 1)).fetchall()
+                              "ORDER BY field,source,observed_at,id LIMIT ?",
+                              (*params, kind, entity, maximum + 1)).fetchall()
     if len(rows) > maximum:
         raise ValueError("canonical evidence exceeds configured result bound")
     fields = {}

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from unittest.mock import patch
@@ -78,8 +77,9 @@ class InspectionReachabilityTests(AtlasFixture):
     def test_up_down_and_link_local_inventory_preserves_alias_success_and_history(self):
         receipt = self.inspected_host()
         before = self.counts()
-        with patch.object(inspection, "run", side_effect=AssertionError("query must not inspect")), patch.object(
-                discovery, "run", side_effect=AssertionError("query must not discover")), patch.object(query, "utc_now", return_value=NOW):
+        with (patch.object(inspection, "run", side_effect=AssertionError("query must not inspect")),
+              patch.object(discovery, "run", side_effect=AssertionError("query must not discover")),
+              patch.object(query, "utc_now", return_value=NOW)):
             self.assert_inventory_not_reachability(self.detail(), receipt["batch_id"])
             handlers = tools.Handlers(self.home)
             public = json.loads(handlers.query({"device_id": self.device}))
@@ -96,7 +96,8 @@ class InspectionReachabilityTests(AtlasFixture):
             history = query.query(self.policy, {"view": "history", "device_id": self.device}, now=NOW)["observations"]
             assignments = [fact for fact in history if fact["field"] == "assignment"]
             self.assertEqual(len(assignments), 4)
-            self.assertTrue(all(fact["source"] == "ssh:" + ALIAS and fact["confidence"] == "observed" for fact in assignments))
+            self.assertTrue(all(fact["source"] == "ssh:" + ALIAS and fact["confidence"] == "observed"
+                                for fact in assignments))
             status = query.query(self.policy, {"view": "status"}, now=NOW)
             self.assertTrue(status["last_inspection"]["succeeded"])
             self.assertEqual(status["last_inspection"]["alias"], ALIAS)
@@ -139,7 +140,8 @@ class InspectionReachabilityTests(AtlasFixture):
         raw = json.loads(json.dumps(self.raw))
         raw["networks"] = {"one": {"cidr": "198.51.100.1/32", "discovery": {"passive": False, "ping": True}}}
         policy = config.validate_policy(raw, self.home)
-        with patch.object(discovery, "run", return_value=runner.CommandResult("success", xml("198.51.100.1", MAC))) as transport:
+        with patch.object(discovery, "run", return_value=runner.CommandResult(
+                "success", xml("198.51.100.1", MAC))) as transport:
             receipt = discovery.collect(policy, {"network": "one", "mode": "ping"})
         self.assertEqual(transport.call_count, 1)
         self.assertEqual(transport.call_args.args[0][-1], "198.51.100.1/32")
