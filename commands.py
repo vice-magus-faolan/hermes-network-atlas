@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 import sqlite3
 
-from .config import ConfigError, Policy, load_policy
-from .schemas import UPDATE_FIELDS
+from .config import Policy, load_policy
+from .errors import RequestError, error_message
 from .tools import Handlers, status, update_receipt
 from .updates import Update, operator_update
 from .core import add_address, add_interface, apply_update, create_device, end_address
@@ -18,6 +18,8 @@ from .storage import Store, response_json
 def setup_parser(parser: argparse.ArgumentParser) -> None:
     """Attach the trusted local operator route; slash/model calls cannot attest origin."""
     parser.allow_abbrev = False
+    # Semantic values reach the shared validators, whose diagnostics never echo
+    # invalid values. Native argparse still owns syntax/unknown-option errors.
     commands = parser.add_subparsers(dest="atlas_action", required=True)
     commands.add_parser("status", allow_abbrev=False)
     create = commands.add_parser("create", allow_abbrev=False, help="Create a known device (not an observation)")
@@ -25,7 +27,7 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     for action in ("update", "validate-update"):
         update = commands.add_parser(action, allow_abbrev=False)
         update.add_argument("--device-id", required=True)
-        update.add_argument("--field", choices=UPDATE_FIELDS, required=True)
+        update.add_argument("--field", required=True, help="Documented operator update field")
         update.add_argument("--value-json", required=True, help="Bounded JSON scalar or typed relationship")
     interface = commands.add_parser("interface", allow_abbrev=False)
     interface.add_argument("--device-id", required=True)
@@ -35,17 +37,17 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     address = commands.add_parser("address", allow_abbrev=False)
     address.add_argument("--interface-id", required=True)
     address.add_argument("--address", required=True)
-    address.add_argument("--prefix-length", type=int, required=True)
+    address.add_argument("--prefix-length", required=True)
     ended = commands.add_parser("end-address", allow_abbrev=False)
     ended.add_argument("--assignment-id", required=True)
     query = commands.add_parser("query", allow_abbrev=False)
     query.add_argument("--query-json", default="{}")
     map_parser = commands.add_parser("map", allow_abbrev=False)
-    map_parser.add_argument("--format", choices=("text", "markdown", "mermaid"), default="text")
+    map_parser.add_argument("--format", default="text", help="text, markdown or mermaid")
     map_parser.add_argument("--export", action="store_true")
     discover = commands.add_parser("discover", allow_abbrev=False)
     discover.add_argument("--network", required=True)
-    discover.add_argument("--mode", choices=("passive", "ping"), required=True)
+    discover.add_argument("--mode", required=True, help="passive or ping")
     reconcile_parser = commands.add_parser("reconcile", allow_abbrev=False)
     reconcile_parser.add_argument("--batch-id")
     inspect_parser = commands.add_parser("inspect", allow_abbrev=False)
@@ -67,15 +69,18 @@ def run_command(args: argparse.Namespace, home: Path) -> int:
         # read-only and validation results are checked here without side effects.
         print(response_json(result, policy.limits.output_bytes), end="")
         return 2 if "error" in result else 0
-    except (OSError, ConfigError, ValueError, RecursionError, sqlite3.Error):
-        print(json.dumps({"error": "invalid operator update or local policy", "applied": False, "persisted": False}))
+    except (OSError, ValueError, RecursionError, sqlite3.Error) as exc:
+        print(json.dumps({"error": error_message(exc), "applied": False, "persisted": False}))
         return 2
 
 
 def _decode(text: str, policy: Policy) -> object:
     if len(text) > policy.limits.input_chars * 6 + 512:
-        raise ValueError("oversized JSON input")
-    return json.loads(text)
+        raise RequestError("JSON input: reduce input to the configured size limit")
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError) as exc:
+        raise RequestError("JSON input: valid bounded JSON required for query-json or value-json") from exc
 
 
 def _read_command(args: argparse.Namespace, home: Path, policy: Policy) -> dict | None:
@@ -106,11 +111,18 @@ def _write_command(args: argparse.Namespace, policy: Policy) -> dict:
     # Validate proposals before creating a store; only create may initialize an
     # empty atlas. All other mutations require existing entity references.
     update = None
+    if args.atlas_action == "address":
+        if type(args.prefix_length) not in (str, int):
+            raise RequestError("prefix_length: integer required")
+        try:
+            args.prefix_length = int(args.prefix_length)
+        except (ValueError, TypeError) as exc:
+            raise RequestError("prefix_length: integer required") from exc
     if args.atlas_action == "update":
         update = operator_update({"device_id": args.device_id, "field": args.field,
                                   "value": _decode(args.value_json, policy)}, policy)
     if args.atlas_action != "create" and not policy.database.exists():
-        raise ValueError("unknown atlas entity")
+        raise RequestError("entity reference: select an existing atlas entity before updating")
     with Store(policy, writable=True) as store:
         return _mutate(store, args, update)
 

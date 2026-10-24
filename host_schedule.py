@@ -11,6 +11,7 @@ import time
 
 from .batches import Anchor, Observation, Probe
 from .config import Network, Policy, validate_network
+from .errors import RequestError
 from .host_discovery import icmp_capability
 from . import host_transport as transport
 from .storage import timestamp, utc_now
@@ -25,7 +26,7 @@ def validate_count(network: Network, policy: Policy) -> None:
     validate_network(network)
     count = ip_network(network.cidr).num_addresses * (method_count(network) + 1) + 1
     if count > policy.limits.observations:
-        raise ValueError('configured probe count too small for complete method scope')
+        raise RequestError('limits.observations: selected discovery methods and scope exceed configured record budget')
 
 
 def _plans(network: Network, window: int, *, endpoints: bool = False) -> Iterator[tuple[int, str, int | None]]:
@@ -100,7 +101,8 @@ class Scheduler:
         return None
 
     def _launch(self, selector):
-        assert self.pending is not None
+        if self.pending is None:
+            raise ValueError('scheduler has no pending probe')
         index, address, port = self.pending
         started = timestamp(utc_now())
         result = self._preflight(index, address, port)

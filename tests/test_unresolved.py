@@ -424,7 +424,10 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "invalid stored application"):
                     self.rows(batch_id=batch)
                 answer = json.loads(tools.Handlers(self.home).query({"view": "unresolved", "batch_id": batch}))
-                self.assertEqual(answer, {"error": "invalid query or local policy", "applied": False})
+                self.assertEqual(answer, {
+                    "error": "atlas state or bounds: operation failed; check stored evidence and configured limits",
+                    "applied": False,
+                })
                 self.assertEqual(self.snapshot(), before)
 
     def test_malformed_later_receipt_refuses_original_lineage_read_only(self):

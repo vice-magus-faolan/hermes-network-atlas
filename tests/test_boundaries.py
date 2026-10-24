@@ -7,11 +7,15 @@ import copy
 import importlib
 import io
 import json
+import os
 from pathlib import Path
+import sqlite3
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
-from helpers import load_package, scratch_home
+from helpers import ROOT, load_package, scratch_home
 
 plugin = load_package()
 config = importlib.import_module("atlas_test_plugin.config")
@@ -238,6 +242,75 @@ class BoundaryTests(unittest.TestCase):
     def test_slash_update_refuses_unattested_origin(self):
         self.assertIn("error", json.loads(self.handlers.command('update {"source":"user"}')))
         self.assertEqual(json.loads(self.handlers.command("status"))["stage"], "v1")
+
+    def test_authored_field_errors_are_private_and_precede_effects(self):
+        hostile = "PRIVATE_TOKEN;/private/store.sqlite3"
+        routes = ((self.handlers.query, {"address": hostile}, "address"),
+                  (self.handlers.query, {"limit": hostile}, "limit"),
+                  (self.handlers.query, {"view": hostile}, "view"),
+                  (self.handlers.map, {"format": hostile}, "format"),
+                  (self.handlers.map, {"export": hostile}, "export"),
+                  (self.handlers.update, {**proposal(), "field": hostile}, "field"),
+                  (self.handlers.update, {**proposal(), "explanation": ""}, "explanation"),
+                  (self.handlers.discover, {"network": hostile, "mode": "passive"}, "network"),
+                  (self.handlers.inspect, {"target": hostile}, "target"),
+                  (self.handlers.check_endpoints, {"network": hostile}, "network"),
+                  (self.handlers.reconcile, {"batch_id": hostile}, "batch_id"))
+        with patch("subprocess.Popen") as spawn, patch.object(tools, "Store") as store:
+            for route, params, field in routes:
+                with self.subTest(route=route.__name__, field=field):
+                    result = json.loads(route(params))
+                    self.assertIn(field, result["error"])
+                    self.assertNotIn(hostile, json.dumps(result))
+                    self.assertFalse(result["applied"])
+            spawn.assert_not_called()
+            store.assert_not_called()
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_policy_diagnostics_name_settings_without_values_on_every_adapter(self):
+        path = self.home / "network-atlas" / "config.yaml"
+        path.parent.mkdir()
+        cases = (({"networks": {"lab": {"cidr": "PRIVATE_CIDR"}}}, "cidr"),
+                 ({"networks": {"lab": {"cidr": "192.0.2.0/24", "discovery": {"tcp_ports": [4403]}}}}, "tcp_ports"),
+                 ({"ssh": {"hosts": {"lab": {"alias": "PRIVATE_ALIAS;id"}}}}, "alias"),
+                 ({"limits": {"output_bytes": "PRIVATE_LIMIT"}}, "limits.output_bytes"))
+        parser = argparse.ArgumentParser()
+        commands.setup_parser(parser)
+        with patch("subprocess.Popen") as spawn:
+            for raw, setting in cases:
+                path.write_text(json.dumps(raw))
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    code = commands.run_command(parser.parse_args(["status"]), self.home)
+                self.assertEqual(code, 2)
+                results = (self.handlers.query({}), self.handlers.command("status"), output.getvalue())
+                for result in results:
+                    self.assertIn(setting, json.loads(result)["error"])
+                    self.assertNotIn("PRIVATE_", result)
+                self.assertFalse((path.parent / "atlas.sqlite3").exists())
+            spawn.assert_not_called()
+
+    def test_infrastructure_and_unexpected_errors_never_reflect_exception_payloads(self):
+        secret = "SECRET SQL SELECT * FROM private; /private/store.sqlite3 ssh stderr"
+        for error, category in ((sqlite3.OperationalError(secret), "store:"),
+                                (OSError(secret), "local I/O:"), (ValueError(secret), "atlas state or bounds:")):
+            with self.subTest(category=category), patch.object(tools, "query", side_effect=error):
+                for call in (lambda: self.handlers.query({}), lambda: self.handlers.command("show known-id")):
+                    result = json.loads(call())
+                    self.assertTrue(result["error"].startswith(category), result)
+                    self.assertNotIn(secret, json.dumps(result))
+                    self.assertFalse(result["applied"])
+
+    def test_optimized_runtime_guards_are_exercised_by_ordinary_pytest(self):
+        """Run the RuntimeGuardTests subset under -O, not a second full suite."""
+        with scratch_home() as directory:
+            root = Path(directory)
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root),
+                   "HERMES_HOME": str(root / "hermes"), "TMPDIR": str(root),
+                   "PYTHONDONTWRITEBYTECODE": "1"}
+            child = subprocess.run([sys.executable, "-O", str(ROOT / "tests" / "test_commands.py"),
+                                    "RuntimeGuardTests"], cwd=root, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
 
     def test_local_cli_operator_path_and_unknown_options(self):
         parser = argparse.ArgumentParser()

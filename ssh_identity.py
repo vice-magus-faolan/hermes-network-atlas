@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from .config import NAME_PATTERN, Policy
+from .errors import RequestError
 from .storage import Store
 
 
@@ -28,7 +29,7 @@ def _mapped_alias(store: Store, device: str) -> str:
     eligible = [row[0] for row in rows if row[0] in store.policy.authorized_aliases
                 and alias_candidates(store, row[0]) == [device]]
     if len(eligible) != 1:
-        raise ValueError("device requires one unambiguous locally authorized alias")
+        raise RequestError("target: device requires one unambiguous locally authorized SSH alias")
     return eligible[0]
 
 
@@ -36,7 +37,7 @@ def resolve_in_store(store: Store, target: str) -> str:
     """Resolve only configured aliases or exact stable device IDs, never hostnames/IPs."""
     if target in store.policy.authorized_aliases:
         if len(alias_candidates(store, target)) > 1:
-            raise ValueError("ambiguous alias association")
+            raise RequestError("target: alias association is ambiguous; repair the operator mapping")
         return target
     return _mapped_alias(store, target)
 
@@ -44,15 +45,15 @@ def resolve_in_store(store: Store, target: str) -> str:
 def resolve_target(policy: Policy, params: object, deadline: float) -> str:
     """Exact schema validation precedes read-only mapping lookup and all transport."""
     if not isinstance(params, dict) or set(params) != {"target"}:
-        raise ValueError("target required, no other arguments")
+        raise RequestError("target: configured alias or device ID required, no other arguments")
     target = params["target"]
     if not isinstance(target, str) or re.fullmatch(NAME_PATTERN, target) is None:
-        raise ValueError("invalid configured alias or device ID")
+        raise RequestError("target: stable configured SSH alias or device ID required")
     if len(target) > policy.limits.input_chars or not policy.authorized_aliases:
-        raise ValueError("no current local inspection authorization")
+        raise RequestError("target: check input length and current ssh.enabled/hosts inspection authorization")
     if not policy.database.exists():
         if target not in policy.authorized_aliases:
-            raise ValueError("unknown authorized alias or device")
+            raise RequestError("target: select a locally authorized SSH alias or known device")
         return target
     with Store(policy, deadline=deadline) as store, store.snapshot():
         return resolve_in_store(store, target)

@@ -15,6 +15,7 @@ from . import inspection_parse as parse
 from .batches import Anchor, Observation, Probe, store_batch
 from .config import Policy
 from .discovery import _batch_bound
+from .errors import RequestError
 from .probes import run
 from .ssh_identity import resolve_target
 from .storage import Store, timestamp, utc_now
@@ -83,9 +84,10 @@ def collect(policy: Policy, params: object) -> dict:
     """
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     alias = resolve_target(policy, params, deadline)
-    assert isinstance(params, dict)
+    if not isinstance(params, dict):
+        raise ValueError("inspection request invariant failed")
     if len(PROBES) > policy.limits.observations:
-        raise ValueError("probe count exceeds configured bound")
+        raise RequestError("limits.observations: fixed SSH inspection probes exceed configured record budget")
     started = timestamp(utc_now())
     reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
     host_deadline = min(deadline - reserve, time.monotonic() + policy.limits.host_timeout_seconds)
@@ -97,5 +99,6 @@ def collect(policy: Policy, params: object) -> dict:
         # invalidate a device's association while SSH is running; never reroute it.
         result = store_batch(store, "ssh", alias, started, timestamp(utc_now()), completion,
                              probes, receipt=True, deadline=deadline, inspection_target=params["target"])
-        assert isinstance(result, dict)
+        if not isinstance(result, dict):
+            raise ValueError("inspection persistence receipt missing")
         return result

@@ -18,6 +18,7 @@ import time
 
 from .batches import _scope
 from .config import NAME_PATTERN, Policy
+from .errors import RequestError
 from .core import _positive
 from .facts import freshness, selected_facts
 from .identity import mac_address
@@ -71,16 +72,16 @@ def _select(store: Store, batch_id: str | None):
           (SELECT 1 FROM applications a WHERE a.batch_id=b.id) ORDER BY b.ended_at DESC,b.id DESC LIMIT 1""",
           (str(store.policy.home), *bindings)).fetchone()
         if row is None:
-            raise ValueError("no unapplied locally authorized batch")
+            raise RequestError("batch_id: no unapplied locally authorized batch; collect or select an eligible batch")
     else:
         row = store.require("batches", batch_id)
     if row["collector"] == "tcp_endpoint":
-        raise ValueError("endpoint evidence requires resume-endpoints, not identity reconciliation")
+        raise RequestError("batch_id: endpoint evidence requires resume-endpoints, not identity reconciliation")
     if row["policy_context"] != str(store.policy.home):
-        raise ValueError("batch is not this profile's evidence")
+        raise RequestError("batch_id: select evidence owned by this profile")
     kind, scope, _ = _scope(store, row["collector"], row["scope_name"])
     if kind != row["scope_kind"] or scope != row["scope_value"]:
-        raise ValueError("batch scope no longer matches local policy")
+        raise RequestError("batch_id: stored scope no longer matches current local policy")
     return row
 
 
@@ -88,12 +89,12 @@ def reconcile(policy: Policy, params: object, *, now: datetime | None = None) ->
     """Apply one selected/latest stored batch atomically; exact retries add no events."""
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     if not isinstance(params, dict) or not set(params) <= {"batch_id"}:
-        raise ValueError("invalid reconciliation arguments")
+        raise RequestError("reconcile arguments: only optional batch_id is supported")
     batch_id = params.get("batch_id")
     if "batch_id" in params and (not isinstance(batch_id, str) or re.fullmatch(NAME_PATTERN, batch_id) is None):
-        raise ValueError("invalid stored batch ID")
+        raise RequestError("batch_id: stable stored batch ID required")
     if not policy.database.exists():
-        raise ValueError("no stored batches")
+        raise RequestError("batch_id: no stored batches; collect authorized evidence first")
     clock = now or utc_now()
     with Store(policy, writable=True, deadline=deadline) as store, store.transaction():
         batch = _select(store, batch_id)
@@ -293,7 +294,8 @@ def _resolve_ssh(app: Application, row) -> tuple[tuple[str, str] | None, list[st
 
 
 def _ssh_interface(app: Application, row, value: str) -> tuple[tuple[str, str] | None, list[str]]:
-    assert app.ssh_device is not None
+    if app.ssh_device is None:
+        raise ValueError("SSH interface requires a resolved device")
     mac, stable = mac_address(value)
     candidates = _rows(app.store, "SELECT * FROM interfaces WHERE mac_address=? ORDER BY id", (mac,))
     if not stable or mac in app.ambiguous_macs:

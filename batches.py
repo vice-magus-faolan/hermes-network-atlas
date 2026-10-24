@@ -14,6 +14,7 @@ import re
 import time
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
+from .errors import RequestError
 from .identity import mac_address
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
@@ -66,14 +67,16 @@ def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str
     _code(scope_name)
     if collector == "ssh":
         if scope_name not in store.policy.authorized_aliases:
-            raise ValueError("unauthorized SSH scope")
+            raise RequestError("ssh.enabled/ssh.hosts.inspect: stored alias is not currently authorized; restore intended policy or select an eligible batch")
         return "ssh_alias", scope_name, "ssh:" + scope_name
     mode = {"local_passive": "passive", "ping": "ping", "tcp_endpoint": "endpoint_ports"}.get(collector)
     if mode is None:
         raise ValueError("unknown collector")
     network = next((net for net in store.policy.networks if net.name == scope_name), None)
     if network is None or not getattr(network, mode):
-        raise ValueError("disabled/out-of-policy network scope")
+        setting = {"passive": "network.discovery.passive", "ping": "network.discovery.ping",
+                   "endpoint_ports": "network.endpoints"}[mode]
+        raise RequestError(f"{setting}: stored scope requires a configured network and enabled collection mode; restore intended policy or select an eligible batch")
     return "network", network.cidr, collector
 
 

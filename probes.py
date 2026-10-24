@@ -26,15 +26,17 @@ class CommandResult:
 
 
 def _cleanup(child: subprocess.Popen) -> None:
-    assert child.stdout is not None and child.stderr is not None
     try:
         os.killpg(child.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
     finally:
-        child.wait()
-        child.stdout.close()
-        child.stderr.close()
+        try:
+            child.wait()
+        finally:
+            for stream in (child.stdout, child.stderr):
+                if stream is not None:
+                    stream.close()
 
 
 def _exit_info(child: subprocess.Popen):
@@ -44,7 +46,8 @@ def _exit_info(child: subprocess.Popen):
 
 
 def _read(child: subprocess.Popen, limits: Limits, deadline: float) -> CommandResult:
-    assert child.stdout is not None and child.stderr is not None
+    if child.stdout is None or child.stderr is None:
+        return CommandResult("command_failed", diagnostic_code="missing_output_pipe")
     output = bytearray()
     total = 0
     with selectors.DefaultSelector() as selector:

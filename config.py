@@ -10,6 +10,7 @@ from collections.abc import Mapping
 
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
+from .errors import RequestError
 
 MAX_CONFIG_BYTES = 65536
 MAX_POLICY_ENTRIES = 32
@@ -19,8 +20,11 @@ MAX_TCP_DISCOVERY_PORTS = 4
 EXCLUDED_TCP_PORTS = frozenset({4403})
 
 
-class ConfigError(ValueError):
+class ConfigError(RequestError):
     """Operator policy is malformed; no plugin surface may become usable."""
+
+    def __init__(self, diagnostic: str):
+        super().__init__("policy: " + diagnostic)
 
 
 @dataclass(frozen=True)
@@ -106,9 +110,9 @@ def _integer(value: object, ceiling: int, label: str) -> int:
     return value
 
 
-def _name(value: object) -> str:
+def _name(value: object, label: str = "policy name") -> str:
     if not isinstance(value, str) or re.fullmatch(NAME_PATTERN, value) is None:
-        raise ConfigError("invalid policy name or SSH alias")
+        raise ConfigError(f"{label}: use 1..64 letters, digits, underscores or hyphens, starting with a letter or digit")
     return value
 
 
@@ -116,31 +120,31 @@ def _entries(value: object, label: str) -> Mapping:
     if not isinstance(value, dict) or len(value) > MAX_POLICY_ENTRIES:
         raise ConfigError(f"{label} must be an object with at most {MAX_POLICY_ENTRIES} entries")
     for key in value:
-        _name(key)
+        _name(key, label + ".name")
     return value
 
 
 def _scope(cidr: object) -> IPv4Network | IPv6Network:
     """Canonical bounded scope shared by all configured discovery methods."""
     if not isinstance(cidr, str) or len(cidr) > 64:
-        raise ConfigError("network requires a canonical CIDR")
+        raise ConfigError("network.cidr: canonical CIDR text required")
     try:
         network = ip_network(cidr, strict=True)
     except ValueError as exc:
-        raise ConfigError("invalid CIDR") from exc
+        raise ConfigError("network.cidr: use a canonical IP network with no host bits") from exc
     if str(network) != cidr:
-        raise ConfigError("CIDR must be canonical")
+        raise ConfigError("network.cidr: use canonical CIDR notation")
     if network.version == 4 and network.num_addresses > 256:
-        raise ConfigError("V1 IPv4 scope exceeds 256 addresses")
+        raise ConfigError("network.cidr: IPv4 scope must contain at most 256 addresses")
     return network
 
 
-def _tcp_ports(value: object) -> tuple[int, ...]:
+def _tcp_ports(value: object, label: str = "network.discovery.tcp_ports") -> tuple[int, ...]:
     if type(value) is not list or len(value) > MAX_TCP_DISCOVERY_PORTS:
-        raise ConfigError("tcp_ports must be a list with at most four ports")
-    ports = tuple(_integer(port, 65535, "tcp port") for port in value)
+        raise ConfigError(f"{label}: list of at most four ports required")
+    ports = tuple(_integer(port, 65535, label) for port in value)
     if len(set(ports)) != len(ports) or EXCLUDED_TCP_PORTS.intersection(ports):
-        raise ConfigError("duplicate or excluded TCP discovery port")
+        raise ConfigError(f"{label}: ports must be distinct and must not include excluded port 4403")
     return tuple(sorted(ports))
 
 
@@ -148,23 +152,23 @@ def _network(name: str, raw: object) -> Network:
     data = _object(raw, {"cidr", "discovery", "endpoints"}, "network")
     network = _scope(data.get("cidr"))
     modes = _object(data.get("discovery", {}), {"passive", "ping", "icmp_echo", "tcp_ports"}, "network.discovery")
-    passive = _bool(modes.get("passive", False), "passive")
-    ping = _bool(modes.get("ping", False), "ping")
-    icmp_echo = _bool(modes.get("icmp_echo", False), "icmp_echo")
+    passive = _bool(modes.get("passive", False), "network.discovery.passive")
+    ping = _bool(modes.get("ping", False), "network.discovery.ping")
+    icmp_echo = _bool(modes.get("icmp_echo", False), "network.discovery.icmp_echo")
     ports = _tcp_ports(modes.get("tcp_ports", list(LEGACY_TCP_PORTS)))
     if network.version == 6 and ping:
-        raise ConfigError("V1 active discovery is IPv4 only")
+        raise ConfigError("network.discovery.ping: active discovery requires an IPv4 cidr")
     if icmp_echo and not ping:
-        raise ConfigError("icmp_echo requires ping authorization")
+        raise ConfigError("network.discovery.icmp_echo: requires ping authorization")
     if ping and not (icmp_echo or ports):
-        raise ConfigError("active discovery requires at least one method")
+        raise ConfigError("network.discovery.ping: requires icmp_echo or nonempty tcp_ports")
     endpoints = _object(data.get("endpoints", {}), {"enabled", "tcp_ports"}, "network.endpoints")
     enabled = _bool(endpoints.get("enabled", False), "endpoints.enabled")
-    endpoint_ports = _tcp_ports(endpoints.get("tcp_ports", []))
+    endpoint_ports = _tcp_ports(endpoints.get("tcp_ports", []), "network.endpoints.tcp_ports")
     if enabled != bool(endpoint_ports):
-        raise ConfigError("endpoint ports require explicit enablement and a nonempty list")
+        raise ConfigError("network.endpoints: enabled must match a nonempty tcp_ports list")
     if enabled and network.version != 4:
-        raise ConfigError("V1 endpoint checks are IPv4 only")
+        raise ConfigError("network.endpoints: checks require an IPv4 cidr")
     return Network(name, str(network), passive, ping, icmp_echo, ports, endpoint_ports)
 
 
@@ -186,7 +190,7 @@ def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:
     hosts = []
     for name, item in _entries(data.get("hosts", {}), "ssh.hosts").items():
         host = _object(item, {"alias", "inspect"}, "ssh.host")
-        hosts.append(SSHHost(name, _name(host.get("alias")), _bool(host.get("inspect", False), "inspect")))
+        hosts.append(SSHHost(name, _name(host.get("alias"), "ssh.host.alias"), _bool(host.get("inspect", False), "ssh.host.inspect")))
     if len({host.alias for host in hosts}) != len(hosts):
         raise ConfigError("duplicate SSH alias anchors")
     return enabled, tuple(sorted(hosts, key=lambda host: host.name))
@@ -202,7 +206,7 @@ def validate_policy(raw: object, home: Path) -> Policy:
     ssh_enabled, ssh_hosts = _ssh(data.get("ssh", {}))
     ceilings = Limits()
     limit_data = _object(data.get("limits", {}), {field.name for field in fields(Limits)}, "limits")
-    limits = Limits(**{key: _integer(value, getattr(ceilings, key), key) for key, value in limit_data.items()})
+    limits = Limits(**{key: _integer(value, getattr(ceilings, key), "limits." + key) for key, value in limit_data.items()})
     retention = _object(data.get("retention", {}), {"stale_after_days"}, "retention")
     stale_days = _integer(retention.get("stale_after_days", 14), 3650, "stale_after_days")
     render = _object(data.get("render", {}), {"include_addresses", "include_interfaces"}, "render")
@@ -229,6 +233,8 @@ def load_policy(home: Path) -> Policy:
             content = handle.read(MAX_CONFIG_BYTES + 1)
     except FileNotFoundError:
         return validate_policy({}, home)
+    except OSError as exc:
+        raise ConfigError("cannot read configuration; check access and file availability") from exc
     if len(content) > MAX_CONFIG_BYTES:
         raise ConfigError("configuration exceeds 64 KiB")
     try:

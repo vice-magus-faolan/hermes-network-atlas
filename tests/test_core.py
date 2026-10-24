@@ -513,6 +513,28 @@ class QueryUpdateMapTests(AtlasFixture):
         self.assertEqual(result["update"]["confidence"], "user_supplied")
         interface = core.add_interface(self.store, self.device, "eth0", now=NOW)
         other_interface = core.add_interface(self.store, created["device_id"], "eth0", now=NOW)
+        valid = {"target_device": created["device_id"], "source_interface": interface,
+                 "target_interface": other_interface, "relationship_type": "virtual"}
+        handlers = tools.Handlers(self.home)
+        history = tuple(self.store.connection.iterdump())
+        for field in ("target_device", "source_interface", "target_interface"):
+            value = {**valid, field: "PRIVATE_missing_reference"}
+            params = {"device_id": self.device, "field": "relationship", "value": value,
+                      "explanation": "PRIVATE_relationship_explanation"}
+            with self.subTest(field=field), patch("subprocess.Popen") as spawn:
+                tool_result = json.loads(handlers.update(params))
+                code, cli_result = self.cli(["update", "--device-id", self.device, "--field", "relationship",
+                                             "--value-json", json.dumps(value)])
+                self.assertEqual(code, 2)
+                for result in (tool_result, cli_result):
+                    self.assertEqual(result["error"], f"value.{field}: select an existing atlas entity")
+                    self.assertFalse(result["applied"])
+                    emitted = json.dumps(result)
+                    for private in ("PRIVATE_", str(self.home), self.device, created["device_id"]):
+                        self.assertNotIn(private, emitted)
+                spawn.assert_not_called()
+                self.assertFalse(cli_result["persisted"])
+            self.assertEqual(tuple(self.store.connection.iterdump()), history)
         for value in ({"target_device": "missing", "relationship_type": "physical"},
                       {"target_device": self.device, "relationship_type": "parent"},
                       {"target_device": created["device_id"], "source_interface": other_interface, "relationship_type": "virtual"}):
@@ -520,8 +542,10 @@ class QueryUpdateMapTests(AtlasFixture):
             with self.assertRaises(ValueError):
                 self.update("relationship", value)
             self.assertEqual(self.counts(), before)
-        self.update("relationship", {"target_device": created["device_id"], "source_interface": interface,
-                                    "target_interface": other_interface, "relationship_type": "virtual"})
+        code, result = self.cli(["update", "--device-id", self.device, "--field", "relationship",
+                                 "--value-json", json.dumps(valid)])
+        self.assertEqual(code, 0)
+        self.assertTrue(result["applied"] and result["persisted"])
         self.assertEqual(len(self.detail()["relationships"]), 1)
 
     def test_render_deterministic_escaped_isolated_stale_and_inferred_edges(self):

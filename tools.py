@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 import sqlite3
 
-from .config import ConfigError, load_policy
+from .config import load_policy
+from .errors import RequestError, error_message
 from .updates import Update, inference_update
 from .core import apply_update
 from .query import query
@@ -52,8 +53,8 @@ class Handlers:
         try:
             policy = load_policy(self.home)
             return status(self.home) if params == {"view": "status"} else response_json(query(policy, params), policy.limits.output_bytes)
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid query or local policy", "applied": False})
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc), "applied": False})
 
     def update(self, params: object, **runtime_context: object) -> str:
         """Persist inference only, ignoring origin-like kwargs from runtime dispatch."""
@@ -62,24 +63,24 @@ class Handlers:
             policy = load_policy(self.home)
             update = inference_update(params, policy)
             if not policy.database.exists():
-                raise ValueError("unknown atlas entity")
+                raise RequestError("device_id: select an existing atlas device")
             with Store(policy, writable=True) as store:
                 # apply_update checks this exact serialized receipt before commit.
                 return response_json(apply_update(store, update), policy.limits.output_bytes)
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid inference proposal or local policy", "applied": False})
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc), "applied": False})
 
     def map(self, params: object, **runtime_context: object) -> str:
         """Render stored topology; output and fixed export paths are code-owned."""
         del runtime_context
         try:
             if not isinstance(params, dict) or not set(params) <= {"format", "export"}:
-                raise ValueError("invalid map arguments")
+                raise RequestError("map arguments: only format and export are supported")
             format_name = params.get("format", "text")
             if not isinstance(format_name, str) or format_name not in {"text", "markdown", "mermaid"}:
-                raise ValueError("invalid map format")
+                raise RequestError("format: choose text, markdown or mermaid")
             if type(params.get("export", False)) is not bool:
-                raise ValueError("invalid export boolean")
+                raise RequestError("export: boolean required")
             policy = load_policy(self.home)
             outputs = render_map(policy)
             files = [str(policy.exports / name) for name in ("network_map.md", "network_map.mmd")] if params.get("export", False) else []
@@ -88,8 +89,8 @@ class Handlers:
             if params.get("export", False):
                 export_map(policy, outputs)
             return result
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid map, bound, store, or local policy", "applied": False})
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc), "applied": False})
 
     def discover(self, params: object, **runtime_context: object) -> str:
         """Collect only an explicitly named current-policy network/mode; ignore kwargs."""
@@ -97,8 +98,8 @@ class Handlers:
         try:
             policy = load_policy(self.home)
             return response_json(collect(policy, params), policy.limits.output_bytes)
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid discovery request, bounds, store, or local policy", "applied": False, "persisted": False})
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc), "applied": False, "persisted": False})
 
     def reconcile(self, params: object, **runtime_context: object) -> str:
         """Apply stored evidence only; no probe runs on this path."""
@@ -106,8 +107,8 @@ class Handlers:
         try:
             policy = load_policy(self.home)
             return response_json(reconcile(policy, params), policy.limits.output_bytes)
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid stored batch, bounds, store, or local policy", "applied": False})
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc), "applied": False})
 
     def check_endpoints(self, params: object, **runtime_context: object) -> str:
         """Primary durable endpoint operation; post-persistence failures retain ID/stages."""
@@ -115,8 +116,8 @@ class Handlers:
         try:
             policy = load_policy(self.home)
             return response_json(check_endpoints(policy, params), policy.limits.output_bytes)
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid endpoint request, bounds, store, or local policy",
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc),
                                "persisted": False, "applied": False, "projected": False, "queryable": False})
 
     def inspect(self, params: object, **runtime_context: object) -> str:
@@ -125,8 +126,8 @@ class Handlers:
         try:
             policy = load_policy(self.home)
             return response_json(inspect_host(policy, params), policy.limits.output_bytes)
-        except (OSError, ConfigError, ValueError, sqlite3.Error):
-            return json.dumps({"error": "invalid inspection target, bounds, store, or local policy",
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            return json.dumps({"error": error_message(exc),
                                "applied": False, "persisted": False})
 
     def command(self, raw_args: str) -> str:
