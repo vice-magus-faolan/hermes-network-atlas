@@ -68,7 +68,8 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
     assert detail["access"][0]["authorized_for_atlas_ssh_inspection"]
     assert not detail["access"][0]["last_inspection"]["succeeded"]
     assert dispatch("network_map", {"format": "text"})["content"] == data["content"]
-    assert {row["source"] for row in dispatch("network_query", {"view": "history", "device_id": detail["id"]})["observations"]} == {"ssh:lab-router"}
+    assert {row["source"] for row in dispatch(
+        "network_query", {"view": "history", "device_id": detail["id"]})["observations"]} == {"ssh:lab-router"}
     manager.unload()
     print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
                       "persistent_ssh_batches": True, "fresh_native_process_persistence": True}))
@@ -105,7 +106,8 @@ def main() -> int:
         assert not plugin["enabled"], plugin
         if mode == "invalid":
             assert plugin["error"], plugin
-        for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile", "network_inspect", "network_check_endpoints"):
+        for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile",
+                     "network_inspect", "network_check_endpoints"):
             assert registry.get_entry(name, scope=manager.scope_key) is None
         assert get_plugin_command_handler("network") is None
         assert "network-atlas" not in manager._cli_commands
@@ -113,7 +115,8 @@ def main() -> int:
         return 0
 
     assert plugin["enabled"] and not plugin["error"], plugin
-    definitions = registry.get_definitions({"network_query", "network_update", "network_map", "network_discover", "network_reconcile", "network_inspect", "network_check_endpoints"})
+    definitions = registry.get_definitions({"network_query", "network_update", "network_map", "network_discover",
+                                            "network_reconcile", "network_inspect", "network_check_endpoints"})
     assert len(definitions) == 7, definitions
     for definition in definitions:
         assert definition["function"]["parameters"]["additionalProperties"] is False
@@ -138,7 +141,8 @@ def main() -> int:
             entry["setup_fn"](parser)
             output = io.StringIO()
             with redirect_stdout(output):
-                assert entry["handler_fn"](parser.parse_args(["discover", "--network", "lab", "--mode", "passive"])) == 0
+                assert entry["handler_fn"](parser.parse_args([
+                    "discover", "--network", "lab", "--mode", "passive"])) == 0
             cli_batch = json.loads(output.getvalue())["batch_id"]
             output = io.StringIO()
             with redirect_stdout(output):

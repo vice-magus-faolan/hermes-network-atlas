@@ -22,7 +22,8 @@ def alias_candidates(store: Store, alias: str) -> list[str]:
 
 def _mapped_alias(store: Store, device: str) -> str:
     store.require("devices", device)
-    rows = store.connection.execute("SELECT alias FROM aliases WHERE device_id=? AND policy_context=? ORDER BY alias LIMIT ?",
+    rows = store.connection.execute(
+        "SELECT alias FROM aliases WHERE device_id=? AND policy_context=? ORDER BY alias LIMIT ?",
                                     (device, str(store.policy.home), store.policy.limits.result_count + 1)).fetchall()
     if len(rows) > store.policy.limits.result_count:
         raise ValueError("device alias count exceeds bound")

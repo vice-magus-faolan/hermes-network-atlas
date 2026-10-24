@@ -161,14 +161,17 @@ def access_answers(store: Store, device: str) -> list[dict]:
     answers = []
     for row in rows:
         local = row["policy_context"] == str(store.policy.home)
-        anchors = store.connection.execute("SELECT COUNT(DISTINCT device_id) FROM aliases WHERE policy_context=? AND alias=?",
-                                            (row["policy_context"], row["alias"])).fetchone()[0]
-        latest = store.connection.execute("SELECT * FROM access_evidence WHERE device_id=? AND policy_context=? AND alias=? "
-                                         "ORDER BY checked_at DESC,rowid DESC LIMIT 1",
-                                         (device, str(store.policy.home), row["alias"])).fetchone() if local else None
+        anchors = store.connection.execute(
+            "SELECT COUNT(DISTINCT device_id) FROM aliases WHERE policy_context=? AND alias=?",
+            (row["policy_context"], row["alias"])).fetchone()[0]
+        latest = store.connection.execute(
+            "SELECT * FROM access_evidence WHERE device_id=? AND policy_context=? AND alias=? "
+            "ORDER BY checked_at DESC,rowid DESC LIMIT 1",
+            (device, str(store.policy.home), row["alias"])).fetchone() if local else None
         attempt = latest_inspection(store, row["alias"]) if local else None
         answers.append({"alias": row["alias"], "policy_context": row["policy_context"],
-                        "authorized_for_atlas_ssh_inspection": local and anchors == 1 and row["alias"] in store.policy.authorized_aliases,
+                        "authorized_for_atlas_ssh_inspection": (
+                            local and anchors == 1 and row["alias"] in store.policy.authorized_aliases),
                         "ambiguous_association": anchors != 1,
                         "last_inspection": most_recent_inspection(attempt, latest),
                         "reachability": "not established by configuration"})
@@ -179,14 +182,17 @@ def device_detail(store: Store, row, now: datetime) -> dict:
     """Return independent IDs, selected values, actual provenance and explicit collisions."""
     result = dict(row)
     result["status"] = freshness(row, now, store.policy.stale_after_days)
-    result["fields"] = selected_facts(store.connection, "device", row["id"], now, store.policy.stale_after_days, store.policy.limits.result_count)
+    result["fields"] = selected_facts(store.connection, "device", row["id"], now,
+                                      store.policy.stale_after_days, store.policy.limits.result_count)
     result["access"] = access_answers(store, row["id"])
     result["interfaces"] = []
     for interface in bounded_rows(store, "SELECT * FROM interfaces WHERE device_id=? ORDER BY id", (row["id"],)):
         item = dict(interface)
-        item["fields"] = selected_facts(store.connection, "interface", interface["id"], now, store.policy.stale_after_days, store.policy.limits.result_count)
+        item["fields"] = selected_facts(store.connection, "interface", interface["id"], now,
+                                        store.policy.stale_after_days, store.policy.limits.result_count)
         item["addresses"] = _addresses(store, interface["id"])
-        count = store.connection.execute("SELECT COUNT(*) FROM interfaces WHERE mac_address=?", (interface["mac_address"],)).fetchone()[0]
+        count = store.connection.execute(
+            "SELECT COUNT(*) FROM interfaces WHERE mac_address=?", (interface["mac_address"],)).fetchone()[0]
         item["identity_uncertain"] = not interface["stable_mac"] or count > 1
         result["interfaces"].append(item)
     result["relationships"] = relationships(store, row["id"], now)
@@ -194,12 +200,15 @@ def device_detail(store: Store, row, now: datetime) -> dict:
 
 
 def _addresses(store: Store, interface: str) -> list[dict]:
-    rows = bounded_rows(store, "SELECT a.*,o.confidence,o.evidence_kind,o.qualified,o.batch_id,o.neighbor_state FROM addresses a "
-                        "JOIN observations o ON o.id=a.observation_id WHERE a.interface_id=? ORDER BY address,id", (interface,))
+    rows = bounded_rows(
+        store, "SELECT a.*,o.confidence,o.evidence_kind,o.qualified,o.batch_id,o.neighbor_state FROM addresses a "
+        "JOIN observations o ON o.id=a.observation_id WHERE a.interface_id=? ORDER BY address,id", (interface,))
     result = []
     for row in rows:
         item = dict(row)
-        owners = store.connection.execute("SELECT DISTINCT i.device_id FROM addresses a JOIN interfaces i ON i.id=a.interface_id "
+        owners = store.connection.execute(
+                                         "SELECT DISTINCT i.device_id FROM addresses a "
+                                         "JOIN interfaces i ON i.id=a.interface_id "
                                          "WHERE a.address=? AND a.ended_at IS NULL ORDER BY i.device_id LIMIT ?",
                                          (row["address"], store.policy.limits.result_count + 1)).fetchall()
         if len(owners) > store.policy.limits.result_count:
@@ -216,11 +225,13 @@ def _addresses(store: Store, interface: str) -> list[dict]:
 
 
 def relationships(store: Store, device: str, now: datetime) -> list[dict]:
-    rows = bounded_rows(store, "SELECT * FROM relations WHERE source_device=? OR target_device=? ORDER BY id", (device, device))
+    rows = bounded_rows(
+        store, "SELECT * FROM relations WHERE source_device=? OR target_device=? ORDER BY id", (device, device))
     result = []
     for row in rows:
         item = dict(row)
-        item["facts"] = selected_facts(store.connection, "relationship", row["id"], now, store.policy.stale_after_days, store.policy.limits.result_count)
+        item["facts"] = selected_facts(store.connection, "relationship", row["id"], now,
+                                       store.policy.stale_after_days, store.policy.limits.result_count)
         result.append(item)
     return result
 
@@ -311,12 +322,14 @@ def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | No
 
 def summary(store: Store, now: datetime) -> dict:
     sql, cutoff = _status_sql(now, store.policy.stale_after_days)
-    counts = {row[0]: row[1] for row in store.connection.execute("SELECT " + sql + ",COUNT(*) FROM devices d GROUP BY 1", (cutoff,))}
+    counts = {row[0]: row[1] for row in store.connection.execute(
+        "SELECT " + sql + ",COUNT(*) FROM devices d GROUP BY 1", (cutoff,))}
     access_sql, bindings = _access_filter(store.policy)
     accessible = store.connection.execute("SELECT COUNT(*) FROM devices d WHERE " + access_sql, bindings).fetchone()[0]
 
-    inspection = store.connection.execute("SELECT * FROM access_evidence WHERE policy_context=? "
-                                         "ORDER BY checked_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
+    inspection = store.connection.execute(
+        "SELECT * FROM access_evidence WHERE policy_context=? "
+        "ORDER BY checked_at DESC,rowid DESC LIMIT 1", (str(store.policy.home),)).fetchone()
     attempt = latest_inspection(store)
     return {"known_devices": sum(counts.values()), "status_counts": counts,
             **endpoint_counts(store),

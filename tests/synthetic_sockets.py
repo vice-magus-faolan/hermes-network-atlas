@@ -89,7 +89,8 @@ class SyntheticSocket:
         self.address, self.port = address, port
         self.state = self.fixture.response(address, port)
         self.fixture.calls.append((self.fixture.clock.now, address, port))
-        self.fixture.peak = max(self.fixture.peak, sum(s.address is not None and not s.closed for s in self.fixture.sockets))
+        self.fixture.peak = max(
+            self.fixture.peak, sum(s.address is not None and not s.closed for s in self.fixture.sockets))
 
     def connect_ex(self, target):
         assert self.protocol == socket.IPPROTO_TCP
@@ -109,7 +110,8 @@ class SyntheticSocket:
         return 8
 
     def recvfrom(self, maximum):
-        from_checksum = lambda data: (~sum(struct.unpack('!4H', data))) & 65535
+        def from_checksum(data):
+            return (~sum(struct.unpack('!4H', data))) & 65535
         packet = struct.pack('!BBHHH', 0, 0, 0, self.number, 1)
         packet = struct.pack('!BBHHH', 0, 0, from_checksum(packet), self.number, 1)
         if self.state == 'hostile':

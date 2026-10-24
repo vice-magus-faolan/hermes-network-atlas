@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Three-alias acceptance on stock Hermes with synthetic transports and restart."""
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,8 +21,10 @@ class CumulativeAcceptanceTests(unittest.TestCase):
             (home / "config.yaml").write_text(json.dumps({"plugins": {"enabled": ["network-atlas"]}}))
             atlas = home / "network-atlas"
             atlas.mkdir()
-            policy = {"version": 1, "networks": {"lab": {"cidr": "192.0.2.0/29", "discovery": {"passive": True, "ping": True}}},
-                      "ssh": {"enabled": True, "hosts": {alias: {"alias": alias, "inspect": True} for alias in ("lab-a", "lab-b", "lab-c")}},
+            policy = {"version": 1,
+                      "networks": {"lab": {"cidr": "192.0.2.0/29", "discovery": {"passive": True, "ping": True}}},
+                      "ssh": {"enabled": True, "hosts": {alias: {"alias": alias, "inspect": True}
+                                                        for alias in ("lab-a", "lab-b", "lab-c")}},
                       "limits": {"result_count": 100}, "retention": {"stale_after_days": 14}}
             (atlas / "config.yaml").write_text(json.dumps(policy))
             fixture = root / "fixture-bin"
@@ -42,7 +43,8 @@ class CumulativeAcceptanceTests(unittest.TestCase):
                    "XDG_CONFIG_HOME": str(root / "xdg-config"), "XDG_CACHE_HOME": str(root / "xdg-cache"),
                    "XDG_DATA_HOME": str(root / "xdg-data"), "NETWORK_ATLAS_OFFLINE_FIXTURE_DIR": str(fixture)}
             command = [sys.executable, str(ROOT / "tests" / "cumulative_acceptance.py"), str(runtime_root())]
-            first = subprocess.run([*command, "collect"], env=env, cwd=root, capture_output=True, text=True, timeout=120)
+            first = subprocess.run(
+                [*command, "collect"], env=env, cwd=root, capture_output=True, text=True, timeout=120)
             self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
             calls = (fixture / "calls.jsonl").read_bytes()
             log = [json.loads(line) for line in calls.splitlines()]

@@ -98,7 +98,8 @@ def reconcile(policy: Policy, params: object, *, now: datetime | None = None) ->
     clock = now or utc_now()
     with Store(policy, writable=True, deadline=deadline) as store, store.transaction():
         batch = _select(store, batch_id)
-        previous = store.connection.execute("SELECT result_json FROM applications WHERE batch_id=?", (batch["id"],)).fetchone()
+        previous = store.connection.execute(
+            "SELECT result_json FROM applications WHERE batch_id=?", (batch["id"],)).fetchone()
         if previous is not None:
             result = json.loads(previous[0])
             response_json(result, policy.limits.output_bytes)
@@ -111,9 +112,11 @@ def reconcile(policy: Policy, params: object, *, now: datetime | None = None) ->
 def _apply(store: Store, batch, now: datetime) -> dict:
     result = {"id": identifier(), "batch_id": batch["id"], "schema_version": 1,
               "applied_at": timestamp(now), "applied": True, "persisted": True,
-              **{name: [] for name in ("new", "changed", "unchanged", "missing", "conflicting", "unresolved", "audit_event_ids")}}
+              **{name: [] for name in (
+                  "new", "changed", "unchanged", "missing", "conflicting", "unresolved", "audit_event_ids")}}
     app = Application(store, batch, now, result)
-    observations = _rows(store, "SELECT * FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY rowid", (batch["id"],))
+    observations = _rows(
+        store, "SELECT * FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY rowid", (batch["id"],))
     _local_collisions(app, observations)
     _local_identity(app, observations)
     if batch["collector"] == "ssh":
@@ -128,7 +131,8 @@ def _apply(store: Store, batch, now: datetime) -> dict:
     _statuses(app)
     result["changed"] = sorted(app.changed - set(result["new"]))
     result["unchanged"] = sorted(app.touched - app.changed - set(result["new"]))
-    app.event("batch_reconciled", None, {name: len(result[name]) for name in ("new", "changed", "unchanged", "missing", "conflicting", "unresolved")})
+    app.event("batch_reconciled", None, {name: len(result[name]) for name in (
+        "new", "changed", "unchanged", "missing", "conflicting", "unresolved")})
     response_json(result, store.policy.limits.output_bytes)
     store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
                              (result["id"], batch["id"], 1, result["applied_at"], encode(result)))
@@ -147,7 +151,8 @@ def _local_collisions(app: Application, observations: list) -> None:
                 names.setdefault(anchor["value"], set()).add(json.loads(row["value_json"]))
     app.ambiguous_macs = {mac for mac, values in names.items() if len(values) > 1}
     for mac in sorted(app.ambiguous_macs):
-        reason = "duplicate_remote_interface_mac" if app.batch["collector"] == "ssh" else "duplicate_local_interface_mac"
+        reason = ("duplicate_remote_interface_mac" if app.batch["collector"] == "ssh"
+                  else "duplicate_local_interface_mac")
         app.result["conflicting"].append({"reason": reason,
                                           "mac_address": mac, "interface_names": sorted(names[mac])})
 
@@ -162,13 +167,15 @@ def _local_identity(app: Application, observations: list) -> None:
             continue
         anchor = json.loads(row["subject_anchor"])
         if anchor["kind"] == "mac" and anchor["value"] not in app.ambiguous_macs:
-            candidates = _rows(app.store, "SELECT * FROM interfaces WHERE mac_address=? ORDER BY id", (anchor["value"],))
+            candidates = _rows(
+                app.store, "SELECT * FROM interfaces WHERE mac_address=? ORDER BY id", (anchor["value"],))
             if len(candidates) == 1 and candidates[0]["stable_mac"]:
                 owners.add(candidates[0]["device_id"])
     if len(owners) == 1:
         app.local_device = next(iter(owners))
     elif len(owners) > 1:
-        app.result["conflicting"].append({"reason": "local_host_multiple_devices", "candidate_device_ids": sorted(owners)})
+        app.result["conflicting"].append({
+            "reason": "local_host_multiple_devices", "candidate_device_ids": sorted(owners)})
 
 
 def _resolve(app: Application, row) -> tuple[tuple[str, str] | None, list[str]]:
@@ -191,7 +198,8 @@ def _resolve(app: Application, row) -> tuple[tuple[str, str] | None, list[str]]:
     owners = {candidate["device_id"] for candidate in candidates}
     if row["subject_kind"] == "address":
         value = json.loads(row["value_json"])
-        matches = _rows(app.store, "SELECT DISTINCT i.device_id FROM addresses a JOIN interfaces i ON i.id=a.interface_id "
+        matches = _rows(app.store,
+                        "SELECT DISTINCT i.device_id FROM addresses a JOIN interfaces i ON i.id=a.interface_id "
                         "WHERE a.address=? AND a.ended_at IS NULL ORDER BY i.device_id", (value["address"],))
         owners.update(match[0] for match in matches)
     return None, sorted(owners)
@@ -204,13 +212,15 @@ def _new_interface(app: Application, row: sqlite3.Row, mac: str) -> tuple[str, s
         device = app.local_device
     if device is None:
         device = identifier()
-        app.store.connection.execute("INSERT INTO devices(id,created_at) VALUES (?,?)", (device, app.result["applied_at"]))
+        app.store.connection.execute(
+            "INSERT INTO devices(id,created_at) VALUES (?,?)", (device, app.result["applied_at"]))
         app.result["new"].append(device)
         app.event("device_discovered", device, {"evidence_id": row["id"]})
         if local:
             app.local_device = device
     interface = identifier()
-    app.store.connection.execute("INSERT INTO interfaces VALUES (?,?,?,?,?)", (interface, device, mac, 1, app.result["applied_at"]))
+    app.store.connection.execute(
+        "INSERT INTO interfaces VALUES (?,?,?,?,?)", (interface, device, mac, 1, app.result["applied_at"]))
     app.anchors[row["subject_anchor"]] = (device, interface)
     app.changed.add(device)
     app.event("interface_discovered", interface, {"device_id": device, "mac_address": mac})
@@ -229,7 +239,8 @@ def _copy_fact(app: Application, row, entity: str) -> str:
 def _apply_observation(app: Application, row) -> None:
     resolved, candidates = _resolve(app, row)
     if resolved is None:
-        conflict = {"evidence_id": row["id"], "candidate_device_ids": sorted(set(candidates)), "reason": "no_unique_stable_interface"}
+        conflict = {"evidence_id": row["id"], "candidate_device_ids": sorted(set(candidates)),
+                    "reason": "no_unique_stable_interface"}
         app.result["unresolved"].append(conflict)
         if candidates:
             app.result["conflicting"].append(conflict)
@@ -255,7 +266,8 @@ def _scalar(app: Application, row, device: str, entity: str) -> None:
         app.scalars[key] = (device, before)
     copied = _copy_fact(app, row, entity)
     if app.batch["collector"] == "ssh" and row["field"] == "ssh_alias":
-        app.store.connection.execute("INSERT INTO aliases VALUES (?,?,?,?,?) ON CONFLICT(device_id,policy_context,alias) DO NOTHING",
+        app.store.connection.execute(
+          "INSERT INTO aliases VALUES (?,?,?,?,?) ON CONFLICT(device_id,policy_context,alias) DO NOTHING",
           (identifier(), device, str(app.store.policy.home), app.batch["scope_value"], copied))
 
 
@@ -271,7 +283,8 @@ def _ssh_identity(app: Application, observations: list) -> None:
         app.ssh_device = candidates[0]
     elif any(row["subject_kind"] == "device" and row["field"] == "ssh_alias" for row in observations):
         app.ssh_device = identifier()
-        app.store.connection.execute("INSERT INTO devices(id,created_at) VALUES (?,?)", (app.ssh_device, app.result["applied_at"]))
+        app.store.connection.execute(
+            "INSERT INTO devices(id,created_at) VALUES (?,?)", (app.ssh_device, app.result["applied_at"]))
         app.result["new"].append(app.ssh_device)
         app.event("device_discovered", app.ssh_device, {"alias": app.batch["scope_value"]})
 
@@ -334,7 +347,8 @@ def _scalar_changes(app: Application) -> None:
             app.event("field_observed", entity, {"field": field_name,
                       "selected_evidence_ids": [entry["id"] for entry in (new or {}).get("evidence", [])]})
         if new and new["conflict"]:
-            app.result["conflicting"].append({"entity_id": entity, "field": field_name, "reason": "equal_rank_disagreement"})
+            app.result["conflicting"].append({
+                "entity_id": entity, "field": field_name, "reason": "equal_rank_disagreement"})
 
 
 def _assignment(app: Application, row, device: str, interface: str) -> None:
@@ -353,39 +367,51 @@ def _assignment(app: Application, row, device: str, interface: str) -> None:
           (assignment, interface, value["address"], value["prefix_length"], ip_address(value["address"]).version,
            row["source"], row["observed_at"], row["observed_at"], fact))
         app.changed.add(device)
-        app.event("address_observed", assignment, {"device_id": device, "address": value["address"], "evidence_id": row["id"]})
+        app.event("address_observed", assignment, {
+            "device_id": device, "address": value["address"], "evidence_id": row["id"]})
     owners = _rows(app.store, "SELECT DISTINCT i.device_id FROM addresses a JOIN interfaces i ON i.id=a.interface_id "
                    "WHERE a.address=? AND a.ended_at IS NULL ORDER BY i.device_id", (value["address"],))
     if len(owners) > 1:
-        app.result["conflicting"].append({"address": value["address"], "candidate_device_ids": [owner[0] for owner in owners], "reason": "address_ownership"})
+        app.result["conflicting"].append({"address": value["address"],
+                                          "candidate_device_ids": [owner[0] for owner in owners],
+                                          "reason": "address_ownership"})
 
 
 def _checked(store: Store, device: str, at: str) -> None:
-    store.connection.execute("UPDATE devices SET last_checked=CASE WHEN last_checked IS NULL OR last_checked<? THEN ? ELSE last_checked END WHERE id=?", (at, at, device))
+    store.connection.execute(
+        "UPDATE devices SET last_checked=CASE WHEN last_checked IS NULL OR last_checked<? "
+        "THEN ? ELSE last_checked END WHERE id=?", (at, at, device))
 
 
 def _absence(app: Application, observations: list) -> None:
-    eligible = app.store.connection.execute("SELECT 1 FROM probes WHERE batch_id=? AND absence_eligible=1 LIMIT 1", (app.batch["id"],)).fetchone()
+    eligible = app.store.connection.execute(
+        "SELECT 1 FROM probes WHERE batch_id=? AND absence_eligible=1 LIMIT 1", (app.batch["id"],)).fetchone()
     if app.batch["completion"] != "complete" or app.batch["collector"] != "ping" or not eligible:
         return
-    observed = {json.loads(row["value_json"])["address"] for row in observations if row["subject_kind"] == "address" and row["qualified"]}
+    observed = {json.loads(row["value_json"])["address"] for row in observations
+                if row["subject_kind"] == "address" and row["qualified"]}
     scope = ip_network(app.batch["scope_value"])
     by_device = {}
-    assignments = _rows(app.store, "SELECT a.address,i.device_id FROM addresses a JOIN interfaces i ON i.id=a.interface_id WHERE a.ended_at IS NULL ORDER BY i.device_id,a.address")
+    assignments = _rows(app.store, "SELECT a.address,i.device_id FROM addresses a "
+                        "JOIN interfaces i ON i.id=a.interface_id "
+                        "WHERE a.ended_at IS NULL ORDER BY i.device_id,a.address")
     for row in assignments:
         if ip_address(row["address"]) in scope:
             by_device.setdefault(row["device_id"], set()).add(row["address"])
     for device, addresses in sorted(by_device.items()):
         _checked(app.store, device, app.batch["ended_at"])
         if device not in app.seen and not addresses & observed:
-            app.result["missing"].append({"device_id": device, "addresses": sorted(addresses), "meaning": "not_observed_in_this_run"})
+            app.result["missing"].append({"device_id": device, "addresses": sorted(addresses),
+                                          "meaning": "not_observed_in_this_run"})
             app.event("not_observed", device, {"scope": str(scope), "addresses": sorted(addresses)})
 
 
 def _statuses(app: Application) -> None:
     for row in _rows(app.store, "SELECT * FROM devices ORDER BY id"):
         status = freshness(row, app.now, app.store.policy.stale_after_days)
-        previous = app.store.connection.execute("SELECT details_json FROM audit_events WHERE entity_id=? AND action='freshness_transition' ORDER BY rowid DESC LIMIT 1", (row["id"],)).fetchone()
+        previous = app.store.connection.execute(
+            "SELECT details_json FROM audit_events WHERE entity_id=? AND action='freshness_transition' "
+            "ORDER BY rowid DESC LIMIT 1", (row["id"],)).fetchone()
         old = json.loads(previous[0])["status"] if previous else "known"
         if status != old:
             app.event("freshness_transition", row["id"], {"previous_status": old, "status": status})

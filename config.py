@@ -112,7 +112,8 @@ def _integer(value: object, ceiling: int, label: str) -> int:
 
 def _name(value: object, label: str = "policy name") -> str:
     if not isinstance(value, str) or re.fullmatch(NAME_PATTERN, value) is None:
-        raise ConfigError(f"{label}: use 1..64 letters, digits, underscores or hyphens, starting with a letter or digit")
+        raise ConfigError(
+            f"{label}: use 1..64 letters, digits, underscores or hyphens, starting with a letter or digit")
     return value
 
 
@@ -179,7 +180,8 @@ def validate_network(network: Network) -> None:
     if type(network.endpoint_ports) is not tuple:
         raise ConfigError("invalid immutable endpoint ports")
     _network(_name(network.name), {"cidr": network.cidr,
-        "endpoints": {"enabled": bool(network.endpoint_ports), "tcp_ports": list(network.endpoint_ports)}, "discovery": {
+        "endpoints": {"enabled": bool(network.endpoint_ports), "tcp_ports": list(network.endpoint_ports)},
+        "discovery": {
         "passive": network.passive, "ping": network.ping, "icmp_echo": network.icmp_echo,
         "tcp_ports": list(network.tcp_ports)}})
 
@@ -190,7 +192,8 @@ def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:
     hosts = []
     for name, item in _entries(data.get("hosts", {}), "ssh.hosts").items():
         host = _object(item, {"alias", "inspect"}, "ssh.host")
-        hosts.append(SSHHost(name, _name(host.get("alias"), "ssh.host.alias"), _bool(host.get("inspect", False), "ssh.host.inspect")))
+        hosts.append(SSHHost(name, _name(host.get("alias"), "ssh.host.alias"),
+                             _bool(host.get("inspect", False), "ssh.host.inspect")))
     if len({host.alias for host in hosts}) != len(hosts):
         raise ConfigError("duplicate SSH alias anchors")
     return enabled, tuple(sorted(hosts, key=lambda host: host.name))
@@ -206,7 +209,8 @@ def validate_policy(raw: object, home: Path) -> Policy:
     ssh_enabled, ssh_hosts = _ssh(data.get("ssh", {}))
     ceilings = Limits()
     limit_data = _object(data.get("limits", {}), {field.name for field in fields(Limits)}, "limits")
-    limits = Limits(**{key: _integer(value, getattr(ceilings, key), "limits." + key) for key, value in limit_data.items()})
+    limits = Limits(**{key: _integer(value, getattr(ceilings, key), "limits." + key)
+                       for key, value in limit_data.items()})
     retention = _object(data.get("retention", {}), {"stale_after_days"}, "retention")
     stale_days = _integer(retention.get("stale_after_days", 14), 3650, "stale_after_days")
     render = _object(data.get("render", {}), {"include_addresses", "include_interfaces"}, "render")

@@ -17,7 +17,8 @@ def register(ctx: PluginContext) -> None:
     from hermes_constants import get_hermes_home
     from .commands import run_command, setup_parser
     from .config import load_policy
-    from .schemas import DISCOVER_SCHEMA, ENDPOINT_SCHEMA, INSPECT_SCHEMA, MAP_SCHEMA, QUERY_SCHEMA, RECONCILE_SCHEMA, UPDATE_SCHEMA
+    from .schemas import (
+        DISCOVER_SCHEMA, ENDPOINT_SCHEMA, INSPECT_SCHEMA, MAP_SCHEMA, QUERY_SCHEMA, RECONCILE_SCHEMA, UPDATE_SCHEMA)
     from .tools import COMMAND_USAGE, Handlers
 
     home = get_hermes_home().resolve()

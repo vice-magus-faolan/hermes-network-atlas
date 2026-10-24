@@ -50,7 +50,8 @@ class OperatorStatusTests(unittest.TestCase):
         self.assertEqual(result["authorized_devices_for_atlas_ssh_inspection"], 0)
         self.assertIsNone(result["last_discovery"])
         self.assertEqual(result["configured_scopes"], [{"name": "lab", "cidr": "192.0.2.0/24", "passive": True,
-                                                       "ping": True, "icmp_echo": False, "tcp_ports": [80, 443], "endpoint_ports": []}])
+                                                       "ping": True, "icmp_echo": False, "tcp_ports": [80, 443],
+                                                       "endpoint_ports": []}])
         self.assertEqual(set(self.home.rglob("*")), before)
 
     def test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt(self):
@@ -101,7 +102,8 @@ class OperatorStatusTests(unittest.TestCase):
                 core._positive(store, stale, batches.timestamp(old))
             at = batches.timestamp(NOW)
             passive = batches.store_batch(store, "local_passive", "lab", at, at, "partial", (
-                batches.Probe("ip_addr", "success", at, at, "local_host", self.policy.networks[0].cidr, "local_interface"),
+                batches.Probe(
+                    "ip_addr", "success", at, at, "local_host", self.policy.networks[0].cidr, "local_interface"),
                 batches.Probe("ip_neigh", "unavailable", at, at, "none", "", "none", "missing_executable")))
             ssh = batches.store_batch(store, "ssh", "lab-router", at, at, "failed", (
                 batches.Probe("hostname", "command_failed", at, at, "none", "", "none", "command_failed"),))
@@ -126,10 +128,12 @@ class OperatorStatusTests(unittest.TestCase):
         raw = {"store": {"shared_sqlite_path": str(self.policy.database)}}
         foreign = config.validate_policy(raw, self.home / "foreign")
         self.assertIsNone(query.query(foreign, {"view": "status"}, now=NOW)["last_discovery"])
-        self.assertTrue(query.query(self.policy, {"view": "status"}, now=NOW)["last_discovery"]["scope_absence_eligible"])
+        self.assertTrue(
+            query.query(self.policy, {"view": "status"}, now=NOW)["last_discovery"]["scope_absence_eligible"])
 
     def test_slash_exact_arities_and_usage_no_origin_promotion(self):
-        for text in ("", "status extra", "show", "show a b", "map text extra", "discover lab", "inspect a b", "reconcile a b"):
+        for text in ("", "status extra", "show", "show a b", "map text extra", "discover lab", "inspect a b",
+                     "reconcile a b"):
             with self.subTest(text=text):
                 result = json.loads(self.handlers.command(text))
                 self.assertIn("error", result)
@@ -138,7 +142,8 @@ class OperatorStatusTests(unittest.TestCase):
         result = json.loads(self.handlers.command('update {"source":"user"}'))
         self.assertIn("operator CLI", result["error"])
         self.assertFalse(result["applied"])
-        self.assertEqual(json.loads(self.handlers.command("help"))["operator_update_route"], "hermes network-atlas update")
+        self.assertEqual(
+            json.loads(self.handlers.command("help"))["operator_update_route"], "hermes network-atlas update")
         with patch.object(self.handlers, "query", return_value="fixture-query") as read:
             self.assertEqual(self.handlers.command("show fixture-id"), "fixture-query")
             read.assert_called_once_with({"device_id": "fixture-id"})
@@ -148,7 +153,8 @@ class OperatorStatusTests(unittest.TestCase):
         commands.setup_parser(parser)
         for argv, selection in ((['check-endpoints', 'lab'], {'network': 'lab'}),
                                 (['resume-endpoints', 'saved-batch'], {'batch_id': 'saved-batch'})):
-            with patch.object(tools.Handlers, 'check_endpoints', return_value='{}') as check, redirect_stdout(io.StringIO()):
+            with (patch.object(tools.Handlers, 'check_endpoints', return_value='{}') as check,
+                  redirect_stdout(io.StringIO())):
                 self.assertEqual(commands.run_command(parser.parse_args(argv), self.home), 0)
                 check.assert_called_once_with(selection)
         with patch.object(tools.Handlers, 'check_endpoints') as check, redirect_stderr(io.StringIO()):
@@ -212,7 +218,8 @@ class RuntimeGuardTests(unittest.TestCase):
         with patch("subprocess.Popen") as spawn, patch.object(storage.Store, "__init__") as open_store:
             for result in (handlers.command("discover PRIVATE_SCOPE passive"),
                            handlers.command("inspect PRIVATE_ALIAS"),
-                           handlers.update({"device_id": "fixture", "field": "PRIVATE_FIELD", "value": "safe", "explanation": "safe"})):
+                           handlers.update({"device_id": "fixture", "field": "PRIVATE_FIELD", "value": "safe",
+                                            "explanation": "safe"})):
                 self.assertIn("error", json.loads(result))
                 self.assertNotIn("PRIVATE", result)
             path = self.home / "network-atlas" / "config.yaml"
@@ -322,7 +329,8 @@ class RuntimeGuardTests(unittest.TestCase):
         with storage.Store(self.policy, writable=True) as store:
             device = core.create_device(store, "Before failure")["device_id"]
             before = store.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
-        params = {"device_id": device, "field": "description", "value": "Proposed", "explanation": "Synthetic inference"}
+        params = {"device_id": device, "field": "description", "value": "Proposed",
+                  "explanation": "Synthetic inference"}
         with patch.object(storage.Store, "audit", side_effect=ValueError("PRIVATE_INTERNAL_FAILURE")):
             failed = json.loads(tools.Handlers(self.home).update(params))
         self.assertFalse(failed["applied"])

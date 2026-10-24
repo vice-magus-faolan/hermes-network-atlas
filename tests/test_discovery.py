@@ -9,8 +9,6 @@ from ipaddress import ip_network
 import json
 import os
 from pathlib import Path
-import sqlite3
-import subprocess
 import sys
 import threading
 import time
@@ -58,7 +56,8 @@ def xml(target="192.0.2.10", mac=MAC, up=True, responder=None):
     host = ('<host><status state="up"/><address addr="' + address + '" addrtype="ipv4"/>' +
             (('<address addr="' + mac + '" addrtype="mac"/>') if mac else '') + '</host>') if up else ''
     return ('<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun>' + host +
-            '<runstats><finished exit="success"/><hosts up="' + str(int(up)) + '" down="' + str(network.num_addresses - int(up)) +
+            '<runstats><finished exit="success"/><hosts up="' + str(int(up)) + '" down="' +
+            str(network.num_addresses - int(up)) +
             '" total="' + str(network.num_addresses) + '"/></runstats></nmaprun>').encode()
 
 
@@ -77,7 +76,8 @@ class DiscoveryTests(AtlasFixture):
             self.assertGreater(deadline, time.monotonic())
             payloads = {
                 ("ip", "-j", "addr"): [{"ifname": "fixture;$(ignored)", "address": MAC, "operstate": "UP",
-                                         "addr_info": [{"local": "192.0.2.1", "prefixlen": 24}, {"local": "198.51.100.1", "prefixlen": 24}]}],
+                                         "addr_info": [{"local": "192.0.2.1", "prefixlen": 24},
+                                                       {"local": "198.51.100.1", "prefixlen": 24}]}],
                 ("ip", "-j", "route"): [{"dst": "198.51.100.0/24", "gateway": "192.0.2.254", "dev": "fixture0"}],
                 ("ip", "-j", "neigh"): [{"dst": "192.0.2.10", "lladdr": MAC2, "state": [neighbor_state]}],
             }
@@ -94,7 +94,8 @@ class DiscoveryTests(AtlasFixture):
         self.assertFalse(receipt["applied"])
         self.assertEqual(self.counts()["devices"], before["devices"])
         self.assertEqual(self.store.connection.execute("SELECT SUM(absence_eligible) FROM probes").fetchone()[0], 0)
-        evidence = self.store.connection.execute("SELECT * FROM observations WHERE batch_id=?", (receipt["batch_id"],)).fetchall()
+        evidence = self.store.connection.execute(
+            "SELECT * FROM observations WHERE batch_id=?", (receipt["batch_id"],)).fetchall()
         self.assertEqual(len(evidence), 4)
         self.assertTrue(all(row["entity_id"] is None for row in evidence))
         self.assertFalse(any('198.51.100' in row["value_json"] for row in evidence))
@@ -111,7 +112,8 @@ class DiscoveryTests(AtlasFixture):
         handler = tools.Handlers(self.home)
         bad = [{}, [], {"network": "192.0.2.0/24", "mode": "ping"}, {"network": "lab", "mode": "-sV"},
                {"network": "lab;touch x", "mode": "passive"}, {"network": "lab", "mode": True}]
-        bad += [{"network": "lab", "mode": "ping", key: "x"} for key in ("command", "target", "flags", "path", "source", "limits")]
+        bad += [{"network": "lab", "mode": "ping", key: "x"}
+                for key in ("command", "target", "flags", "path", "source", "limits")]
         with patch.object(discovery, "run", side_effect=AssertionError("unauthorized probe")):
             for params in bad:
                 self.assertIn("error", json.loads(handler.discover(params)))
@@ -123,7 +125,9 @@ class DiscoveryTests(AtlasFixture):
     def test_partial_positive_survives_other_probe_failure(self):
         def fake(argv, *args, **kwargs):
             if argv[-1] == "addr":
-                return runner.CommandResult("success", b'[{"ifname":"fixture0","address":"00:11:22:33:44:55","addr_info":[{"local":"192.0.2.1","prefixlen":24}]}]')
+                return runner.CommandResult(
+                    "success", b'[{"ifname":"fixture0","address":"00:11:22:33:44:55",'
+                    b'"addr_info":[{"local":"192.0.2.1","prefixlen":24}]}]')
             return runner.CommandResult("unavailable", diagnostic_code="executable_missing")
         with patch.object(discovery, "run", fake):
             receipt = discovery.collect(self.policy, {"network": "lab", "mode": "passive"})
@@ -135,7 +139,8 @@ class DiscoveryTests(AtlasFixture):
         self.assertIsNotNone(detail["last_seen"])
 
     def test_malformed_output_failed_batch_does_not_refresh_or_absent(self):
-        with patch.object(discovery, "run", return_value=runner.CommandResult("success", b'{"command":"do not execute"}')):
+        with patch.object(discovery, "run", return_value=runner.CommandResult(
+                "success", b'{"command":"do not execute"}')):
             receipt = discovery.collect(self.policy, {"network": "lab", "mode": "passive"})
         self.assertEqual(receipt["completion"], "failed")
         self.assertEqual({row["outcome"] for row in receipt["probes"]}, {"parse_failed"})
@@ -153,7 +158,8 @@ class DiscoveryTests(AtlasFixture):
         def fake(argv, limits, deadline, **kwargs):
             nonlocal active, maximum
             self.assertEqual(argv[:4], ("nmap", "-sn", "-n", "-PS80,443"))
-            self.assertEqual(argv[4:-1], ("--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-"))
+            self.assertEqual(
+                argv[4:-1], ("--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-"))
             self.assertTrue(kwargs["host"])
             target = argv[-1]
             self.assertEqual(target, "192.0.2.8/30")
@@ -171,7 +177,8 @@ class DiscoveryTests(AtlasFixture):
         self.assertEqual(len(receipt["probes"]), 5)
         self.assertLessEqual(maximum, self.policy.limits.concurrent_probes)
         self.assertEqual(receipt["completion"], "complete")
-        self.assertEqual(self.store.connection.execute("SELECT COUNT(*) FROM probes WHERE absence_eligible=1").fetchone()[0], 1)
+        self.assertEqual(self.store.connection.execute(
+            "SELECT COUNT(*) FROM probes WHERE absence_eligible=1").fetchone()[0], 1)
         result = reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
         self.assertEqual(len(result["new"]), 1)
 
@@ -191,11 +198,13 @@ class DiscoveryTests(AtlasFixture):
     def test_response_and_observation_overflow_roll_back_batch(self):
         before = self.counts()
         small = replace(self.policy, limits=replace(self.policy.limits, output_bytes=128))
-        with patch.object(discovery, "run", return_value=runner.CommandResult("unavailable", diagnostic_code="executable_missing")), self.assertRaises(ValueError):
+        with (patch.object(discovery, "run", return_value=runner.CommandResult(
+                "unavailable", diagnostic_code="executable_missing")), self.assertRaises(ValueError)):
             discovery.collect(small, {"network": "lab", "mode": "passive"})
         self.assertEqual(self.counts(), before)
         tiny = replace(self.policy, limits=replace(self.policy.limits, observations=1))
-        with patch.object(discovery, "run", side_effect=AssertionError("must preflight count")), self.assertRaises(ValueError):
+        with (patch.object(discovery, "run", side_effect=AssertionError("must preflight count")),
+              self.assertRaises(ValueError)):
             discovery.collect(tiny, {"network": "lab", "mode": "passive"})
 
 
@@ -209,7 +218,8 @@ class ParserTests(unittest.TestCase):
     def test_nmap_golden_numeric_host_and_negative_xml(self):
         self.assertEqual(parse.nmap(xml(), "192.0.2.10", self.at, self.policy)[0], observation())
         self.assertEqual(parse.nmap(xml(up=False), "192.0.2.10", self.at, self.policy), ())
-        bad = [b"<nmaprun/>", xml().replace(b'exit="success"', b'exit="error"'), xml().replace(b'total="1"', b'total="2"'),
+        bad = [b"<nmaprun/>", xml().replace(b'exit="success"', b'exit="error"'),
+               xml().replace(b'total="1"', b'total="2"'),
                xml().replace(b'<host>', b'<host timedout="true">'), xml("198.51.100.10"),
                b'<!DOCTYPE nmaprun [<!ENTITY x "injected">]><nmaprun/>', b'<nmaprun><']
         for data in bad:
@@ -228,7 +238,8 @@ class ParserTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 parse.neighbors(payload, "192.0.2.0/24", self.at, self.policy)
         with self.assertRaises(ValueError):
-            parse.addresses(b'[{"ifname":"fixture","addr_info":[{"local":"192.0.2.1","prefixlen":true}]}]', "192.0.2.0/24", self.at, self.policy)
+            parse.addresses(b'[{"ifname":"fixture","addr_info":[{"local":"192.0.2.1","prefixlen":true}]}]',
+                            "192.0.2.0/24", self.at, self.policy)
         with self.assertRaises(ValueError):
             parse.routes(b'[{"gateway":"not-ip"}]', "192.0.2.0/24", self.at, self.policy)
 
@@ -258,14 +269,16 @@ class ReconciliationTests(AtlasFixture):
         changed = self.apply(second, NOW + timedelta(days=1))
         self.assertIn(device, changed["changed"])
         detail = self.detail(device=device, now=NOW + timedelta(days=1))
-        self.assertEqual({a["address"] for a in detail["interfaces"][0]["addresses"]}, {"192.0.2.10", "192.0.2.11", "192.0.2.12"})
+        self.assertEqual({a["address"] for a in detail["interfaces"][0]["addresses"]},
+                         {"192.0.2.10", "192.0.2.11", "192.0.2.12"})
         third = self.batch([observation(address="192.0.2.12", at=NOW + timedelta(days=2))], at=NOW + timedelta(days=2))
         unchanged = self.apply(third, NOW + timedelta(days=2))
         self.assertIn(device, unchanged["unchanged"])
         self.assertEqual(detail["id"], device)
         self.assertEqual(self.detail(device=device, now=NOW + timedelta(days=2))["first_seen"], storage.timestamp(NOW))
         with storage.Store(self.policy) as reader:
-            stored = json.loads(reader.connection.execute("SELECT result_json FROM applications WHERE batch_id=?", (first,)).fetchone()[0])
+            stored = json.loads(reader.connection.execute(
+                "SELECT result_json FROM applications WHERE batch_id=?", (first,)).fetchone()[0])
             self.assertEqual(stored, result)
 
     def test_missing_not_offline_stale_threshold_never_seen_reappearance_retired(self):
@@ -278,11 +291,13 @@ class ReconciliationTests(AtlasFixture):
         self.assertIn(device, stale["changed"])
         self.assertEqual(self.detail(device=device, now=NOW + timedelta(days=15))["status"], "stale")
         self.assertEqual(self.detail(now=NOW + timedelta(days=15))["status"], "known")
-        seen = self.apply(self.batch([observation(at=NOW + timedelta(days=16))], at=NOW + timedelta(days=16)), NOW + timedelta(days=16))
+        seen = self.apply(self.batch([observation(at=NOW + timedelta(days=16))], at=NOW + timedelta(days=16)),
+                          NOW + timedelta(days=16))
         self.assertIn(device, seen["changed"])
         self.assertEqual(self.detail(device=device, now=NOW + timedelta(days=16))["status"], "observed")
         self.update("retired", True, device=device)
-        self.apply(self.batch([observation(at=NOW + timedelta(days=17))], at=NOW + timedelta(days=17)), NOW + timedelta(days=17))
+        self.apply(self.batch([observation(at=NOW + timedelta(days=17))], at=NOW + timedelta(days=17)),
+                   NOW + timedelta(days=17))
         self.assertEqual(self.detail(device=device, now=NOW + timedelta(days=17))["status"], "retired")
         self.assertEqual(self.counts()["devices"], 2)
 
@@ -330,7 +345,8 @@ class ReconciliationTests(AtlasFixture):
     def test_transaction_failure_overflow_and_repeat_are_atomic(self):
         batch = self.batch([observation()])
         before = self.counts()
-        with patch.object(reconcile.Application, "event", side_effect=RuntimeError("synthetic audit failure")), self.assertRaises(RuntimeError):
+        with (patch.object(reconcile.Application, "event", side_effect=RuntimeError("synthetic audit failure")),
+              self.assertRaises(RuntimeError)):
             self.apply(batch)
         self.assertEqual(self.counts(), before)
         tiny = replace(self.policy, limits=replace(self.policy.limits, output_bytes=128))
@@ -354,7 +370,8 @@ class ReconciliationTests(AtlasFixture):
         revoked = config.validate_policy({}, self.home)
         with self.assertRaises(ValueError):
             reconcile.reconcile(revoked, {"batch_id": first}, now=NOW)
-        second_profile = config.validate_policy({**self.raw, "store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "other")
+        second_profile = config.validate_policy(
+            {**self.raw, "store": {"shared_sqlite_path": str(self.policy.database)}}, self.home / "other")
         with self.assertRaises(ValueError):
             reconcile.reconcile(second_profile, {"batch_id": first}, now=NOW)
         self.assertFalse(second_profile.home.exists())
@@ -374,7 +391,8 @@ class ReconciliationTests(AtlasFixture):
             disabled["networks"]["lab"]["discovery"][mode] = False
             removed = {**self.raw, "networks": {}}
             before = list(self.store.connection.iterdump())
-            with patch.object(discovery, "run") as transport, patch("subprocess.Popen") as spawn, patch("socket.socket") as socket:
+            with (patch.object(discovery, "run") as transport, patch("subprocess.Popen") as spawn,
+                  patch("socket.socket") as socket):
                 for raw in (disabled, removed):
                     path.write_text(json.dumps(raw))
                     with self.subTest(mode=mode, removed=raw is removed):
@@ -383,7 +401,8 @@ class ReconciliationTests(AtlasFixture):
                         for result in (json.loads(handlers.reconcile({"batch_id": batch})),
                                        json.loads(handlers.command("reconcile " + batch)), operator):
                             self.assertEqual(result, {"error": "network.discovery." + mode +
-                                ": stored scope requires a configured network and enabled collection mode; restore intended policy or select an eligible batch",
+                                ": stored scope requires a configured network and enabled collection mode; "
+                                "restore intended policy or select an eligible batch",
                                 "applied": False})
                         self.assertEqual(list(self.store.connection.iterdump()), before)
                 path.write_text(json.dumps(self.raw))

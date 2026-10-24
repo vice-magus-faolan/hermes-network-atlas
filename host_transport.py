@@ -68,10 +68,12 @@ def _tcp_result(code: int) -> tuple[str, str, bool]:
     return _error(OSError(code, ''))
 
 
-def begin_endpoint(network: Network, address: str, port: int | None, deadline: float) -> tuple[Attempt | None, Outcome | None]:
+def begin_endpoint(network: Network, address: str, port: int | None,
+                   deadline: float) -> tuple[Attempt | None, Outcome | None]:
     """Separate endpoint grant, checked at the actual socket-effect boundary."""
     validate_network(network)
-    if excluded(network, address) or type(port) is not int or port not in network.endpoint_ports or port in EXCLUDED_TCP_PORTS:
+    if (excluded(network, address) or type(port) is not int
+            or port not in network.endpoint_ports or port in EXCLUDED_TCP_PORTS):
         raise ValueError('endpoint destination/port not authorized')
     if not math.isfinite(deadline):
         raise ValueError('finite endpoint deadline required')
@@ -107,7 +109,8 @@ def begin(network: Network, address: str, port: int | None, deadline: float) -> 
 def _open(address: str, port: int | None, deadline: float) -> tuple[Attempt | None, Outcome | None]:
     sock = None
     try:
-        kind, protocol = (socket.SOCK_STREAM, socket.IPPROTO_TCP) if port is not None else (socket.SOCK_DGRAM, socket.IPPROTO_ICMP)
+        kind, protocol = ((socket.SOCK_STREAM, socket.IPPROTO_TCP) if port is not None
+                          else (socket.SOCK_DGRAM, socket.IPPROTO_ICMP))
         sock = socket.socket(socket.AF_INET, kind, protocol)
         sock.setblocking(False)
         attempt = Attempt(sock, address, port, deadline)

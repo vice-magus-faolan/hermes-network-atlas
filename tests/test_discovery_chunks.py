@@ -5,7 +5,6 @@ from dataclasses import replace
 from ipaddress import ip_network
 from pathlib import Path
 import sqlite3
-import sys
 import unittest
 from unittest.mock import patch
 
@@ -125,7 +124,8 @@ class ChunkDiscoveryTests(fixture.AtlasFixture):
             clock[0] = deadline + 0.01 if len(calls) == 2 else 1.0
             responders = ("192.0.2.31",) if len(calls) == 2 else ()
             return fixture.runner.CommandResult("success", chunk_xml(argv[-1], responders))
-        with patch.object(fixture.discovery.time, "monotonic", side_effect=lambda: clock[0]), patch.object(fixture.discovery, "run", transport):
+        with (patch.object(fixture.discovery.time, "monotonic", side_effect=lambda: clock[0]),
+              patch.object(fixture.discovery, "run", transport)):
             receipt = fixture.discovery.collect(policy, {"network": "lab", "mode": "ping"})
         self.assertEqual(receipt["completion"], "complete")
         self.assertEqual(receipt["probes"][31]["diagnostic_code"], "completed_at_boundary")
@@ -141,12 +141,14 @@ class ChunkDiscoveryTests(fixture.AtlasFixture):
 
     def test_fixed_argv_serial_process_internal_concurrency_rate_and_lowered_bounds(self):
         for concurrency in (1, 2, 4):
-            policy = replace(self.policy, limits=replace(self.policy.limits, concurrent_probes=concurrency, host_timeout_seconds=2))
+            policy = replace(self.policy, limits=replace(
+                self.policy.limits, concurrent_probes=concurrency, host_timeout_seconds=2))
             calls = []
-            def transport(argv, limits, deadline, **kwargs):
+            def transport(argv, limits, deadline, *, concurrency=concurrency, calls=calls, **kwargs):
                 self.assertTrue(kwargs["host"])  # whole chunk is externally host-bounded too
                 self.assertEqual(argv[:-1], ("nmap", "-sn", "-n", "-PS80,443", "--host-timeout", "2s",
-                                             "--max-parallelism", str(concurrency), "--max-rate", str(concurrency * 8), "-oX", "-"))
+                                             "--max-parallelism", str(concurrency), "--max-rate",
+                                             str(concurrency * 8), "-oX", "-"))
                 calls.append(argv[-1])
                 return fixture.runner.CommandResult("success", chunk_xml(argv[-1]))
             with patch.object(fixture.discovery, "run", transport):
@@ -159,7 +161,7 @@ class ChunkDiscoveryTests(fixture.AtlasFixture):
                     fixture.runner.CommandResult("success", b'<nmaprun>'),
                     fixture.runner.CommandResult("success", chunk_xml("198.51.100.0/28", ("198.51.100.1",)))):
             calls = []
-            def transport(argv, *args, **kwargs):
+            def transport(argv, *args, calls=calls, bad=bad, **kwargs):
                 calls.append(argv[-1])
                 return bad if len(calls) == 2 else fixture.runner.CommandResult("success", chunk_xml(argv[-1]))
             with patch.object(fixture.discovery, "run", transport):
@@ -168,9 +170,11 @@ class ChunkDiscoveryTests(fixture.AtlasFixture):
             self.assertEqual(sum(p["outcome"] != "success" for p in receipt["probes"][:-1]), 16)
             self.assertFalse(fixture.reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})["missing"])
         before = self.counts()
-        with patch.object(fixture.discovery, "run", side_effect=lambda argv, *a, **k: fixture.runner.CommandResult("success", chunk_xml(argv[-1]))), \
-                patch.object(fixture.storage.Store, "audit", side_effect=sqlite3.OperationalError("synthetic persistence failure")), \
-                self.assertRaises(sqlite3.OperationalError):
+        with (patch.object(fixture.discovery, "run", side_effect=lambda argv, *a, **k:
+                           fixture.runner.CommandResult("success", chunk_xml(argv[-1]))),
+              patch.object(fixture.storage.Store, "audit",
+                           side_effect=sqlite3.OperationalError("synthetic persistence failure")),
+              self.assertRaises(sqlite3.OperationalError)):
             fixture.discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
         self.assertEqual(self.counts(), before)
 
@@ -192,16 +196,19 @@ class ChunkParserTests(unittest.TestCase):
         good = chunk_xml("192.0.2.0/28", ("192.0.2.1", "192.0.2.15"))
         bad = [good.replace(b'192.0.2.15', b'192.0.2.1'), good.replace(b'192.0.2.15', b'192.0.2.16'),
                good.replace(b'total="16"', b'total="15"'), good.replace(b'up="2" down="14"', b'up="1" down="15"'),
-               good.replace(b'up="2" down="14"', b'up="2" down="-1"'), good.replace(b'<host>', b'<host timedout="true">'),
+               good.replace(b'up="2" down="14"', b'up="2" down="-1"'),
+               good.replace(b'<host>', b'<host timedout="true">'),
                good.replace(b'<status state="up"/>', b'<status state="unknown"/>'),
                good.replace(b'<host>', b'<host><address addr="2001:db8::1" addrtype="ipv6"/>'),
                good.replace(b'<!DOCTYPE nmaprun>', b'<!DOCTYPE nmaprun SYSTEM "file:///never-read">'),
                good.replace(b'<!DOCTYPE nmaprun>', b'<!DOCTYPE nmaprun [<!ENTITY x "boom">]>'),
                good.decode().encode('utf-16'), b'<nmaprun><',
                good.replace(b'</nmaprun>', b'<runstats/></nmaprun>'),
-               good.replace(b'<address addr="192.0.2.1" addrtype="ipv4"/>', b'<address addr="192.0.2.1" addrtype="ipv4"/>' * 2)]
+               good.replace(b'<address addr="192.0.2.1" addrtype="ipv4"/>',
+                            b'<address addr="192.0.2.1" addrtype="ipv4"/>' * 2)]
         for data in bad:
-            with self.subTest(data=data[:100]), self.assertRaises((ValueError, fixture.parse.ElementTree.ParseError, UnicodeError)):
+            with (self.subTest(data=data[:100]),
+                  self.assertRaises((ValueError, fixture.parse.ElementTree.ParseError, UnicodeError))):
                 fixture.parse.nmap(data, "192.0.2.0/28", self.at, self.policy)
         tiny = replace(self.policy, limits=replace(self.policy.limits, observations=1))
         with self.assertRaises(ValueError):
@@ -212,7 +219,8 @@ class ChunkParserTests(unittest.TestCase):
         exact = replace(self.policy, limits=replace(self.policy.limits, output_bytes=len(good)))
         self.assertEqual(len(fixture.parse.nmap(good, "192.0.2.0/28", self.at, exact)), 2)
         with self.assertRaises(ValueError):
-            fixture.parse.nmap(good, "192.0.2.0/28", self.at, replace(exact, limits=replace(exact.limits, output_bytes=len(good) - 1)))
+            fixture.parse.nmap(good, "192.0.2.0/28", self.at,
+                               replace(exact, limits=replace(exact.limits, output_bytes=len(good) - 1)))
 
 
 if __name__ == "__main__":

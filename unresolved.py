@@ -137,7 +137,8 @@ def _identity(store: Store, row, batch, application: dict | None) -> dict:
     lineage = _lineage(store, row, batch, application)
     if lineage:
         state = {"resolved_in_batch": "subsequently_resolved", "reconciled_conflicting": "subsequently_conflicting",
-                 "reconciled_unresolved": "subsequently_unresolved"}.get(lineage["state"], "subsequent_identity_unknown")
+                 "reconciled_unresolved": "subsequently_unresolved"}.get(
+                     lineage["state"], "subsequent_identity_unknown")
     return {"identity_state": state, "identity_reason": reason, "candidate_device_ids": candidates,
             "resolved_device_ids": resolved, "application": _application_info(application), "lineage": lineage}
 
@@ -153,7 +154,8 @@ def _freshness(row, now: datetime, stale_days: int) -> str:
 def _responder(row) -> bool:
     """SSH inventory of an IP/interface is not an exact-address response."""
     qualified = row["qualified"] and row["confidence"] == "observed"
-    response = row["evidence_kind"] == "ping_response" or (row["evidence_kind"] == "ssh_response" and row["subject_kind"] == "device")
+    response = (row["evidence_kind"] == "ping_response"
+                or (row["evidence_kind"] == "ssh_response" and row["subject_kind"] == "device"))
     return bool(qualified and response)
 
 
@@ -225,9 +227,11 @@ def _page(store: Store, params: dict, now: datetime) -> dict:
         " ORDER BY o.observed_at DESC,o.id LIMIT ? OFFSET ?",
         (store.policy.limits.output_bytes + 1,) * 3 + (*bindings, params["limit"] + 1, params["offset"])).fetchall()
     batches, applications = {}, {}
-    return {"view": "unresolved", "evidence": [_detail(store, row, now, batches, applications) for row in rows[:params["limit"]]],
+    return {"view": "unresolved",
+            "evidence": [_detail(store, row, now, batches, applications) for row in rows[:params["limit"]]],
             "limit": params["limit"], "offset": params["offset"], "has_more": len(rows) > params["limit"],
-            "discovery_performed": False, "reachability": "historical evidence only; current reachability not established"}
+            "discovery_performed": False,
+            "reachability": "historical evidence only; current reachability not established"}
 
 
 def query_evidence(policy: Policy, params: dict, now: datetime) -> dict:
