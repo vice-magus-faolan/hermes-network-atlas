@@ -185,7 +185,7 @@ def render_map(policy: Policy, *, now: datetime | None = None) -> dict[str, str]
 
 def _stage(path: Path, content: str) -> Path:
     if path.is_symlink():
-        raise ValueError("symlink export refused")
+        raise RequestError("export: symlink destination refused; use regular generated files in the export directory")
     fd, temporary = tempfile.mkstemp(prefix=".atlas-export-", dir=path.parent)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(content)

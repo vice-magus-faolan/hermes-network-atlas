@@ -360,6 +360,10 @@ hermes -p PROFILE network-atlas map --format mermaid --export
 This writes profile-local `exports/network_map.md` and `network_map.mmd` beneath
 `network-atlas`, even with a shared database. If interrupted between replacements,
 regenerate both from SQLite; they are not a cross-file atomic snapshot.
+An `export: symlink destination refused` error means one of these fixed paths is
+a symlink. Restore regular generated-file destinations without modifying the
+symlink targets or database, then retry. Failed file exports retain a
+`map_export_requested` audit event but no `map_exported` completion event.
 
 ## Troubleshooting and data care
 

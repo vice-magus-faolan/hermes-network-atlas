@@ -297,6 +297,90 @@ class OperatorStatusTests(unittest.TestCase):
                 "SELECT action FROM audit_events WHERE action LIKE 'map_export%' ORDER BY rowid")],
                 ["map_export_requested", "map_exported"])
 
+    def export_history(self):
+        with storage.Store(self.policy) as store, store.snapshot():
+            # Compare all logical history, separating only the permitted appended
+            # audit records. SQLite file bytes can change on a legitimate write.
+            history = tuple(line for line in store.connection.iterdump()
+                            if not line.startswith('INSERT INTO "audit_events"'))
+            audits = [dict(row) for row in store.connection.execute('SELECT * FROM audit_events ORDER BY rowid')]
+        return history, audits
+
+    def assert_export_file_symlink_refused(self, filename):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        with storage.Store(self.policy, writable=True) as store:
+            core.create_device(store, "Synthetic retained device", now=NOW)
+        self.assertNotIn("error", json.loads(self.handlers.map({"export": True})))
+        outside = self.home / "PRIVATE_EXPORT_TARGET"
+        outside.write_bytes(b"PRIVATE_UNCHANGED")
+        destination = self.policy.exports / filename
+        for route in ("model", "operator"):
+            destination.unlink()
+            destination.symlink_to(outside)
+            outputs = {path.name: path.read_bytes() for path in self.policy.exports.iterdir()}
+            history, audits = self.export_history()
+            with self.subTest(route=route), patch("subprocess.Popen") as spawn, patch("socket.socket") as socket:
+                if route == "model":
+                    emitted = self.handlers.map({"export": True})
+                else:
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        code = fixture_command(parser.parse_args(["map", "--export"]), self.home)
+                    self.assertEqual(code, 2)
+                    emitted = output.getvalue()
+                result = json.loads(emitted)
+                self.assertFalse(result["applied"])
+                self.assertNotIn("PRIVATE", emitted)
+                self.assertNotIn(str(self.home), emitted)
+                self.assertLess(len(emitted.encode("utf-8")), self.policy.limits.output_bytes)
+                self.assertTrue(destination.is_symlink())
+                self.assertEqual(destination.readlink(), outside)
+                self.assertEqual(outside.read_bytes(), b"PRIVATE_UNCHANGED")
+                # This exact directory inventory also detects a leaked first stage
+                # when the second fixed destination refuses.
+                self.assertEqual({path.name: path.read_bytes() for path in self.policy.exports.iterdir()}, outputs)
+                after, events = self.export_history()
+                self.assertEqual(after, history)
+                self.assertEqual(events[:-1], audits)
+                self.assertEqual(len(events), len(audits) + 1)
+                self.assertEqual(events[-1]["action"], "map_export_requested")
+                self.assertEqual(events[-1]["actor"], "local_render")
+                self.assertEqual(json.loads(events[-1]["details_json"]),
+                                 {"files": ["network_map.md", "network_map.mmd"]})
+                self.assertNotIn("error", json.loads(self.handlers.command("map markdown")))
+                self.assertEqual(self.export_history(), (after, events))
+                spawn.assert_not_called()
+                socket.assert_not_called()
+                self.assertEqual(result["error"],
+                                 "export: symlink destination refused; "
+                                 "use regular generated files in the export directory")
+            destination.unlink()
+            # Restoring a regular destination exercises the same adapter's real
+            # export and completion audit, not just the private file helper.
+            if route == "model":
+                restored = json.loads(self.handlers.map({"export": True}))
+            else:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(fixture_command(parser.parse_args(["map", "--export"]), self.home), 0)
+                restored = json.loads(output.getvalue())
+            self.assertNotIn("error", restored)
+            self.assertFalse(destination.is_symlink())
+            self.assertEqual({path.name for path in self.policy.exports.iterdir()},
+                             {"network_map.md", "network_map.mmd"})
+            restored_history, restored_events = self.export_history()
+            self.assertEqual(restored_history, history)
+            self.assertEqual(restored_events[:-2], events)
+            self.assertEqual([row["action"] for row in restored_events[-2:]],
+                             ["map_export_requested", "map_exported"])
+
+    def test_export_first_file_symlink_refusal_is_actionable_and_preserves_history(self):
+        self.assert_export_file_symlink_refused("network_map.md")
+
+    def test_export_second_file_symlink_refusal_cleans_staging_and_preserves_history(self):
+        self.assert_export_file_symlink_refused("network_map.mmd")
+
     def test_export_preserves_real_store_failure_categories(self):
         parser = argparse.ArgumentParser(allow_abbrev=False)
         commands.setup_parser(parser)
