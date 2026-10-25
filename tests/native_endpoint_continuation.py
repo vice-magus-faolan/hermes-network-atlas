@@ -2,10 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Timed-out native producer -> explicit subset -> cold owner/shared/isolated reads."""
 from contextlib import ExitStack
+from datetime import timedelta
 import json
 import os
 from pathlib import Path
 import sys
+import time
 from unittest.mock import patch
 
 from cumulative_acceptance import NativeAtlas
@@ -46,16 +48,21 @@ def main():
         # The lazy continuation import is ours, not a replacement native runtime.
         __import__(prefix + 'endpoint_continuation')
         continuation = sys.modules[prefix + 'endpoint_continuation']
-        with fixture.install(schedule, transport, capability), ExitStack() as stack:
-            for module in (endpoints, storage, continuation):
-                stack.enter_context(patch.object(module, 'time', fixture.clock))
+        child_at = storage.parse_time(min(r['started_at'] for r in original['endpoints'])) - timedelta(days=1)
+        # A real reservation/producer under a backward UTC step; leave monotonic
+        # accounting real. The owner below then reopens this history in a new OS process.
+        with patch.object(fixture, 'clock', time), fixture.install(schedule, transport, capability), \
+                ExitStack() as stack:
+            for module in (endpoints, storage, continuation, schedule):
+                stack.enter_context(patch.object(module, 'utc_now', return_value=child_at))
             second = atlas.slash('continue-endpoints ' + first['batch_id'])
         assert second['queryable'] and second['collection_performed'], second
         assert {(a, p) for _, a, p in fixture.calls} == remaining
         assert all(sock.closed for sock in fixture.sockets)
         child = atlas.tool('network_query', {'view': 'endpoints', 'batch_id': second['batch_id'], 'limit': 100})
         assert child['total_count'] == len(remaining)
-        assert min(r['started_at'] for r in child['endpoints']) > max(r['checked_at'] for r in original['endpoints'])
+        assert {r['checked_at'] for r in child['endpoints']} == {storage.timestamp(child_at)}
+        assert max(r['checked_at'] for r in child['endpoints']) < min(r['started_at'] for r in original['endpoints'])
         assert atlas.tool('network_query', {'view': 'endpoints', 'batch_id': first['batch_id'],
                                            'limit': 100}) == original
         progress = atlas.cli(['preview-endpoints', second['batch_id']])
@@ -69,7 +76,9 @@ def main():
                                        'progress': progress, 'page': page}))
     elif mode == 'owner':
         data = json.loads(snapshot.read_text())
+        before = (scratch / 'shared.sqlite3').read_bytes()
         assert atlas.slash('preview-endpoints ' + data['second']['batch_id']) == data['progress']
+        assert (scratch / 'shared.sqlite3').read_bytes() == before
         for resumed in (atlas.cli(['continue-endpoints', data['first']['batch_id']]),
                         atlas.tool('network_check_endpoints', {'batch_id': data['second']['batch_id']})):
             assert resumed['queryable'] and not resumed['collection_performed'], resumed

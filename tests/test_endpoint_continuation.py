@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import importlib
 import json
 from pathlib import Path
@@ -148,6 +149,163 @@ class ContinuationTests(unittest.TestCase):
         self.assertLess(len(calls), preview['progress']['still_unattempted'])
         next_preview = self.preview(second['batch_id'])
         self.assertEqual(next_preview['progress']['still_unattempted'], second['state_counts']['not_started'])
+
+    def utc_invoke(self, params, at, *, claim_at=None):
+        # Replace UTC alone. Socket waits, validation, SQL and publication all
+        # consume the real operation/host clocks, including the persistence reserve.
+        fixture = SyntheticSockets(lambda address, port: 'closed' if address == '192.0.2.1' else 'filtered')
+        started = time.monotonic()
+        with patch.object(fixture, 'clock', time), fixture.install(schedule, transport, capability), \
+                ExitStack() as stack:
+            for module in (endpoints, continuation, schedule, storage):
+                stack.enter_context(patch.object(module, 'utc_now', return_value=at))
+            if claim_at is not None:
+                stack.enter_context(patch.object(continuation, 'utc_now', side_effect=[claim_at, at, at]))
+            result = json.loads(self.handler().check_endpoints(params))
+        self.assertLess(time.monotonic() - started, self.policy.limits.operation_timeout_seconds + 0.1)
+        self.assertTrue(all(sock.closed for sock in fixture.sockets))
+        self.assertLessEqual(fixture.peak, self.policy.limits.concurrent_probes)
+        calls = {(a, p) for _, a, p in fixture.calls}
+        self.assertEqual(len(calls), len(fixture.calls))
+        return result, calls
+
+    def clock_rollback_lifecycle(self, *, before_claim):
+        self.policy = replace(self.policy, limits=replace(self.policy.limits, concurrent_probes=1))
+        parent_at = datetime(2026, 1, 3, tzinfo=timezone.utc)
+        child_at = parent_at - timedelta(days=1)
+        claim_at = child_at if before_claim else parent_at + timedelta(days=1)
+        first, prior_calls = self.utc_invoke({'network': 'lab'}, parent_at)
+        self.assertTrue(first.get('queryable'), first)
+        self.assertTrue(prior_calls)
+        parent = first['batch_id']
+        original, original_rows = self.history(parent), self.rows(parent)
+        remaining = {(row['address'], row['port']) for row in original_rows if row['state'] == 'not_started'}
+        self.assertTrue(remaining)
+        second, calls = self.utc_invoke({'continue_batch_id': parent}, child_at, claim_at=claim_at)
+        self.assertTrue(second.get('queryable'), second)
+        self.assertTrue(calls)
+        self.assertLessEqual(calls, remaining)
+        self.assertFalse(calls & prior_calls)
+        child = second['batch_id']
+        child_rows = self.rows(child)
+        self.assertEqual({row['parent_batch_id'] for row in child_rows}, {parent})
+        self.assertEqual({row['checked_at'] for row in child_rows}, {storage.timestamp(child_at)})
+        self.assertEqual(self.history(parent), original)
+        self.assertEqual(self.rows(parent), original_rows)
+        with storage.Store(self.policy) as store:
+            claim = tuple(store.connection.execute(
+                'SELECT * FROM endpoint_continuations WHERE parent_batch_id=?', (parent,)).fetchone())
+        self.assertEqual(claim[3], storage.timestamp(claim_at))
+        self.assertLess(storage.timestamp(child_at), storage.timestamp(parent_at if before_claim else claim_at))
+        history, physical = self.history(), self.policy.database.read_bytes()
+        with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('cold recovery contacted')):
+            # Every handler/store is fresh: no request-local reservation survives.
+            preview = self.preview(child)
+            ancestor = self.preview(parent)
+            self.assertEqual(self.policy.database.read_bytes(), physical)
+            resumed = json.loads(self.handler().command('resume-endpoints ' + child))
+            repeated = json.loads(self.handler().check_endpoints({'continue_batch_id': parent}))
+        self.assertEqual(ancestor['state'], 'continued')
+        self.assertEqual(ancestor['successor_batch_id'], child)
+        self.assertEqual(preview['progress']['runs'], 2)
+        self.assertEqual(preview['progress']['attempted'], len(prior_calls | calls))
+        self.assertEqual(preview['progress']['still_unattempted'], len(remaining - calls))
+        self.assertTrue(resumed['queryable'] and repeated['queryable'], (resumed, repeated))
+        self.assertFalse(resumed['collection_performed'] or repeated['collection_performed'])
+        self.assertEqual(repeated['batch_id'], child)
+        self.assertEqual(self.history(), history)
+        self.assertEqual(self.rows(child), child_rows)
+        third, new_calls = self.utc_invoke({'continue_batch_id': child}, child_at - timedelta(days=1))
+        self.assertTrue(third.get('queryable'), third)
+        self.assertTrue(new_calls)
+        self.assertLessEqual(new_calls, remaining - calls)
+        self.assertFalse(new_calls & (calls | prior_calls))
+        self.assertEqual(self.preview(third['batch_id'])['progress']['attempted'],
+                         len(prior_calls | calls | new_calls))
+        self.assertEqual(self.history(parent), original)
+        self.assertEqual(self.rows(child), child_rows)
+        with storage.Store(self.policy) as store:
+            self.assertEqual(tuple(store.connection.execute(
+                'SELECT * FROM endpoint_continuations WHERE parent_batch_id=?', (parent,)).fetchone()), claim)
+
+    def test_clock_rollback_before_claim_preserves_producer_and_cold_lineage(self):
+        self.clock_rollback_lifecycle(before_claim=True)
+
+    def test_clock_rollback_after_claim_preserves_producer_and_cold_lineage(self):
+        self.clock_rollback_lifecycle(before_claim=False)
+
+    def test_rollback_saved_child_still_requires_current_owner_and_grants(self):
+        first, _ = self.partial()
+        at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        second, _ = self.utc_invoke({'continue_batch_id': first['batch_id']}, at)
+        self.assertTrue(second.get('queryable'), second)
+        network = self.policy.networks[0]
+        policies = [replace(self.policy, home=self.home / 'foreign'), replace(self.policy, networks=()),
+                    replace(self.policy, networks=(replace(network, endpoint_ports=()),)),
+                    replace(self.policy, networks=(replace(network, cidr='192.0.2.32/27'),)),
+                    replace(self.policy, networks=(replace(network, endpoint_ports=(22, 443)),))]
+        before = self.history()
+        with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('revoked child contacted')):
+            for policy in policies:
+                for key in ('preview_batch_id', 'continue_batch_id', 'batch_id'):
+                    result = json.loads(self.handler(policy).check_endpoints({key: second['batch_id']}))
+                    self.assertIn('error', result, (policy, key, result))
+        self.assertEqual(self.history(), before)
+
+    def test_saved_links_reject_wrong_identity_scope_selection_and_invalid_times(self):
+        network = self.policy.networks[0]
+        self.policy = replace(self.policy, networks=(network, replace(network, name='other')))
+        mutations = (
+            ('batches', 'UPDATE batches SET policy_context="foreign" WHERE id=?'),
+            ('batches', 'UPDATE batches SET scope_name="other" WHERE id=?'),
+            ('batches', 'UPDATE batches SET scope_value="192.0.2.32/27" WHERE id=?'),
+            ('endpoint_continuations', 'UPDATE endpoint_continuations SET selection_json=\'["tcp_22_15"]\' '
+                                      'WHERE child_batch_id=?'),
+            ('endpoint_continuations', 'UPDATE endpoint_continuations SET child_batch_id=parent_batch_id '
+                                      'WHERE child_batch_id=?'),
+            ('endpoint_continuations', 'UPDATE endpoint_continuations SET created_at="invalid" WHERE child_batch_id=?'),
+            ('probes', 'UPDATE probes SET started_at="9999-01-01T00:00:00Z" WHERE batch_id=?'),
+        )
+        for table, sql in mutations:
+            with self.subTest(table=table, sql=sql):
+                first, _ = self.partial()
+                second, _ = self.invoke({'continue_batch_id': first['batch_id']},
+                                        response=lambda address, port: 'filtered')
+                self.assertTrue(second['queryable'], second)
+                with storage.Store(self.policy, writable=True) as store, store.transaction():
+                    store.connection.execute(f'DROP TRIGGER IF EXISTS immutable_{table}_UPDATE')
+                    store.connection.execute(sql, (second['batch_id'],))
+                before = self.history()
+                with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('wrong link contacted')):
+                    for batch in (first['batch_id'], second['batch_id']):
+                        for key in ('preview_batch_id', 'continue_batch_id', 'batch_id'):
+                            # A root-only resume need not inspect its descendants.
+                            if batch == first['batch_id'] and key == 'batch_id':
+                                continue
+                            result = json.loads(self.handler().check_endpoints({key: batch}))
+                            self.assertIn('error', result, (table, key, result))
+                self.assertEqual(self.history(), before)
+
+    def test_within_child_utc_reversal_keeps_unsaved_reservation_uncertain(self):
+        first, _ = self.partial()
+        before = self.history(first['batch_id'])
+        at = storage.utc_now() + timedelta(days=1)
+        with patch.object(continuation, 'utc_now', side_effect=[at, at, at - timedelta(days=1)]), \
+                patch.object(schedule, 'utc_now', return_value=at):
+            result, calls = self.invoke({'continue_batch_id': first['batch_id']})
+        self.assertTrue(calls)
+        self.assertFalse(result['persisted'])
+        self.assertEqual(result['stage'], 'uncertain')
+        self.assertEqual(self.rows(result['batch_id']), [])
+        history = self.history()
+        preview = self.preview(first['batch_id'])
+        self.assertEqual(preview['state'], 'uncertain')
+        self.assertEqual(preview['successor_batch_id'], result['batch_id'])
+        repeated, no_calls = self.invoke({'continue_batch_id': first['batch_id']})
+        self.assertFalse(no_calls)
+        self.assertEqual(repeated['stage'], 'uncertain')
+        self.assertEqual(self.history(), history)
+        self.assertEqual(self.history(first['batch_id']), before)
 
     def test_long_progressing_chain_exhausts_without_repeated_contacts_or_history_changes(self):
         self.policy = config.validate_policy({

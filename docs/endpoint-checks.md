@@ -125,7 +125,8 @@ excluded destinations. Current profile ownership and the exact original named
 network, CIDR and port grant must still match; evidence or another profile cannot
 grant access. The original grid must still fit `limits.observations`. All existing
 invocation deadlines, concurrency/rate, socket cleanup and output/record ceilings
-apply unchanged. A continuation can remain partial: inspect its successor preview
+still apply, with the [continuation persistence reserve](#continuation-persistence-reserve)
+described below. A continuation can remain partial: inspect its successor preview
 before choosing another explicit invocation. No scheduler or automatic retry exists.
 
 Original batches, completion, applications and probe timestamps stay unchanged.
@@ -133,6 +134,16 @@ Successors store only their selected subset with new times; endpoint query rows
 carry `parent_batch_id` (null for original runs). Cumulative progress combines
 historical runs, not a simultaneous census, current reachability or device identity.
 An `exhausted` selection means no continuable work, not that every endpoint answered.
+
+The immutable reservation and exact saved subset establish parent/child order;
+UTC timestamps are historical evidence, not a causal clock. A backward UTC step
+between runs or between reservation and child start does not invalidate a legitimate
+saved successor. Times are never clamped or rewritten, and timestamp-sorted query
+rows can therefore place a successor before its parent. Ancestry progress follows
+the reservation links instead. Operation and host deadlines use monotonic time.
+Within each batch, probe times must still be ordered inside the batch envelope.
+A clock reversal during collection that violates that envelope prevents saving
+the child; its reservation remains uncertain, with no automatic recollection.
 
 Each parent reserves at most one immutable successor before traffic. Repeating or
 concurrently continuing that same parent never recollects: it returns the saved
@@ -161,6 +172,8 @@ increase it within the existing **120-second ceiling**, then repeat
 automatically. If already at the ceiling, retain the saved IDs/history and report
 the capacity limit for operator review; do not delete/reset evidence or start a
 full rescan to bypass it.
+
+### Continuation persistence reserve
 
 Continuation always reserves one quarter of `limits.operation_timeout_seconds`
 for persistence, even when `limits.busy_timeout_ms` is lowered. A full check instead

@@ -195,10 +195,11 @@ def _verify_projection(store: Store, batch, probes, grid, allow_missing: bool) -
 
 
 def _validate_link(parent, child, claim, selection, remaining) -> None:
+    # The immutable reservation orders runs causally. UTC may step backward
+    # between parent, reservation and child; it is evidence, not a causal clock.
     if (selection != remaining or not selection or claim['parent_batch_id'] != parent['id']
             or claim['child_batch_id'] != child['id']
-            or (child['scope_name'], child['scope_value']) != (parent['scope_name'], parent['scope_value'])
-            or not parent['ended_at'] <= claim['created_at'] <= child['started_at']):
+            or (child['scope_name'], child['scope_value']) != (parent['scope_name'], parent['scope_value'])):
         raise RequestError('endpoint continuation: inconsistent saved lineage; no new collection')
 
 
@@ -237,7 +238,7 @@ def _preview(store: Store, lineage: Lineage) -> dict:
 
 def _validate_reservation(lineage: Lineage, claim) -> None:
     if (_selection(claim) != lineage.remaining or not lineage.remaining
-            or claim['created_at'] < lineage.batch['ended_at']
+            or claim['parent_batch_id'] != lineage.batch['id']
             or not isinstance(claim['child_batch_id'], str)
             or re.fullmatch(NAME_PATTERN, claim['child_batch_id']) is None):
         raise RequestError('endpoint continuation: inconsistent saved reservation; retain history')
