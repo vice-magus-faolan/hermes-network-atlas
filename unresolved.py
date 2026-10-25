@@ -13,6 +13,7 @@ import json
 import time
 
 from .config import Policy
+from .errors import RequestError
 from .facts import evidence
 from .storage import Store, response_json, timestamp
 
@@ -239,7 +240,7 @@ def query_evidence(policy: Policy, params: dict, now: datetime) -> dict:
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     if not policy.database.exists():
         if "batch_id" in params:
-            raise ValueError("unknown atlas batch")
+            raise RequestError("batch_id: select an existing atlas entity")
         result = {"view": "unresolved", "evidence": [], "limit": params["limit"], "offset": params["offset"],
                   "has_more": False, "discovery_performed": False,
                   "reachability": "historical evidence only; current reachability not established"}

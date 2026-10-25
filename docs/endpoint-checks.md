@@ -153,8 +153,24 @@ can repeat prior contacts; it is not recovery. This is not crash-exactly-once TC
 sum of historical rows. Superseded `not_started` rows do not consume a cumulative
 quota. Complete ancestry validation counts against the real operation deadline.
 Continuation refuses before reservation or traffic if validation leaves
-insufficient time for useful collection and its persistence reserve. An admitted
-run reuses its request-local validated ancestry for its exact reserved child's
+insufficient time for useful collection and its persistence reserve. After this
+validation-budget refusal, no successor is reserved and no endpoints are contacted.
+If `limits.operation_timeout_seconds` was lowered, the operator can explicitly
+increase it within the existing **120-second ceiling**, then repeat
+`continue-endpoints` with the **same saved batch ID**. Atlas never raises it
+automatically. If already at the ceiling, retain the saved IDs/history and report
+the capacity limit for operator review; do not delete/reset evidence or start a
+full rescan to bypass it.
+
+Continuation always reserves one quarter of `limits.operation_timeout_seconds`
+for persistence, even when `limits.busy_timeout_ms` is lowered. A full check instead
+reserves the smaller of `limits.busy_timeout_ms / 1000` seconds and that quarter.
+With the defaults (120 seconds overall, 5000 ms busy timeout), collection deadlines
+are **90 seconds for continuation versus 115 seconds for a full check**, measured
+from operation start. Validation and reservation consume part of that same window;
+these are not promises of that much socket time or complete coverage.
+
+An admitted run reuses its request-local validated ancestry for its exact reserved child's
 save/projection; cold recovery independently validates history. Per-batch reads
 and retained probe objects are bounded, with a separate structural limit of 4096
 batches (including the root). That structural limit is not an execution-time
