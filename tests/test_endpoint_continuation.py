@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -15,10 +16,10 @@ from helpers import load_package, scratch_home
 from synthetic_sockets import SyntheticSockets
 
 load_package()
-config, endpoints, continuation, schedule, transport, capability, storage, tools = (
+config, endpoints, continuation, schedule, transport, capability, storage, tools, batches = (
     importlib.import_module('atlas_test_plugin.' + name) for name in
     ('config', 'endpoints', 'endpoint_continuation', 'host_schedule', 'host_transport',
-     'host_discovery', 'storage', 'tools'))
+     'host_discovery', 'storage', 'tools', 'batches'))
 
 
 class ContinuationTests(unittest.TestCase):
@@ -37,7 +38,7 @@ class ContinuationTests(unittest.TestCase):
     def installed(self, fixture):
         stack = ExitStack()
         stack.enter_context(fixture.install(schedule, transport, capability))
-        for module in (endpoints, continuation, storage):
+        for module in (endpoints, continuation, storage, batches):
             stack.enter_context(patch.object(module, 'time', fixture.clock))
         return stack
 
@@ -65,6 +66,10 @@ class ContinuationTests(unittest.TestCase):
 
     def rows(self, batch):
         return endpoints.query_endpoints(self.policy, {'batch_id': batch, 'limit': 100, 'offset': 0})['endpoints']
+
+    def saved_count(self, batch):
+        # A response page is capped; total_count verifies the complete child.
+        return endpoints.query_endpoints(self.policy, {'batch_id': batch, 'limit': 1, 'offset': 0})['total_count']
 
     def history(self, batch=None):
         with storage.Store(self.policy) as store:
@@ -224,6 +229,162 @@ class ContinuationTests(unittest.TestCase):
                 self.assertIn('lineage batch limit', result['error'])
                 self.assertFalse(calls)
         self.assertEqual(self.history(), before)
+
+    def real_continue(self, batch, *, policy=None):
+        fixture = SyntheticSockets(lambda address, port: 'filtered')
+        started = time.monotonic()
+        with patch.object(fixture, 'clock', time), fixture.install(schedule, transport, capability):
+            result = json.loads(self.handler(policy).check_endpoints({'continue_batch_id': batch}))
+        elapsed = time.monotonic() - started
+        self.assertTrue(all(sock.closed for sock in fixture.sockets))
+        calls = {(a, p) for _, a, p in fixture.calls}
+        self.assertEqual(len(calls), len(fixture.calls))
+        self.assertLess(elapsed, (policy or self.policy).limits.operation_timeout_seconds + 0.1)
+        print(f'real continuation: elapsed={elapsed:.3f}s contacts={len(calls)} '
+              f'stage={result.get("stage")} error={result.get("error")}')
+        return result, calls
+
+    def test_real_deadline_deep_full_grid_saves_after_contacts(self):
+        # Setup uses virtual sockets; the timed action charges real validation,
+        # SQL and transport to the SAME unpatched operation clock.
+        self.policy = config.validate_policy({
+            'networks': {'lab': {'cidr': '192.0.2.0/24',
+                                 'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
+            'limits': {'operation_timeout_seconds': 5, 'host_timeout_seconds': 10,
+                       'concurrent_probes': 1}}, self.home)
+        result, attempted = self.invoke({'network': 'lab'}, response=lambda address, port: 'filtered')
+        root = result['batch_id']
+        original = self.history(root)
+        for _ in range(17):
+            result, calls = self.invoke({'continue_batch_id': result['batch_id']},
+                                        response=lambda address, port: 'filtered')
+            self.assertTrue(result['queryable'], result)
+            self.assertFalse(calls & attempted)
+            attempted |= calls
+        result, calls = self.real_continue(result['batch_id'])
+        self.assertTrue(calls, result)
+        self.assertTrue(result.get('queryable'), result)
+        self.assertFalse(calls & attempted)
+        attempted |= calls
+        self.assertEqual(self.history(root), original)
+        self.assertEqual(self.saved_count(result['batch_id']), result['observation_count'])
+        for _ in range(16):
+            result, calls = self.invoke({'continue_batch_id': result['batch_id']},
+                                        response=lambda address, port: 'filtered')
+            self.assertTrue(result['queryable'], result)
+            self.assertFalse(calls & attempted)
+            attempted |= calls
+        # The same full-grid run35 may progress or refuse BEFORE a reservation,
+        # depending on actual CPU/SQL cost. It must never strand contacted work.
+        before = self.history()
+        result, calls = self.real_continue(result['batch_id'])
+        if result.get('queryable'):
+            self.assertTrue(calls)
+            self.assertFalse(calls & attempted)
+            self.assertEqual(self.saved_count(result['batch_id']), result['observation_count'])
+        else:
+            self.assertIn('error', result)
+            self.assertFalse(calls)
+            self.assertFalse(result.get('collection_performed', False))
+            self.assertEqual(self.history(), before)
+        self.assertEqual(self.history(root), original)
+
+    def test_real_deadline_large_zero_progress_history_is_saved_or_refused_before_effects(self):
+        self.policy = config.validate_policy({
+            'networks': {'lab': {'cidr': '192.0.2.0/24',
+                                 'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
+            'limits': {'operation_timeout_seconds': 5, 'host_timeout_seconds': 10,
+                       'concurrent_probes': 1}}, self.home)
+        result, attempted = self.invoke({'network': 'lab'}, response=lambda address, port: 'filtered')
+        original = schedule.Scheduler.run
+        def starved(scheduler):
+            # Setup-only external scheduling starvation. The real producer still
+            # emits and persists each genuine all-not-started child normally.
+            schedule.time.sleep(max(0, scheduler.deadline - schedule.time.monotonic()))
+            return original(scheduler)
+        with patch.object(schedule.Scheduler, 'run', starved):
+            for _ in range(39):
+                result, calls = self.invoke({'continue_batch_id': result['batch_id']})
+                self.assertTrue(result['queryable'], result)
+                self.assertFalse(calls)
+        before = self.history()
+        batch = result['batch_id']
+        shorter = replace(self.policy, limits=replace(self.policy.limits, operation_timeout_seconds=3))
+        result, calls = self.real_continue(batch, policy=shorter)
+        if result.get('queryable'):
+            self.assertTrue(calls)
+            self.assertFalse(calls & attempted)
+            attempted |= calls
+            batch = result['batch_id']
+            before = self.history()
+        else:
+            self.assertIn('error', result)
+            self.assertFalse(calls)
+            self.assertFalse(result.get('collection_performed', False))
+            self.assertEqual(self.history(), before)
+        # Lowering SQL lock patience must not remove the
+        # CPU/serialization reserve from an otherwise admitted operation.
+        low_busy = replace(self.policy, limits=replace(self.policy.limits, busy_timeout_ms=1))
+        result, calls = self.real_continue(batch, policy=low_busy)
+        if result.get('queryable'):
+            self.assertTrue(calls)
+            self.assertFalse(calls & attempted)
+            self.assertEqual(self.saved_count(result['batch_id']), result['observation_count'])
+        else:
+            self.assertIn('error', result)
+            self.assertFalse(calls)
+            self.assertFalse(result.get('collection_performed', False))
+            self.assertEqual(self.history(), before)
+
+    def test_intervening_commit_revalidates_ancestry_before_reservation(self):
+        first, _ = self.partial()
+        second, _ = self.invoke({'continue_batch_id': first['batch_id']},
+                                response=lambda address, port: 'filtered')
+        original = continuation._continue
+        tampered = []
+        def changed(reader, version, lineage, deadline):
+            with storage.Store(self.policy, writable=True) as store, store.transaction():
+                store.connection.execute('DROP TRIGGER immutable_probes_UPDATE')
+                store.connection.execute('UPDATE probes SET probe_name="tcp_22_999" '
+                                         'WHERE id=(SELECT id FROM probes WHERE batch_id=? LIMIT 1)',
+                                         (first['batch_id'],))
+            tampered.extend(self.history())
+            return original(reader, version, lineage, deadline)
+        with patch.object(continuation, '_continue', changed):
+            result, calls = self.invoke({'continue_batch_id': second['batch_id']})
+        self.assertIn('error', result)
+        self.assertFalse(calls)
+        self.assertEqual(self.history(), tuple(tampered))
+
+    def test_request_local_reservation_is_bound_and_no_history_replayed_after_contact(self):
+        first, _ = self.partial()
+        original = continuation.store_batch
+        def stored(store, *args, **kwargs):
+            reservation = kwargs['endpoint_reservation']
+            self.assertEqual(reservation.selection(store), reservation.lineage.remaining)
+            with storage.Store(self.policy) as other, self.assertRaises(ValueError):
+                reservation.selection(other)
+            policy = store.policy
+            store.policy = replace(policy, limits=replace(policy.limits, observations=1))
+            try:
+                with self.assertRaises(ValueError):
+                    reservation.selection(store)
+            finally:
+                store.policy = policy
+            with self.assertRaises(ValueError):
+                reservation.selection(store, child=first['batch_id'])
+            return original(store, *args, **kwargs)
+        with patch.object(continuation, 'store_batch', stored), \
+                patch.object(continuation, 'load_lineage', wraps=continuation.load_lineage) as replay:
+            result, calls = self.invoke({'continue_batch_id': first['batch_id']})
+        self.assertTrue(result['queryable'], result)
+        self.assertTrue(calls)
+        self.assertEqual(replay.call_count, 1)
+        # Cold recovery is a separate invocation and must replay complete history.
+        with patch.object(continuation, 'load_lineage', wraps=continuation.load_lineage) as cold:
+            result = json.loads(self.handler().check_endpoints({'batch_id': result['batch_id']}))
+        self.assertTrue(result['queryable'], result)
+        self.assertEqual(cold.call_count, 1)
 
     def test_invalid_missing_foreign_revoked_changed_intent_has_zero_effects(self):
         missing = self.handler()

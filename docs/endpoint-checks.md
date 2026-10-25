@@ -139,18 +139,27 @@ concurrently continuing that same parent never recollects: it returns the saved
 successor's no-contact recovery result, or `uncertain` if the reserved child is not
 durable. Preview reports `continued` and `successor_batch_id` for a saved successor;
 select that ID to make further progress. If projection failed, resume that child.
-An uncertain reservation may still be actively collecting: preview the parent again
-before treating it as interrupted. Do not start another full check to bypass it.
-If interrupted before child persistence, retain the parent and reserved child IDs:
-effects are unknown, no child can be resumed, and the reservation is not cleared.
+An uncertain reservation can mean active collection OR a producer that crashed,
+was interrupted or failed to save. Confirm that the original producer exited or
+reached its original operation deadline, then preview the parent again. A claim's
+creation time and a newly lowered current timeout do not establish that original
+deadline. Waiting or previewing cannot restore unsaved evidence. Do not start
+another full check to bypass the reservation. If no child was saved after the
+producer ended, retain the parent and reserved child IDs: effects are unknown,
+no child can be resumed, and the reservation is not cleared.
 Do not delete history or assume nothing ran. A separately chosen new full check
 can repeat prior contacts; it is not recovery. This is not crash-exactly-once TCP.
 `limits.observations` bounds each batch and the original authorized grid, not the
 sum of historical rows. Superseded `not_started` rows do not consume a cumulative
-quota. Complete ancestry validation remains operation-deadline-bound, with bounded
-per-batch reads and a separate structural limit of 4096 batches (including the root).
-That limit accommodates every progressing in-budget grid even at one newly resolved
-tuple per run; repeated zero-progress runs can still reach it. A structural-limit
+quota. Complete ancestry validation counts against the real operation deadline.
+Continuation refuses before reservation or traffic if validation leaves
+insufficient time for useful collection and its persistence reserve. An admitted
+run reuses its request-local validated ancestry for its exact reserved child's
+save/projection; cold recovery independently validates history. Per-batch reads
+and retained probe objects are bounded, with a separate structural limit of 4096
+batches (including the root). That structural limit is not an execution-time
+guarantee: large retained or zero-progress histories can exhaust the time budget
+first. A structural-limit
 refusal names the batch bound: retain the saved IDs/history for operator review,
 not deletion or a full rescan. If a lowered `limits.observations` blocks the original
 grid, check that setting against the grid before retrying within the hard ceilings.

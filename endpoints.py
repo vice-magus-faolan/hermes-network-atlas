@@ -6,17 +6,22 @@ boundary; application uses the existing unique-per-batch transactional marker.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 from ipaddress import ip_network
 import json
 import re
 import sqlite3
 import time
+from typing import TYPE_CHECKING
 
 from .batches import Probe, _scope, _validate_probes, store_batch
 from .config import ConfigError, Limits, NAME_PATTERN, Network, Policy, validate_network
 from .errors import RequestError, StoreError
 from .host_schedule import Scheduler
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
+
+if TYPE_CHECKING:
+    from .endpoint_continuation import Reservation
 
 STATES = ('open', 'closed', 'no_response', 'unavailable', 'not_started')
 RECOVERY_ERRORS = {
@@ -109,7 +114,7 @@ def _stored(store: Store, batch_id: str):
     return batch
 
 
-def _project(store: Store, batch) -> dict:
+def _project(store: Store, batch, *, reservation: Reservation | None = None) -> dict:
     """One transaction serializes double resumes and prevents partial projections."""
     # Historical identity must remain visible after a policy limit is lowered.
     # The immutable hard ceiling bounds reads; current limits still gate use.
@@ -118,7 +123,8 @@ def _project(store: Store, batch) -> dict:
     probes = tuple(Probe(row['probe_name'], row['outcome'], row['started_at'], row['ended_at'], row['coverage_kind'],
                          row['coverage_value'], row['evidence_kind'], row['diagnostic_code']) for row in rows)
     from .endpoint_continuation import saved_selection
-    grid = validate_probes(store.policy, batch['scope_name'], probes, selection=saved_selection(store, batch['id']))
+    grid = validate_probes(store.policy, batch['scope_name'], probes,
+                           selection=saved_selection(store, batch['id'], reservation))
     _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'],
                      batch['ended_at'], batch['completion'], probes)
     previous = store.connection.execute(
@@ -197,13 +203,17 @@ def check(policy: Policy, params: object) -> dict:
     return _finish(policy, receipt, deadline)
 
 
-def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
+def _finish(policy: Policy, receipt: dict, deadline: float, *, reservation: Reservation | None = None) -> dict:
     receipt['stage'] = 'projection'
     try:
-        with Store(policy, writable=True, deadline=deadline) as store, store.transaction():
+        if reservation is not None and reservation.policy is not policy:
+            raise RequestError('endpoint continuation: matching request-local policy required')
+        context = nullcontext(reservation.store) if reservation is not None else Store(
+            policy, writable=True, deadline=deadline)
+        with context as store, store.transaction():
             batch = _stored(store, receipt['batch_id'])
             receipt['completion'] = batch['completion']
-            result = _project(store, batch)
+            result = _project(store, batch, reservation=reservation)
             completion = batch['completion']
         receipt.update(applied=True, projected=True, completion=completion)
         receipt['stage'] = 'readback'
