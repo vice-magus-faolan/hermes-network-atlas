@@ -3,14 +3,128 @@
 from contextlib import redirect_stdout
 from dataclasses import replace
 import argparse
+import hashlib
 import importlib
 import io
 import json
 import os
 from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
 from unittest.mock import patch
 
 from helpers import symlink_plugin_data
+
+
+def _history(storage, policy):
+    with storage.Store(policy) as store, store.snapshot():
+        return list(store.connection.iterdump())
+
+
+def _writer_overlap(cli, conversion, storage, core, policy, destination):
+    """Commit real producer history after copy validation, not a fabricated dump."""
+    action = ['convert-legacy', '--writers-stopped']
+    before = _history(storage, policy)
+    real_fsync = conversion.os.fsync
+    written = []
+
+    def commit_writer():
+        with storage.Store(policy, writable=True) as writer:
+            written.append(core.create_device(writer, 'Concurrent legacy writer')['device_id'])
+        assert Path(str(policy.database) + '-wal').stat().st_size > 0
+
+    def fsync_then_write(fd):
+        real_fsync(fd)
+        if not written:
+            commit_writer()
+
+    # Both fingerprints already agree when the real fsync callback permits this
+    # otherwise-valid writer. Initial-only comparison used to report success.
+    with patch.object(conversion.os, 'fsync', side_effect=fsync_then_write):
+        result = cli(action, 2)
+    assert 'source changed' in result['error'], result
+    assert len(written) == 1
+    assert not destination.exists()
+    assert list(destination.parent.glob('.atlas-convert-*')) == []
+    after = _history(storage, policy)
+    assert set(before) < set(after)
+    # An earlier write must also refuse; it may be detected by backup comparison.
+    real_fingerprint = conversion._fingerprint
+    def fingerprint_then_write(connection, deadline):
+        result = real_fingerprint(connection, deadline)
+        if len(written) == 1:
+            commit_writer()
+        return result
+    with patch.object(conversion, '_fingerprint', side_effect=fingerprint_then_write):
+        result = cli(action, 2)
+    assert 'backup differs' in result['error'] or 'source changed' in result['error'], result
+    assert len(written) == 2 and not destination.exists()
+    assert list(destination.parent.glob('.atlas-convert-*')) == []
+    assert set(after) < set(_history(storage, policy))
+    # Produce an equal completed copy through the real converter, stopping only
+    # before native settings. Reuse needs the same final source-change guard.
+    real_copy = conversion._copy_store
+    def publish_then_interrupt(*args):
+        real_copy(*args)
+        raise OSError('synthetic interruption before settings commit')
+    with patch.object(conversion, '_copy_store', side_effect=publish_then_interrupt):
+        cli(action, 2)
+    copied = _history(storage, replace(policy, database=destination))
+    assert copied == _history(storage, policy)
+    destination_bytes = destination.read_bytes()
+    def existing_fingerprint_then_write(connection, deadline):
+        result = real_fingerprint(connection, deadline)
+        database = Path(connection.execute('PRAGMA database_list').fetchone()[2])
+        if database == destination:
+            commit_writer()
+        return result
+    with patch.object(conversion, '_fingerprint', side_effect=existing_fingerprint_then_write):
+        result = cli(action, 2)
+    assert 'source changed' in result['error'], result
+    assert len(written) == 3
+    assert destination.read_bytes() == destination_bytes
+    assert _history(storage, replace(policy, database=destination)) == copied
+    return {'source': _history(storage, policy), 'destination': copied}
+
+
+def _hard_kill(cli, conversion, storage, policy, destination, home):
+    """Kill only our actual native converter child while its stage is unpublished."""
+    foreign = destination.parent / '.atlas-convert-foreign.sqlite3'
+    foreign.write_bytes(b'UNKNOWN_FOREIGN_COPY')
+    original = {path.name: path.read_bytes() for path in policy.database.parent.iterdir()
+                if path.is_file() and not path.name.endswith('-shm')}
+    history = _history(storage, policy)
+    ready = home.parent / 'conversion-kill-ready.json'
+    child = subprocess.Popen([sys.executable, str(Path(__file__).with_name('runtime_smoke.py')),
+                              sys.argv[1], 'conversion_kill_child'],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 20
+        while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ready.exists(), 'owned converter did not reach prepublication staging'
+        temporary = Path(json.loads(ready.read_text())['temporary'])
+        assert temporary.parent == destination.parent
+        assert temporary.name.startswith('.atlas-convert-') and temporary.suffix == '.sqlite3'
+        assert not destination.exists()
+        assert _history(storage, replace(policy, database=temporary)) == history
+        child.kill()
+        stdout, stderr = child.communicate(timeout=10)
+        assert child.returncode == -signal.SIGKILL, stdout + stderr
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.communicate(timeout=10)
+    assert temporary.exists(), 'SIGKILL cannot run the converter finally block'
+    assert foreign.read_bytes() == b'UNKNOWN_FOREIGN_COPY'
+    assert original == {path.name: path.read_bytes() for path in policy.database.parent.iterdir()
+                        if path.is_file() and not path.name.endswith('-shm')}
+    assert _history(storage, policy) == history
+    assert not destination.exists()
+    return {'temporary': str(temporary), 'digest': hashlib.sha256(temporary.read_bytes()).hexdigest(),
+            'foreign': str(foreign)}
 
 
 def run_conversion(mode, home, manager):
@@ -38,7 +152,16 @@ def run_conversion(mode, home, manager):
     legacy = home / 'network-atlas' / 'atlas.sqlite3'
     destination = plugin_data_dir('network-atlas').resolve() / 'atlas.sqlite3'
     saved = home.parent / 'conversion.json'
-    if mode == 'conversion':
+    if mode == 'conversion_kill_child':
+        def wait_before_publication(temporary, target):
+            assert Path(target) == destination
+            (home.parent / 'conversion-kill-ready.json').write_text(json.dumps({'temporary': str(temporary)}))
+            while True:
+                signal.pause()
+        with patch.object(conversion.os, 'link', side_effect=wait_before_publication):
+            cli(action)
+        raise AssertionError('owned converter must be killed before publication')
+    if mode in {'conversion', 'conversion_overlap', 'conversion_hardkill'}:
         raw = conversion.read_legacy(home)
         assert ctx.get_config('policy', None) == {}
         native_config = (home / 'config.yaml').read_bytes()
@@ -58,6 +181,19 @@ def run_conversion(mode, home, manager):
             original = {path.name: path.read_bytes() for path in legacy.parent.iterdir()
                         if path.is_file() and not path.name.endswith('-shm')}
             assert 'legacy store' in cli(['query'], 2)['error']
+            if mode != 'conversion':
+                if mode == 'conversion_overlap':
+                    data = _writer_overlap(cli, conversion, storage, core, policy, destination)
+                else:
+                    data = _hard_kill(cli, conversion, storage, policy, destination, home)
+                assert (home / 'config.yaml').read_bytes() == native_config
+                assert ctx.get_config('policy', None) == {}
+                saved.write_text(json.dumps({'device': device, 'batch': batch, 'receipt': receipt,
+                                             'history': history, 'raw': raw, 'application': application,
+                                             'adversarial': data}))
+                manager.unload()
+                print(json.dumps({'mode': mode, 'native_conversion': True}))
+                return 0
             # A pre-publication failure must remove only its temporary copy.
             with patch.object(conversion.os, 'link', side_effect=OSError('synthetic publish interruption')) as publish:
                 assert not cli(action, 2)['persisted']
@@ -101,8 +237,23 @@ def run_conversion(mode, home, manager):
     else:
         data = json.loads(saved.read_text())
         assert 'legacy store' in cli(['query'], 2)['error']
+        if mode == 'conversion_overlap_reopen':
+            native_config = (home / 'config.yaml').read_bytes()
+            policy = replace(config.validate_policy(data['raw'], home), database=legacy)
+            assert 'conflicts' in cli(action, 2)['error']
+            assert _history(storage, policy) == data['adversarial']['source']
+            assert _history(storage, replace(policy, database=destination)) == data['adversarial']['destination']
+            assert (home / 'config.yaml').read_bytes() == native_config
+            manager.unload()
+            print(json.dumps({'mode': mode, 'fresh_native_process_persistence': True}))
+            return 0
         result = cli(action)
-        assert result['converted'] and not result['copied'] and result['originals_retained']
+        assert result['converted'] and result['originals_retained']
+        assert result['copied'] == (mode == 'conversion_hardkill_reopen')
+        if mode == 'conversion_hardkill_reopen':
+            remnant = data['adversarial']
+            assert hashlib.sha256(Path(remnant['temporary']).read_bytes()).hexdigest() == remnant['digest']
+            assert Path(remnant['foreign']).read_bytes() == b'UNKNOWN_FOREIGN_COPY'
         converted = {**data['raw'], 'store': {'shared_sqlite_path': str(destination)}}
         assert ctx.get_config('policy', None) == converted
         assert cli(['query'])['devices'][0]['id'] == data['device']

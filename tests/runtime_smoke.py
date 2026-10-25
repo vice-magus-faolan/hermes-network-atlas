@@ -330,7 +330,8 @@ def main() -> int:
         return _symlink_profiles_smoke(home, ctx, manager, dispatch, get_plugin_command_handler("network"))
     if mode == "revocation":
         return _policy_revocation_smoke(home, ctx, manager, dispatch, get_plugin_command_handler("network"))
-    if mode in {"conversion", "conversion_reopen"}:
+    if mode in {"conversion", "conversion_reopen", "conversion_overlap", "conversion_overlap_reopen",
+                "conversion_hardkill", "conversion_hardkill_reopen", "conversion_kill_child"}:
         from native_conversion import run_conversion
         return run_conversion(mode, home, manager)
     if mode == "invalid":

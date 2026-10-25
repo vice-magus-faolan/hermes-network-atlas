@@ -61,6 +61,12 @@ def _fingerprint(connection: sqlite3.Connection, deadline: float) -> bytes:
     return digest.digest()
 
 
+def _require_unchanged_source(connection: sqlite3.Connection, version: int) -> None:
+    """Detect other-connection commits since this connection's initial sample."""
+    if connection.execute("PRAGMA data_version").fetchone()[0] != version:
+        raise ConfigError("legacy conversion: source changed; stop writers and preserve both stores")
+
+
 def _copy_store(source: Path, destination: Path, home: Path) -> bool:
     """WAL-aware backup, no-clobber publication and exact-content cold retry.
 
@@ -68,18 +74,21 @@ def _copy_store(source: Path, destination: Path, home: Path) -> bool:
     includes committed WAL rows; originals and sidecars are never moved/deleted.
     A completed copy survives a later settings-write failure and is reusable only
     while it still equals the original. Concurrent destination publication fails.
+    The final source-change check is not a lock across publication/settings commit.
     """
     policy = replace(validate_policy({}, home), database=source)
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     with Store(policy, deadline=deadline) as store:
         # Store uses Row for application callers; dump/integrity checks need tuples.
         store.connection.row_factory = None
+        version = store.connection.execute("PRAGMA data_version").fetchone()[0]
         original = _fingerprint(store.connection, deadline)
         if destination.exists():
             with Store(replace(policy, database=destination), deadline=deadline) as existing:
                 existing.connection.row_factory = None
                 if _fingerprint(existing.connection, deadline) != original:
                     raise ConfigError("legacy conversion: destination conflicts; preserve both stores")
+            _require_unchanged_source(store.connection, version)
             return False
         private_directory(destination.parent)
         fd, name = tempfile.mkstemp(prefix=".atlas-convert-", suffix=".sqlite3", dir=destination.parent)
@@ -96,6 +105,7 @@ def _copy_store(source: Path, destination: Path, home: Path) -> bool:
                     raise ConfigError("legacy conversion: backup differs; original retained")
             with temporary.open("rb") as handle:
                 os.fsync(handle.fileno())
+            _require_unchanged_source(store.connection, version)
             os.link(temporary, destination)
             directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
             try:

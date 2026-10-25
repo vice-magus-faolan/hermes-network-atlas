@@ -175,9 +175,25 @@ is read only by the explicit converter (bounded to 64 KiB); it is never a runtim
 The flag attests that you stopped writers; it is not a process detector. Originals
 are retained, not renamed/deleted. Existing nonempty native settings and an existing
 destination must match the conversion exactly; divergent stores/settings refuse
-without overwrite or merge. A failure before publication removes its temporary
-copy. A failure after DB publication but before settings commit leaves that complete
-copy for cold retry: keep writers stopped and repeat the command in a fresh CLI.
+without overwrite or merge. The converter compares complete logical history and
+checks for other-connection source commits from before the initial comparison
+through a final check immediately before publication (or reuse of an equal copy).
+Detected changes refuse conversion. This check is not a write lock: a commit after
+it can still race publication and the separate native settings write. Keep all
+writers stopped and settings unchanged through completion; this is not live migration.
+
+A catchable failure before publication removes the converter's own temporary
+copy. SIGKILL, a process crash or power loss can bypass cleanup and leave private
+`.atlas-convert-*.sqlite3` files in the destination directory; these are not
+automatically reused or deleted. Keep originals, WAL sidecars, any published
+destination and all unknown/foreign copies intact. With writers stopped, repeat
+the command in a fresh CLI: it makes a new copy if no destination exists, or reuses
+only an equal completed destination. A failure after DB publication but before
+settings commit likewise leaves that complete copy for cold retry. Investigate
+remnants using private consistent backups and your existing SQLite recovery
+procedure; a temporary filename alone proves neither ownership nor completeness
+and is not permission to delete or promote it.
+
 Do not resume old and new writers together. Once native history changes, replaying
 the converter against old originals correctly conflicts. Preserve both stores and
 repair the selected binding deliberately; never delete history to force a retry.
