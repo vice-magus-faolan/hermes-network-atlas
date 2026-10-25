@@ -512,7 +512,7 @@ class EndpointTests(unittest.TestCase):
         result = self.collect(policy)
         self.assertTrue(result['queryable'])
         with storage.Store(policy, writable=True) as migrated:
-            self.assertEqual(migrated.schema_version, 2)
+            self.assertEqual(migrated.schema_version, 3)
             for table, rows in history.items():
                 actual = [tuple(row) for row in migrated.connection.execute(f'SELECT * FROM {table}')]
                 self.assertEqual(actual[:len(rows)], rows)

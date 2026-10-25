@@ -303,7 +303,11 @@ hermes -p PROFILE network-atlas resume-endpoints BATCH_ID
 If `persisted=true` but `queryable=false`, save the ID and resume instead of
 rescanning. Resume never recollects. Read `completion` separately from `persisted`,
 `applied`, `projected` and `queryable`. Endpoint batches do not use reconciliation
-or create devices, aliases or topology. See [endpoint recovery](endpoint-checks.md#commands-and-recovery).
+or create devices, aliases or topology. To make further bounded progress after a
+timeout, use `preview-endpoints BATCH_ID`, then explicitly `continue-endpoints BATCH_ID`.
+Continue makes new TCP traffic only for still-unattempted work and returns a new
+linked batch; preview that successor to inspect progress. This is different from
+no-contact resume. See [continuation and interruption](endpoint-checks.md#continue-unfinished-work--new-traffic).
 
 ### Dependencies and transport effects
 
@@ -387,8 +391,8 @@ resume a saved batch after repairing the reported category, rather than rescanni
   the budget. Endpoint recovery uses its stored ID rather than another scan.
 - Store or version failure: preserve the database and use a compatible Atlas version;
   make a consistent backup before changing versions. Writable opens upgrade
-  schema 1 to 2 transactionally; read-only schema-1 access does not migrate.
-  Older binaries cannot write schema 2. See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
+  schema 1 or 2 to 3 transactionally; read-only access does not migrate.
+  Older binaries cannot read/write schema 3. See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
 
 Older readers may also reject additive configuration keys or `not_started` probe
 outcomes. Update shared-store readers before using new features; historical

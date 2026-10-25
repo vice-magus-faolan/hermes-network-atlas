@@ -63,6 +63,12 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     endpoints.add_argument("network")
     resume = commands.add_parser("resume-endpoints", allow_abbrev=False)
     resume.add_argument("batch_id", help="Resume stored local endpoint evidence; never collects")
+    preview = commands.add_parser("preview-endpoints", allow_abbrev=False,
+                                  help="Read remaining unattempted work; no collection")
+    preview.add_argument("batch_id")
+    continuation = commands.add_parser("continue-endpoints", allow_abbrev=False,
+                                       help="Explicitly make NEW TCP checks of remaining unattempted work")
+    continuation.add_argument("batch_id")
 
 
 def run_command(args: argparse.Namespace, policy_loader: Callable[[], Policy], *,
@@ -98,10 +104,12 @@ def _decode(text: str, policy: Policy) -> object:
 
 def _read_command(args: argparse.Namespace, policy: Policy) -> dict | None:
     handlers = Handlers(lambda: policy)
-    if args.atlas_action == "check-endpoints":
-        return json.loads(handlers.check_endpoints({"network": args.network}))
-    if args.atlas_action == "resume-endpoints":
-        return json.loads(handlers.check_endpoints({"batch_id": args.batch_id}))
+    endpoint_keys = {"resume-endpoints": "batch_id", "preview-endpoints": "preview_batch_id",
+                     "continue-endpoints": "continue_batch_id"}
+    if args.atlas_action in endpoint_keys or args.atlas_action == "check-endpoints":
+        selection = ({"network": args.network} if args.atlas_action == "check-endpoints" else
+                     {endpoint_keys[args.atlas_action]: args.batch_id})
+        return json.loads(handlers.check_endpoints(selection))
     if args.atlas_action == "inspect":
         return json.loads(handlers.inspect({"target": args.target}))
     if args.atlas_action == "discover":

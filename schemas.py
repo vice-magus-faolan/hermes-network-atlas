@@ -89,11 +89,13 @@ INSPECT_SCHEMA = {
 ENDPOINT_SCHEMA = {
     "name": "network_check_endpoints",
     "description": ("Check separately enabled configured TCP endpoints, persist, project and read back historical "
-                    "evidence. Select network OR resume exact batch_id without collecting again. "
+                    "evidence. Select network, no-contact resume batch_id, read-only preview_batch_id, OR "
+                    "explicit continue_batch_id to make NEW TCP checks of remaining unattempted work. "
                     "No service identity, greetings or SSH authority."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {key: {"type": "string", "maxLength": 64,
                                         "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}
-                                  for key in ("network", "batch_id")},
-                   "oneOf": [{"required": ["network"]}, {"required": ["batch_id"]}]},
+                                  for key in ("network", "batch_id", "preview_batch_id", "continue_batch_id")},
+                   "oneOf": [{"required": [key]} for key in
+                             ("network", "batch_id", "preview_batch_id", "continue_batch_id")]},
 }

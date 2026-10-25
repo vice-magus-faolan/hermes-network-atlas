@@ -135,21 +135,33 @@ class NativeRuntimeTests(unittest.TestCase):
         self.assertTrue(self.run_smoke("revocation")["replacement_revocation"])
 
     def test_native_endpoints_fresh_profiles_shared_physical_store_and_isolated_control(self):
+        self.endpoint_profiles('native_endpoints.py')
+
+    def test_native_continuation_producer_cold_owner_shared_reader_and_isolated_control(self):
+        self.endpoint_profiles('native_endpoint_continuation.py')
+
+    def endpoint_profiles(self, script):
         root = runtime_root()
+        continuation = script == 'native_endpoint_continuation.py'
         with scratch_home() as directory:
             scratch = Path(directory)
             (scratch / 'synthetic-atlas-home').touch()
             shared = scratch / 'shared.sqlite3'
-            for mode in ('collect', 'reader', 'isolated'):
-                home = scratch / mode
-                copy_plugin(home / 'plugins' / 'network-atlas')
-                (home / 'network-atlas').mkdir()
+            for mode in (('collect', 'owner', 'reader', 'isolated') if continuation else
+                         ('collect', 'reader', 'isolated')):
+                home = scratch / ('collect' if mode == 'owner' else mode)
+                if mode != 'owner':
+                    copy_plugin(home / 'plugins' / 'network-atlas')
+                    (home / 'network-atlas').mkdir()
                 raw: dict = {} if mode == 'isolated' else {'store': {'shared_sqlite_path': str(shared)}}
                 if mode == 'collect':
-                    raw['networks'] = {'lab': {'cidr': '192.0.2.8/31',
+                    raw['networks'] = {'lab': {'cidr': '192.0.2.0/27' if continuation else '192.0.2.8/31',
                                               'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
-                (home / 'config.yaml').write_text(json.dumps({'plugins': {
-                    'enabled': ['network-atlas'], 'entries': {'network-atlas': {'settings': {'policy': raw}}}}}))
+                    if continuation:
+                        raw['limits'] = {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}
+                if mode != 'owner':
+                    (home / 'config.yaml').write_text(json.dumps({'plugins': {
+                        'enabled': ['network-atlas'], 'entries': {'network-atlas': {'settings': {'policy': raw}}}}}))
                 env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(scratch / 'user'),
                        'HERMES_HOME': str(home), 'TMPDIR': str(scratch), 'PYTHONDONTWRITEBYTECODE': '1',
                        'HERMES_BUNDLED_PLUGINS': str(scratch / 'empty-bundled'), 'HERMES_ENABLE_PROJECT_PLUGINS': '0',
@@ -157,7 +169,7 @@ class NativeRuntimeTests(unittest.TestCase):
                        'XDG_CONFIG_HOME': str(scratch / 'xdg-config'), 'XDG_CACHE_HOME': str(scratch / 'xdg-cache'),
                        'XDG_DATA_HOME': str(scratch / 'xdg-data')}
                 policy_before = (home / 'config.yaml').read_bytes()
-                child = subprocess.run([sys.executable, str(ROOT / 'tests' / 'native_endpoints.py'), str(root), mode],
+                child = subprocess.run([sys.executable, str(ROOT / 'tests' / script), str(root), mode],
                                        env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
                 self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
                 self.assertEqual((home / 'config.yaml').read_bytes(), policy_before)

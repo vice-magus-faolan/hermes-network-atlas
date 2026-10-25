@@ -59,7 +59,9 @@ clients. Other sensitive endpoints remain an operator selection risk.
 ## Commands and recovery
 
 The model tool is `network_check_endpoints` with exactly one selection:
-`{"network":"home"}` to collect, or `{"batch_id":"<returned-id>"}` to resume.
+`{"network":"home"}` to collect, `{"batch_id":"<returned-id>"}` to resume,
+`{"preview_batch_id":"<returned-id>"}` to preview remaining work, or
+`{"continue_batch_id":"<returned-id>"}` to explicitly make new TCP checks.
 The same operation is exposed through the native local CLI and slash command:
 
 ```sh
@@ -93,6 +95,54 @@ persistence cannot promise a recoverable ID; another collection is a new check.
 `network_reconcile` remains the identity-oriented LAN/SSH route and rejects
 endpoint batches. Endpoint projection creates no devices, interfaces, address
 assignments, aliases, SSH capabilities, assertions or topology.
+
+## Continue unfinished work — new traffic
+
+After a timed-out collection, use its saved ID. First resume it if projection or
+readback failed. Then preview, explicitly continue once, and inspect the returned
+successor ID:
+
+```sh
+hermes network-atlas preview-endpoints BATCH_ID
+hermes network-atlas continue-endpoints BATCH_ID
+hermes network-atlas preview-endpoints SUCCESSOR_BATCH_ID
+```
+
+Slash equivalents are `/network preview-endpoints BATCH_ID` and
+`/network continue-endpoints BATCH_ID`. Preview is read-only: no transport,
+database creation/upgrade, evidence changes or policy changes. `remaining` lists
+up to the configured query-result cap; `omitted_remaining` counts the rest.
+`progress` reports the complete lineage's historical `total`, `attempted`,
+`responded`, `still_unattempted`, `excluded` and non-excluded `unavailable` counts.
+Attempted counts open/closed/no-response connects, not unavailable local transport.
+
+Continue makes NEW TCP traffic only for saved `not_started` tuples. It never
+retries open, closed, no-response or unavailable results, and never contacts
+excluded destinations. Current profile ownership and the exact original named
+network, CIDR and port grant must still match; evidence or another profile cannot
+grant access. The original grid must still fit `limits.observations`. All existing
+invocation deadlines, concurrency/rate, socket cleanup and output/record ceilings
+apply unchanged. A continuation can remain partial: inspect its successor preview
+before choosing another explicit invocation. No scheduler or automatic retry exists.
+
+Original batches, completion, applications and probe timestamps stay unchanged.
+Successors store only their selected subset with new times; endpoint query rows
+carry `parent_batch_id` (null for original runs). Cumulative progress combines
+historical runs, not a simultaneous census, current reachability or device identity.
+An `exhausted` selection means no continuable work, not that every endpoint answered.
+
+Each parent reserves at most one immutable successor before traffic. Repeating or
+concurrently continuing that same parent never recollects: it returns the saved
+successor's no-contact recovery result, or `uncertain` if the reserved child is not
+durable. Preview reports `continued` and `successor_batch_id` for a saved successor;
+select that ID to make further progress. If projection failed, resume that child.
+If interrupted before child persistence, retain the parent and reserved child IDs:
+effects are unknown, no child can be resumed, and the reservation is not cleared.
+Do not delete history or assume nothing ran. A separately chosen new full check
+can repeat prior contacts; it is not recovery. This is not crash-exactly-once TCP.
+Lineage validation is deadline-bound and capped at the existing hard 4096 probe
+records across runs; an over-budget lineage refuses further continuation without
+deleting its evidence.
 
 ## Read historical evidence
 
@@ -143,13 +193,13 @@ No config or permissions are copied. A profile using another store sees nothing
 from the shared file. Same-UID/native code remains trusted; SQLite is not an OS
 security boundary.
 
-Store schema 2 adds only an endpoint-projection table/index and immutable guards.
-A writable open transactionally upgrades an existing schema-1 store, preserving
+Store schema 2 adds the endpoint projection; schema 3 adds immutable continuation
+reservations. A writable open transactionally upgrades schema 1 or 2, preserving
 original rows and their immutable triggers. Batch/application envelope versions
-remain 1. Read-only opens support schema 1 without migration and report no new
-endpoint rows. Upgrade failure rolls back DDL and the version together. New
-schema-2 stores are not writable by older Atlas binaries; retain backups and use
-a compatible reader rather than attempting a downgrade.
+remain 1. Read-only opens support schema 1 and 2 without migration (schema 1 has
+no endpoint rows). Upgrade failure rolls back DDL and the version together.
+Schema-3 stores require a compatible reader/writer; retain backups and update
+shared-store readers before upgrading rather than attempting a downgrade.
 
 SSH greeting/banner reading is not supported; those inputs fail closed. No
 application bytes are sent/read, no credentials or host keys are touched, and an

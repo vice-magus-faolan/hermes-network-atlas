@@ -180,15 +180,23 @@ def _scalar_value(obs: Observation, store: Store) -> None:
 
 def store_batch(store: Store, collector: str, scope_name: str, started_at: str, ended_at: str,
                 completion: str, probes: tuple[Probe, ...], *, receipt: bool = False,
-                deadline: float | None = None, inspection_target: str | None = None) -> str | dict:
+                deadline: float | None = None, inspection_target: str | None = None,
+                endpoint_parent: str | None = None) -> str | dict:
     """Validate all evidence first, then atomically append batch, probes, facts and event."""
     kind, scope, source = _scope(store, collector, scope_name)
     _times(started_at, ended_at, started_at, ended_at)
     _validate_probes(store, collector, kind, scope, started_at, ended_at, completion, probes)
+    batch, operation = identifier(), identifier()
     if collector == "tcp_endpoint":
         from .endpoints import validate_probes
-        validate_probes(store.policy, scope_name, probes)
-    batch, operation = identifier(), identifier()
+        from .endpoint_continuation import reserved_child
+        child, selection = reserved_child(store, endpoint_parent)
+        validate_probes(store.policy, scope_name, probes, selection=selection)
+        if child is not None:
+            batch = child
+    elif endpoint_parent is not None:
+        raise ValueError("endpoint continuation requires endpoint evidence")
+
     with store.transaction():
         if inspection_target is not None:
             from .ssh_identity import resolve_in_store

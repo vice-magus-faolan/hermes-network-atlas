@@ -64,13 +64,17 @@ def _probe(index: int, address: str, port: int | None, started: str, result: tra
 
 class Scheduler:
     """Internal single-threaded owner; selector and all sockets close on interruption."""
-    def __init__(self, network: Network, policy: Policy, deadline: float, *, endpoints: bool = False):
+    def __init__(self, network: Network, policy: Policy, deadline: float, *, endpoints: bool = False,
+                 selection: frozenset[str] | None = None):
         self.network, self.policy, self.deadline = network, policy, deadline
         self.endpoints = endpoints
         self.host_deadlines: dict[int, float] = {}
         self.results: dict[tuple[int, int | None], Probe] = {}
         self.active: dict[object, tuple[transport.Attempt, int, str]] = {}
-        self.plans = iter(_plans(network, policy.limits.concurrent_probes, endpoints=endpoints))
+        if selection is not None and not endpoints:
+            raise ValueError('subset selection is endpoint-only')
+        self.plans = (plan for plan in _plans(network, policy.limits.concurrent_probes, endpoints=endpoints)
+                      if selection is None or _name(plan[0], plan[2]) in selection)
         self.pending = next(self.plans, None)
         self.next_start = time.monotonic()
         self.remaining_bytes = policy.limits.output_bytes

@@ -1,0 +1,277 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Explicit subset collection with immutable, pre-traffic successor reservations.
+
+A reservation is never released: without a durable child its physical effects
+are unknowable. Recovery may project a saved child, but must never recollect it.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import re
+import sqlite3
+import time
+
+from . import endpoints
+from .batches import Probe, _validate_probes, store_batch
+from .config import Limits, NAME_PATTERN, Policy
+from .errors import RequestError
+from .host_schedule import Scheduler
+from .host_transport import excluded
+from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
+
+
+@dataclass
+class Lineage:
+    """Validated historical coverage, not a simultaneous or live network census."""
+    batch: sqlite3.Row
+    root: str
+    runs: int
+    remaining: tuple[str, ...]
+    counts: dict[str, int]
+    excluded_count: int
+    grid: dict[str, tuple[str, int]]
+    records: int
+
+    def progress(self) -> dict:
+        return {'root_batch_id': self.root, 'runs': self.runs, 'total': sum(self.counts.values()),
+                'attempted': sum(self.counts[state] for state in ('open', 'closed', 'no_response')),
+                'responded': self.counts['open'] + self.counts['closed'],
+                'still_unattempted': len(self.remaining), 'excluded': self.excluded_count,
+                'unavailable': self.counts['unavailable'] - self.excluded_count,
+                'historical': True, 'current_reachability': 'not_established'}
+
+
+def _claim(store: Store, column: str, batch_id: str):
+    if store.schema_version < 3:
+        return None
+    if column not in {'parent_batch_id', 'child_batch_id'}:
+        raise ValueError('invalid continuation reference')
+    return store.connection.execute(
+        f'SELECT * FROM endpoint_continuations WHERE {column}=?', (batch_id,)).fetchone()
+
+
+def _selection(claim) -> tuple[str, ...]:
+    # Bound untrusted stored JSON before parsing; no caller-provided subset exists.
+    text = claim['selection_json']
+    if not isinstance(text, str) or len(text) > Limits().output_bytes:
+        raise RequestError('endpoint continuation: invalid saved selection')
+    names = json.loads(text)
+    if (not isinstance(names, list) or not 1 <= len(names) <= Limits().observations
+            or any(not isinstance(name, str) for name in names) or names != sorted(set(names))):
+        raise RequestError('endpoint continuation: invalid saved selection')
+    parse_time(claim['created_at'])
+    return tuple(names)
+
+
+def _probes(store: Store, batch) -> tuple[Probe, ...]:
+    rows = store.connection.execute('SELECT * FROM probes WHERE batch_id=? ORDER BY probe_name LIMIT ?',
+                                    (batch['id'], Limits().observations + 1)).fetchall()
+    if (any(row['absence_eligible'] for row in rows) or store.connection.execute(
+            'SELECT 1 FROM observations WHERE batch_id=? LIMIT 1', (batch['id'],)).fetchone()):
+        raise RequestError('endpoint continuation: contradictory identity evidence')
+    probes = tuple(Probe(row['probe_name'], row['outcome'], row['started_at'], row['ended_at'],
+                         row['coverage_kind'], row['coverage_value'], row['evidence_kind'], row['diagnostic_code'])
+                   for row in rows)
+    return probes
+
+
+def _history(store: Store, batch_id: str) -> list:
+    """Read bounded ancestry without interpreting missing records as fresh work."""
+    chain, seen, record_count = [], set(), 0
+    current = batch_id
+    while current is not None:
+        if current in seen or len(seen) >= Limits().observations:
+            raise RequestError('endpoint continuation: cyclic or over-budget lineage')
+        seen.add(current)
+        batch = endpoints._stored(store, current)
+        if batch['source'] != 'tcp_endpoint' or batch['schema_version'] != 1:
+            raise RequestError('endpoint continuation: inconsistent saved batch')
+        probes = _probes(store, batch)
+        record_count += len(probes)
+        if record_count > Limits().observations:
+            raise RequestError('endpoint continuation: lineage exceeds record budget; retain history')
+        claim = _claim(store, 'child_batch_id', current)
+        chain.append((batch, probes, claim))
+        current = claim['parent_batch_id'] if claim is not None else None
+    return chain
+
+
+def load_lineage(store: Store, batch_id: str, *, allow_unapplied: bool = False) -> Lineage:
+    """Validate complete ancestry before selecting work; never prune failed history."""
+    chain = _history(store, batch_id)
+    counts: dict[str, int] = dict.fromkeys(endpoints.STATES, 0)
+    grid: dict[str, tuple[str, int]] = {}
+    remaining, excluded_count, previous = (), 0, None
+    for batch, probes, claim in reversed(chain):
+        selection = _selection(claim) if claim is not None else None
+        if previous is not None:
+            _validate_link(previous, batch, claim, selection, remaining)
+            counts['not_started'] = 0
+        grid = endpoints.validate_probes(store.policy, batch['scope_name'], probes, selection=selection)
+        _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'],
+                         batch['ended_at'], batch['completion'], probes)
+        _verify_projection(store, batch, probes, grid, allow_unapplied and batch['id'] == batch_id)
+        network = endpoints._authorized_network(store.policy, batch['scope_name'])
+        for probe in probes:
+            is_excluded = probe.diagnostic_code == 'destination_excluded'
+            if is_excluded != excluded(network, grid[probe.probe_name][0]):
+                raise RequestError('endpoint continuation: contradictory exclusion evidence')
+            counts[endpoints.RESULTS[(probe.outcome, probe.diagnostic_code)][0]] += 1
+            excluded_count += int(is_excluded)
+        remaining = tuple(sorted(probe.probe_name for probe in probes if probe.outcome == 'not_started'))
+        previous = batch
+    return Lineage(chain[0][0], chain[-1][0]['id'], len(chain), remaining, counts, excluded_count, grid,
+                   sum(len(probes) for _, probes, _ in chain))
+
+
+def _verify_projection(store: Store, batch, probes, grid, allow_missing: bool) -> None:
+    """Contradictory saved projections cannot be used to authorize further work."""
+    application = store.connection.execute('SELECT * FROM applications WHERE batch_id=?', (batch['id'],)).fetchone()
+    if application is None:
+        if allow_missing:
+            return
+        raise RequestError('endpoint continuation: resume-endpoints saved batch before continuing')
+    rows = store.connection.execute(
+        'SELECT p.probe_name,e.* FROM probes p JOIN endpoint_observations e ON e.probe_id=p.id '
+        'WHERE p.batch_id=? LIMIT ?', (batch['id'], Limits().observations + 1)).fetchall()
+    actual = {row['probe_name']: (row['address'], row['protocol'], row['port'], row['state'], row['qualified'])
+              for row in rows}
+    expected = {probe.probe_name: (grid[probe.probe_name][0], 'tcp', grid[probe.probe_name][1],
+                *endpoints.RESULTS[(probe.outcome, probe.diagnostic_code)]) for probe in probes}
+    counts: dict[str, int] = dict.fromkeys(endpoints.STATES, 0)
+    for probe in probes:
+        counts[endpoints.RESULTS[(probe.outcome, probe.diagnostic_code)][0]] += 1
+    result = {'id': application['id'], 'batch_id': batch['id'], 'applied': True, 'projected': True,
+              'observation_count': len(probes), 'state_counts': counts, 'applied_at': application['applied_at']}
+    if (actual != expected or len(rows) != len(probes) or application['schema_version'] != 1
+            or application['result_json'] != encode(result)):
+        raise RequestError('endpoint continuation: contradictory saved projection; retain history')
+
+
+def _validate_link(parent, child, claim, selection, remaining) -> None:
+    if (selection != remaining or not selection or claim['parent_batch_id'] != parent['id']
+            or claim['child_batch_id'] != child['id']
+            or (child['scope_name'], child['scope_value']) != (parent['scope_name'], parent['scope_value'])
+            or not parent['ended_at'] <= claim['created_at'] <= child['started_at']):
+        raise RequestError('endpoint continuation: inconsistent saved lineage; no new collection')
+
+
+def saved_selection(store: Store, batch_id: str) -> tuple[str, ...] | None:
+    """Projection of a subset must validate the claim and full original intent."""
+    claim = _claim(store, 'child_batch_id', batch_id)
+    if claim is None:
+        return None
+    load_lineage(store, batch_id, allow_unapplied=True)
+    return _selection(claim)
+
+
+def reserved_child(store: Store, parent: str | None) -> tuple[str | None, tuple[str, ...] | None]:
+    """Bind generic batch persistence to an existing exact endpoint reservation."""
+    if parent is None:
+        return None, None
+    lineage = load_lineage(store, parent)
+    claim = _claim(store, 'parent_batch_id', parent)
+    if claim is None or _selection(claim) != lineage.remaining:
+        raise RequestError('endpoint continuation: matching reservation required')
+    return claim['child_batch_id'], lineage.remaining
+
+
+def _preview(store: Store, lineage: Lineage) -> dict:
+    claim = _claim(store, 'parent_batch_id', lineage.batch['id'])
+    if claim is not None:
+        _validate_reservation(lineage, claim)
+    child = claim['child_batch_id'] if claim is not None else None
+    child_saved = child is not None and store.connection.execute(
+        'SELECT 1 FROM batches WHERE id=?', (child,)).fetchone() is not None
+    if child_saved and child is not None:
+        load_lineage(store, child, allow_unapplied=True)
+    state = ('continued' if child_saved else 'uncertain') if claim is not None else (
+        'ready' if lineage.remaining else 'exhausted')
+    # Details use the normal query cap; counts describe the complete selection.
+    cap = store.policy.limits.result_count
+    result = {'batch_id': lineage.batch['id'], 'successor_batch_id': child, 'state': state,
+              'collection_performed': False, 'progress': lineage.progress(),
+              'remaining': [{'address': lineage.grid[name][0], 'port': lineage.grid[name][1]}
+                            for name in lineage.remaining[:cap]],
+              'omitted_remaining': max(0, len(lineage.remaining) - cap)}
+    response_json(result, store.policy.limits.output_bytes)
+    return result
+
+
+def _validate_reservation(lineage: Lineage, claim) -> None:
+    if (_selection(claim) != lineage.remaining or not lineage.remaining
+            or claim['created_at'] < lineage.batch['ended_at']
+            or not isinstance(claim['child_batch_id'], str)
+            or re.fullmatch(NAME_PATTERN, claim['child_batch_id']) is None):
+        raise RequestError('endpoint continuation: inconsistent saved reservation; retain history')
+
+
+def continuation(policy: Policy, params: dict) -> dict:
+    """Preview is observational; continue reserves once then makes NEW TCP traffic."""
+    key, batch_id = next(iter(params.items()))
+    if not isinstance(batch_id, str) or re.fullmatch(NAME_PATTERN, batch_id) is None:
+        raise RequestError('batch_id: stable saved endpoint batch ID required')
+    deadline = time.monotonic() + policy.limits.operation_timeout_seconds
+    # Read-only first: invalid/foreign intent cannot create or upgrade a store.
+    with Store(policy, deadline=deadline) as store, store.snapshot():
+        lineage = load_lineage(store, batch_id)
+        preview = _preview(store, lineage)
+    if key == 'preview_batch_id' or preview['state'] == 'exhausted':
+        return preview
+    if preview['state'] == 'ready' and lineage.records + len(lineage.remaining) > Limits().observations:
+        raise RequestError('endpoint continuation: successor would exceed lineage record budget; retain history')
+    # Preflight the complete bounded recovery envelope before reserving or traffic.
+    response_json({**endpoints._receipt('0' * 36), 'parent_batch_id': batch_id,
+                   'stage': 'projection', 'completion': 'complete',
+                   'error': max(endpoints.RECOVERY_ERRORS.values(), key=len)},
+                  policy.limits.output_bytes)
+    with Store(policy, writable=True, deadline=deadline) as store, store.transaction():
+        lineage = load_lineage(store, batch_id)
+        claim = _claim(store, 'parent_batch_id', batch_id)
+        if claim is not None:
+            _validate_reservation(lineage, claim)
+        if claim is None:
+            child = identifier()
+            store.connection.execute('INSERT INTO endpoint_continuations VALUES (?,?,?,?)',
+                                     (batch_id, child, encode(lineage.remaining), timestamp(utc_now())))
+        else:
+            child = claim['child_batch_id']
+    if claim is not None:
+        return _recover(policy, batch_id, child, deadline)
+    return _collect(policy, lineage, child, deadline)
+
+
+def _recover(policy: Policy, parent: str, child: str, deadline: float) -> dict:
+    with Store(policy, deadline=deadline) as store:
+        saved = store.connection.execute('SELECT 1 FROM batches WHERE id=?', (child,)).fetchone()
+    if saved is None:
+        return {**endpoints._receipt(), 'parent_batch_id': parent, 'batch_id': child,
+                'stage': 'uncertain', 'error': 'endpoint continuation: reserved collection uncertain; '
+                'no automatic recollection; retain history and reserved child ID'}
+    return endpoints._finish(policy, {**endpoints._receipt(child), 'parent_batch_id': parent}, deadline)
+
+
+def _collect(policy: Policy, lineage: Lineage, child: str, deadline: float) -> dict:
+    parent = lineage.batch['id']
+    receipt = {**endpoints._receipt(), 'batch_id': child, 'parent_batch_id': parent,
+               'collection_performed': True, 'stage': 'uncertain'}
+    try:
+        network = endpoints.network_policy(policy, lineage.batch['scope_name'])
+        started = timestamp(utc_now())
+        reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
+        probes = Scheduler(network, policy, deadline - reserve, endpoints=True,
+                           selection=frozenset(lineage.remaining)).run()
+        completion = endpoints.collection_completion(probes)
+        with Store(policy, writable=True, deadline=deadline) as store:
+            stored = store_batch(store, 'tcp_endpoint', network.name, started, timestamp(utc_now()), completion,
+                                 probes, deadline=deadline, endpoint_parent=parent)
+            if stored != child:
+                raise ValueError('continuation persistence identity mismatch')
+        receipt.update(persisted=True, completion=completion)
+    except (OSError, ValueError, sqlite3.Error):
+        receipt['error'] = ('endpoint continuation: collection uncertain; no automatic recollection; '
+                            'retain history and reserved child ID')
+        return receipt
+    # Use the original no-contact projection/readback path, including on retries.
+    return endpoints._finish(policy, receipt, deadline)

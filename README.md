@@ -105,6 +105,10 @@ matching local policy (the quick start enables only passive discovery).
   Example: `{"target":"lab-a"}`.
 - `network_check_endpoints` — collect and persist separately enabled TCP evidence.
   Example: `{"network":"home"}`; no device or service identity is created.
+  For unfinished work, preview with `{"preview_batch_id":"BATCH_ID"}`, then
+  explicitly make new subset checks with `{"continue_batch_id":"BATCH_ID"}`.
+  [Continuation](docs/endpoint-checks.md#continue-unfinished-work--new-traffic) is
+  distinct from no-contact resume and preserves original history.
 - `network_update` — persist explained inference, never operator facts or access.
   Example: `{"device_id":"DEVICE_ID","field":"description","value":"Possible NAS","explanation":"Name suggests storage; unconfirmed"}`.
 

@@ -21,7 +21,7 @@ from .endpoints import check as check_endpoints
 
 COMMAND_USAGE = ("status|show <id>|map [text|markdown|mermaid]|discover <network> <passive|ping>|"
                  "inspect <alias-or-id>|reconcile [batch-id]|check-endpoints <network>|"
-                 "resume-endpoints <batch-id>|help")
+                 "resume-endpoints <batch-id>|preview-endpoints <batch-id>|continue-endpoints <batch-id>|help")
 
 
 def update_receipt(update: Update) -> str:
@@ -152,8 +152,10 @@ class Handlers:
 
     def _collection_command(self, parts: list[str]) -> str | None:
         """Exact slash collection arities route through the same validated handlers."""
-        if len(parts) == 2 and parts[0] in {"check-endpoints", "resume-endpoints"}:
-            return self.check_endpoints({"network" if parts[0] == "check-endpoints" else "batch_id": parts[1]})
+        endpoint_keys = {"check-endpoints": "network", "resume-endpoints": "batch_id",
+                         "preview-endpoints": "preview_batch_id", "continue-endpoints": "continue_batch_id"}
+        if len(parts) == 2 and parts[0] in endpoint_keys:
+            return self.check_endpoints({endpoint_keys[parts[0]]: parts[1]})
         if len(parts) == 2 and parts[0] == "inspect":
             return self.inspect({"target": parts[1]})
         if len(parts) == 3 and parts[0] == "discover":
