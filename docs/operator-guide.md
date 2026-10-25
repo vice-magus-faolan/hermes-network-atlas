@@ -74,10 +74,14 @@ the recommended operator boundary, not a guarantee Atlas enforces). On Linux
 with stock Hermes v0.22.5, the public storage helper creates `plugin-data/` and
 `plugin-data/network-atlas/` using the process umask: 0755 under 0022, 0700 under
 0077. Even a query can create these directories without initializing a database.
-Atlas creates a new database as 0600 but does not tighten existing directories
-or existing database files. A private database file does not make directory
-names, native config, exports or backups private. Review the actual selected
-home, ancestor directories, files and any shared target using your normal
+Atlas creates a new database as 0600 and resets the selected database file to
+0600 on every writable open, including an existing shared database. Loosening
+that file's mode for cross-UID sharing will be undone by the next writable open.
+This does not tighten existing storage directories or repair permissions on
+native config, WAL sidecars, backups or unselected legacy stores. A private
+database file does not make directory names, native config, exports or backups
+private. Review the actual selected home, ancestor directories, files and any
+shared target using your normal
 filesystem policy before use; do not assume installation repaired permissions.
 Same-UID processes remain trusted regardless of these mode bits.
 
