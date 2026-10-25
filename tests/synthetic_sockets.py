@@ -88,7 +88,7 @@ class SyntheticSocket:
         assert port != 4403
         self.address, self.port = address, port
         self.state = self.fixture.response(address, port)
-        self.fixture.calls.append((self.fixture.clock.now, address, port))
+        self.fixture.calls.append((self.fixture.clock.monotonic(), address, port))
         self.fixture.peak = max(
             self.fixture.peak, sum(s.address is not None and not s.closed for s in self.fixture.sockets))
 

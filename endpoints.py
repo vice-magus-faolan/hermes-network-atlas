@@ -6,17 +6,22 @@ boundary; application uses the existing unique-per-batch transactional marker.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 from ipaddress import ip_network
 import json
 import re
 import sqlite3
 import time
+from typing import TYPE_CHECKING
 
 from .batches import Probe, _scope, _validate_probes, store_batch
 from .config import ConfigError, Limits, NAME_PATTERN, Network, Policy, validate_network
 from .errors import RequestError, StoreError
 from .host_schedule import Scheduler
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
+
+if TYPE_CHECKING:
+    from .endpoint_continuation import Reservation
 
 STATES = ('open', 'closed', 'no_response', 'unavailable', 'not_started')
 RECOVERY_ERRORS = {
@@ -61,7 +66,8 @@ def network_policy(policy: Policy, name: str) -> Network:
     network = _authorized_network(policy, name)
     if ip_network(network.cidr).num_addresses * len(network.endpoint_ports) > policy.limits.observations:
         raise EndpointObservationLimitError(
-            'limits.observations: endpoint address/port grid exceeds configured record budget')
+            'limits.observations: endpoint address/port grid exceeds configured record budget; '
+            'check the configured limit against the original grid before retrying')
     return network
 
 
@@ -71,16 +77,20 @@ def plans(network: Network) -> dict[str, tuple[str, int]]:
             for index, address in enumerate(ip_network(network.cidr)) for port in network.endpoint_ports}
 
 
-def validate_probes(policy: Policy, name: str, probes: tuple[Probe, ...]) -> dict[str, tuple[str, int]]:
+def validate_probes(policy: Policy, name: str, probes: tuple[Probe, ...], *,
+                    selection: tuple[str, ...] | None = None) -> dict[str, tuple[str, int]]:
     """Reject missing/duplicate/forged evidence before storage or projection."""
     network = _authorized_network(policy, name)
     addresses = ip_network(network.cidr).num_addresses
     # Compare saved authorization before budget: expansion is not a request to
     # increase collection limits. Only matching, in-budget grids become plans.
-    if len(probes) != addresses * len(network.endpoint_ports) or {probe.probe_name for probe in probes} != {
-            f'tcp_{port}_{index}' for index in range(addresses) for port in network.endpoint_ports}:
+    names = (set(selection) if selection is not None else {
+        f'tcp_{port}_{index}' for index in range(addresses) for port in network.endpoint_ports})
+    if len(probes) != len(names) or {probe.probe_name for probe in probes} != names:
         raise RequestError('network.endpoints.tcp_ports: endpoint evidence grid must match current port policy')
     expected = plans(network_policy(policy, name))
+    if not names <= expected.keys():
+        raise RequestError('network.endpoints.tcp_ports: saved selection is outside current port policy')
     for probe in probes:
         if ((probe.outcome, probe.diagnostic_code) not in RESULTS
                 or probe.observations or probe.evidence_kind != 'tcp_endpoint'):
@@ -104,7 +114,7 @@ def _stored(store: Store, batch_id: str):
     return batch
 
 
-def _project(store: Store, batch) -> dict:
+def _project(store: Store, batch, *, reservation: Reservation | None = None) -> dict:
     """One transaction serializes double resumes and prevents partial projections."""
     # Historical identity must remain visible after a policy limit is lowered.
     # The immutable hard ceiling bounds reads; current limits still gate use.
@@ -112,7 +122,9 @@ def _project(store: Store, batch) -> dict:
                                     (batch['id'], Limits().observations + 1)).fetchall()
     probes = tuple(Probe(row['probe_name'], row['outcome'], row['started_at'], row['ended_at'], row['coverage_kind'],
                          row['coverage_value'], row['evidence_kind'], row['diagnostic_code']) for row in rows)
-    grid = validate_probes(store.policy, batch['scope_name'], probes)
+    from .endpoint_continuation import saved_selection
+    grid = validate_probes(store.policy, batch['scope_name'], probes,
+                           selection=saved_selection(store, batch['id'], reservation))
     _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'],
                      batch['ended_at'], batch['completion'], probes)
     previous = store.connection.execute(
@@ -153,6 +165,9 @@ def collection_completion(probes: tuple[Probe, ...]) -> str:
 
 def check(policy: Policy, params: object) -> dict:
     """Collect once, or resume a genuine local batch without any network effects."""
+    if isinstance(params, dict) and set(params) in ({'preview_batch_id'}, {'continue_batch_id'}):
+        from .endpoint_continuation import continuation
+        return continuation(policy, params)
     if not isinstance(params, dict) or set(params) not in ({'network'}, {'batch_id'}):
         raise RequestError('endpoint arguments: select a configured network OR exact batch_id, no other arguments')
     key = next(iter(params))
@@ -188,13 +203,17 @@ def check(policy: Policy, params: object) -> dict:
     return _finish(policy, receipt, deadline)
 
 
-def _finish(policy: Policy, receipt: dict, deadline: float) -> dict:
+def _finish(policy: Policy, receipt: dict, deadline: float, *, reservation: Reservation | None = None) -> dict:
     receipt['stage'] = 'projection'
     try:
-        with Store(policy, writable=True, deadline=deadline) as store, store.transaction():
+        if reservation is not None and reservation.policy is not policy:
+            raise RequestError('endpoint continuation: matching request-local policy required')
+        context = nullcontext(reservation.store) if reservation is not None else Store(
+            policy, writable=True, deadline=deadline)
+        with context as store, store.transaction():
             batch = _stored(store, receipt['batch_id'])
             receipt['completion'] = batch['completion']
-            result = _project(store, batch)
+            result = _project(store, batch, reservation=reservation)
             completion = batch['completion']
         receipt.update(applied=True, projected=True, completion=completion)
         receipt['stage'] = 'readback'
@@ -256,10 +275,14 @@ def query_endpoints(policy: Policy, args: dict, *, deadline: float | None = None
                 bindings.append(args[key])
         where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
         source = ' FROM endpoint_observations e JOIN probes p ON p.id=e.probe_id JOIN batches b ON b.id=p.batch_id'
+        parent = 'NULL AS parent_batch_id'
+        if store.schema_version >= 3:
+            source += ' LEFT JOIN endpoint_continuations c ON c.child_batch_id=b.id'
+            parent = 'c.parent_batch_id'
         total = store.connection.execute('SELECT COUNT(*)' + source + where, bindings).fetchone()[0]
         rows = store.connection.execute(
             'SELECT e.*,p.batch_id,p.probe_name,p.outcome,p.diagnostic_code,p.started_at,p.ended_at AS checked_at,'
-            'b.collector,b.source,b.policy_context,b.scope_name,b.scope_value,b.completion' + source + where +
+            'b.collector,b.source,b.policy_context,b.scope_name,b.scope_value,b.completion,' + parent + source + where +
             ' ORDER BY p.ended_at,e.probe_id LIMIT ? OFFSET ?', (*bindings, limit + 1, offset)).fetchall()
         result = {**empty, 'endpoints': [{**dict(row), 'qualified': bool(row['qualified']),
                     'qualification': 'historical_tcp_response_only' if row['qualified'] else 'no_response_or_no_check',

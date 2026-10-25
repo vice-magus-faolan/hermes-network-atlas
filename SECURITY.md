@@ -44,6 +44,13 @@ write locks; atomic persistence and rollback protect existing history. Deadlines
 are cooperative bounds, not hard real-time guarantees against OS descheduling or
 blocked filesystem calls.
 
+Explicit endpoint continuation reserves a unique successor before traffic and
+checks only saved unattempted tuples under current matching local grants. Preview
+and resume make no traffic. An interrupted reservation without a saved child stays
+uncertain and cannot automatically recollect; crash-exactly-once network effects
+are not claimed. Original history is never rewritten. See
+[continuation recovery](docs/endpoint-checks.md#continue-unfinished-work--new-traffic).
+
 SSH resolves only a current authorized alias or a uniquely mapped device ID and
 runs seven fixed read-only Linux probes. It requires BatchMode and strict existing
 host keys, with no key auto-acceptance/update, PTY, forwarding, LocalCommand,

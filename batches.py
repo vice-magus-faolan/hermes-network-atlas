@@ -12,6 +12,7 @@ from datetime import datetime
 from ipaddress import ip_address, ip_network
 import re
 import time
+from typing import TYPE_CHECKING
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
 from .errors import RequestError
@@ -19,6 +20,9 @@ from .identity import mac_address
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
 from .core import INTERFACE_TYPES
+
+if TYPE_CHECKING:
+    from .endpoint_continuation import Reservation
 
 OUTCOMES = ("success", "unavailable", "timeout", "output_limit", "command_failed", "parse_failed", "not_started")
 EVIDENCE_KINDS = ("local_interface", "cached_neighbor", "ping_response", "ssh_response", "tcp_endpoint", "none")
@@ -180,15 +184,24 @@ def _scalar_value(obs: Observation, store: Store) -> None:
 
 def store_batch(store: Store, collector: str, scope_name: str, started_at: str, ended_at: str,
                 completion: str, probes: tuple[Probe, ...], *, receipt: bool = False,
-                deadline: float | None = None, inspection_target: str | None = None) -> str | dict:
+                deadline: float | None = None, inspection_target: str | None = None,
+                endpoint_reservation: Reservation | None = None) -> str | dict:
     """Validate all evidence first, then atomically append batch, probes, facts and event."""
     kind, scope, source = _scope(store, collector, scope_name)
     _times(started_at, ended_at, started_at, ended_at)
     _validate_probes(store, collector, kind, scope, started_at, ended_at, completion, probes)
+    batch, operation = identifier(), identifier()
     if collector == "tcp_endpoint":
         from .endpoints import validate_probes
-        validate_probes(store.policy, scope_name, probes)
-    batch, operation = identifier(), identifier()
+        selection = endpoint_reservation.selection(store) if endpoint_reservation is not None else None
+        validate_probes(store.policy, scope_name, probes, selection=selection)
+        if endpoint_reservation is not None:
+            if scope_name != endpoint_reservation.lineage.batch['scope_name']:
+                raise RequestError('endpoint continuation: reserved network required')
+            batch = endpoint_reservation.claim[1]
+    elif endpoint_reservation is not None:
+        raise ValueError("endpoint continuation requires endpoint evidence")
+
     with store.transaction():
         if inspection_target is not None:
             from .ssh_identity import resolve_in_store
