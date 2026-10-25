@@ -41,7 +41,7 @@ def assert_stopped(test: unittest.TestCase, descendant: int) -> None:
     while status.exists():
         try:
             state = status.read_text()
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
             return
         if "State:\tZ" in state:
             return
@@ -432,6 +432,36 @@ class RunnerTests(unittest.TestCase):
     def run_probe(self, mode, limits=None, deadline=None):
         return runner.run((sys.executable, str(ROOT / "tests" / "offline_probe.py"), mode),
                           limits or self.limits, deadline or time.monotonic() + 10, host=True)
+
+    def test_assert_stopped_handles_proc_disappearance_but_rejects_live_process(self):
+        # A PID can vanish after exists(), including while an open proc file is read.
+        for error in (FileNotFoundError(2, "No such file"), ProcessLookupError(3, "No such process")):
+            with (self.subTest(error=type(error).__name__), patch.object(Path, "exists", return_value=True),
+                  patch.object(Path, "read_text", side_effect=error) as read,
+                  patch.object(time, "monotonic", return_value=100), patch.object(time, "sleep") as sleep):
+                assert_stopped(self, 123)
+                read.assert_called_once_with()
+                sleep.assert_not_called()
+        for exists, state in ((False, ""), (True, "State:\tZ (zombie)\n")):
+            with (self.subTest(exists=exists, state=state), patch.object(Path, "exists", return_value=exists),
+                  patch.object(Path, "read_text", return_value=state) as read,
+                  patch.object(time, "monotonic", return_value=100), patch.object(time, "sleep") as sleep):
+                assert_stopped(self, 123)
+                self.assertEqual(read.call_count, int(exists))
+                sleep.assert_not_called()
+        with (patch.object(Path, "exists", return_value=True),
+              patch.object(Path, "read_text", side_effect=PermissionError("unreadable proc status")),
+              self.assertRaises(PermissionError)):
+            assert_stopped(self, 123)
+        with (patch.object(Path, "exists", return_value=True),
+              patch.object(Path, "read_text", return_value="State:\tS (sleeping)\n") as read,
+              patch.object(time, "monotonic", side_effect=[100, 100.49, 100.5]) as clock,
+              patch.object(time, "sleep") as sleep):
+            with self.assertRaisesRegex(AssertionError, "owned descendant survived SIGKILL"):
+                assert_stopped(self, 123)
+            self.assertEqual(read.call_count, 2)
+            self.assertEqual(clock.call_count, 3)
+            sleep.assert_called_once_with(0.01)
 
     def test_actual_stream_combined_output_limit_and_success(self):
         self.assertEqual(self.run_probe("echo").stdout, b"safe-output")
