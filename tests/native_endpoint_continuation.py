@@ -60,6 +60,10 @@ def main():
                                            'limit': 100}) == original
         progress = atlas.cli(['preview-endpoints', second['batch_id']])
         assert progress['state'] == 'exhausted' and progress['progress']['still_unattempted'] == 0
+        ancestor = atlas.slash('preview-endpoints ' + first['batch_id'])
+        assert ancestor['successor_batch_id'] == second['batch_id']
+        assert ancestor['progress'] == preview['progress']
+        assert ancestor['progress']['scope'] == 'selected_batch_ancestry'
         page = atlas.tool('network_query', {'view': 'endpoints', 'limit': 100})
         snapshot.write_text(json.dumps({'first': first, 'second': second, 'original': original,
                                        'progress': progress, 'page': page}))

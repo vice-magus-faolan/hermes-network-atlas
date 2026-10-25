@@ -112,8 +112,11 @@ Slash equivalents are `/network preview-endpoints BATCH_ID` and
 `/network continue-endpoints BATCH_ID`. Preview is read-only: no transport,
 database creation/upgrade, evidence changes or policy changes. `remaining` lists
 up to the configured query-result cap; `omitted_remaining` counts the rest.
-`progress` reports the complete lineage's historical `total`, `attempted`,
-`responded`, `still_unattempted`, `excluded` and non-excluded `unavailable` counts.
+`progress.scope=selected_batch_ancestry` labels the selected batch and its ancestors,
+not its latest descendants. Its historical `total`, `attempted`,
+`responded`, `still_unattempted`, `excluded` and non-excluded `unavailable` counts
+describe that selection only. An old root's counts do not reflect later progress;
+select the returned `successor_batch_id` and repeat as needed to inspect later runs.
 Attempted counts open/closed/no-response connects, not unavailable local transport.
 
 Continue makes NEW TCP traffic only for saved `not_started` tuples. It never
@@ -136,13 +139,21 @@ concurrently continuing that same parent never recollects: it returns the saved
 successor's no-contact recovery result, or `uncertain` if the reserved child is not
 durable. Preview reports `continued` and `successor_batch_id` for a saved successor;
 select that ID to make further progress. If projection failed, resume that child.
+An uncertain reservation may still be actively collecting: preview the parent again
+before treating it as interrupted. Do not start another full check to bypass it.
 If interrupted before child persistence, retain the parent and reserved child IDs:
 effects are unknown, no child can be resumed, and the reservation is not cleared.
 Do not delete history or assume nothing ran. A separately chosen new full check
 can repeat prior contacts; it is not recovery. This is not crash-exactly-once TCP.
-Lineage validation is deadline-bound and capped at the existing hard 4096 probe
-records across runs; an over-budget lineage refuses further continuation without
-deleting its evidence.
+`limits.observations` bounds each batch and the original authorized grid, not the
+sum of historical rows. Superseded `not_started` rows do not consume a cumulative
+quota. Complete ancestry validation remains operation-deadline-bound, with bounded
+per-batch reads and a separate structural limit of 4096 batches (including the root).
+That limit accommodates every progressing in-budget grid even at one newly resolved
+tuple per run; repeated zero-progress runs can still reach it. A structural-limit
+refusal names the batch bound: retain the saved IDs/history for operator review,
+not deletion or a full rescan. If a lowered `limits.observations` blocks the original
+grid, check that setting against the grid before retrying within the hard ceilings.
 
 ## Read historical evidence
 
@@ -198,8 +209,10 @@ reservations. A writable open transactionally upgrades schema 1 or 2, preserving
 original rows and their immutable triggers. Batch/application envelope versions
 remain 1. Read-only opens support schema 1 and 2 without migration (schema 1 has
 no endpoint rows). Upgrade failure rolls back DDL and the version together.
-Schema-3 stores require a compatible reader/writer; retain backups and update
-shared-store readers before upgrading rather than attempting a downgrade.
+Schema-3 stores require compatible readers AND writers. Retain backups and update
+all shared-store readers and writers before any writer upgrades the database,
+rather than attempting a downgrade. An older writer may contact endpoints before
+discovering that it cannot persist to the upgraded store.
 
 SSH greeting/banner reading is not supported; those inputs fail closed. No
 application bytes are sent/read, no credentials or host keys are touched, and an

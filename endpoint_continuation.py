@@ -20,6 +20,12 @@ from .host_schedule import Scheduler
 from .host_transport import excluded
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 
+# Retain the structural traversal bound, not a cumulative probe-row quota.
+# A strictly progressing <=1024-tuple grid fits even at one new outcome per run.
+LINEAGE_BATCH_LIMIT = 4096
+LINEAGE_LIMIT_ERROR = ('endpoint continuation: lineage batch limit (4096) reached; '
+                       'retain saved IDs and history for operator review; no new collection')
+
 
 @dataclass
 class Lineage:
@@ -31,7 +37,6 @@ class Lineage:
     counts: dict[str, int]
     excluded_count: int
     grid: dict[str, tuple[str, int]]
-    records: int
 
     def progress(self) -> dict:
         return {'root_batch_id': self.root, 'runs': self.runs, 'total': sum(self.counts.values()),
@@ -39,6 +44,7 @@ class Lineage:
                 'responded': self.counts['open'] + self.counts['closed'],
                 'still_unattempted': len(self.remaining), 'excluded': self.excluded_count,
                 'unavailable': self.counts['unavailable'] - self.excluded_count,
+                'scope': 'selected_batch_ancestry',
                 'historical': True, 'current_reachability': 'not_established'}
 
 
@@ -78,19 +84,18 @@ def _probes(store: Store, batch) -> tuple[Probe, ...]:
 
 def _history(store: Store, batch_id: str) -> list:
     """Read bounded ancestry without interpreting missing records as fresh work."""
-    chain, seen, record_count = [], set(), 0
+    chain, seen = [], set()
     current = batch_id
     while current is not None:
-        if current in seen or len(seen) >= Limits().observations:
-            raise RequestError('endpoint continuation: cyclic or over-budget lineage')
+        if current in seen:
+            raise RequestError('endpoint continuation: cyclic lineage; retain history for operator review')
+        if len(seen) >= LINEAGE_BATCH_LIMIT:
+            raise RequestError(LINEAGE_LIMIT_ERROR)
         seen.add(current)
         batch = endpoints._stored(store, current)
         if batch['source'] != 'tcp_endpoint' or batch['schema_version'] != 1:
             raise RequestError('endpoint continuation: inconsistent saved batch')
         probes = _probes(store, batch)
-        record_count += len(probes)
-        if record_count > Limits().observations:
-            raise RequestError('endpoint continuation: lineage exceeds record budget; retain history')
         claim = _claim(store, 'child_batch_id', current)
         chain.append((batch, probes, claim))
         current = claim['parent_batch_id'] if claim is not None else None
@@ -121,8 +126,7 @@ def load_lineage(store: Store, batch_id: str, *, allow_unapplied: bool = False) 
             excluded_count += int(is_excluded)
         remaining = tuple(sorted(probe.probe_name for probe in probes if probe.outcome == 'not_started'))
         previous = batch
-    return Lineage(chain[0][0], chain[-1][0]['id'], len(chain), remaining, counts, excluded_count, grid,
-                   sum(len(probes) for _, probes, _ in chain))
+    return Lineage(chain[0][0], chain[-1][0]['id'], len(chain), remaining, counts, excluded_count, grid)
 
 
 def _verify_projection(store: Store, batch, probes, grid, allow_missing: bool) -> None:
@@ -219,8 +223,8 @@ def continuation(policy: Policy, params: dict) -> dict:
         preview = _preview(store, lineage)
     if key == 'preview_batch_id' or preview['state'] == 'exhausted':
         return preview
-    if preview['state'] == 'ready' and lineage.records + len(lineage.remaining) > Limits().observations:
-        raise RequestError('endpoint continuation: successor would exceed lineage record budget; retain history')
+    if preview['state'] == 'ready' and lineage.runs >= LINEAGE_BATCH_LIMIT:
+        raise RequestError(LINEAGE_LIMIT_ERROR)
     # Preflight the complete bounded recovery envelope before reserving or traffic.
     response_json({**endpoints._receipt('0' * 36), 'parent_batch_id': batch_id,
                    'stage': 'projection', 'completion': 'complete',
@@ -247,8 +251,8 @@ def _recover(policy: Policy, parent: str, child: str, deadline: float) -> dict:
         saved = store.connection.execute('SELECT 1 FROM batches WHERE id=?', (child,)).fetchone()
     if saved is None:
         return {**endpoints._receipt(), 'parent_batch_id': parent, 'batch_id': child,
-                'stage': 'uncertain', 'error': 'endpoint continuation: reserved collection uncertain; '
-                'no automatic recollection; retain history and reserved child ID'}
+                'stage': 'uncertain', 'error': 'endpoint continuation: reserved child may still be in progress; '
+                'preview parent again before assuming interruption; no recollection; retain history and child ID'}
     return endpoints._finish(policy, {**endpoints._receipt(child), 'parent_batch_id': parent}, deadline)
 
 

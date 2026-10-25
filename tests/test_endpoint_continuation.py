@@ -42,12 +42,16 @@ class ContinuationTests(unittest.TestCase):
         return stack
 
     def invoke(self, params, *, response=None, policy=None):
+        policy = policy or self.policy
         fixture = SyntheticSockets(response)
         with self.installed(fixture):
             result = json.loads(self.handler(policy).check_endpoints(params))
         self.assertTrue(all(sock.closed for sock in fixture.sockets))
-        self.assertLessEqual(fixture.peak, self.policy.limits.concurrent_probes)
-        self.assertLessEqual(fixture.clock.now - fixture.calls[0][0] if fixture.calls else 0, 1.5 + 1e-6)
+        self.assertLessEqual(fixture.peak, policy.limits.concurrent_probes)
+        reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
+        self.assertLessEqual(fixture.clock.now - fixture.calls[0][0] if fixture.calls else 0,
+                             policy.limits.operation_timeout_seconds - reserve + 1e-6)
+        self.assertEqual(len(fixture.calls), len({(a, p) for _, a, p in fixture.calls}))
         return result, {(address, port) for _, address, port in fixture.calls}
 
     def partial(self):
@@ -110,6 +114,11 @@ class ContinuationTests(unittest.TestCase):
         self.assertEqual(final['progress']['runs'], 2)
         self.assertEqual(final['progress']['still_unattempted'], 0)
         self.assertEqual(final['progress']['responded'], first['state_counts']['closed'] + len(calls))
+        ancestor = self.preview(batch)
+        self.assertEqual(ancestor['state'], 'continued')
+        self.assertEqual(ancestor['successor_batch_id'], child)
+        self.assertEqual(ancestor['progress'], preview['progress'])
+        self.assertEqual(ancestor['progress']['scope'], 'selected_batch_ancestry')
         history = self.history()
         exhausted, no_calls = self.invoke({'continue_batch_id': child})
         self.assertEqual(exhausted['state'], 'exhausted')
@@ -135,22 +144,85 @@ class ContinuationTests(unittest.TestCase):
         next_preview = self.preview(second['batch_id'])
         self.assertEqual(next_preview['progress']['still_unattempted'], second['state_counts']['not_started'])
 
-    def test_lineage_capacity_refuses_before_reserving_an_unrecoverable_successor(self):
+    def test_long_progressing_chain_exhausts_without_repeated_contacts_or_history_changes(self):
         self.policy = config.validate_policy({
             'networks': {'lab': {'cidr': '192.0.2.0/24',
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
-            'limits': {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}}, self.home)
-        result, _ = self.partial()
-        for _ in range(3):
-            result, _ = self.invoke({'continue_batch_id': result['batch_id']},
-                                    response=lambda address, port: 'filtered')
+            'limits': {'operation_timeout_seconds': 10, 'host_timeout_seconds': 1,
+                       'concurrent_probes': 1}}, self.home)
+        limits = self.policy.limits
+        def response(address, port):
+            return 'closed' if port == 22 else 'filtered'
+        result, attempted = self.invoke({'network': 'lab'}, response=response)
+        self.assertTrue(result['queryable'], result)
+        root = result['batch_id']
+        original = self.history(root)
+        original_rows = self.rows(root)
+        claims = []
+        responded = result['state_counts']['closed']
+        physical_rows = result['observation_count']
+        preview = self.preview(root)
+        for run in range(1, 1025):
+            self.assertEqual(preview['progress']['runs'], run)
+            self.assertEqual(preview['progress']['total'], 1024)
+            self.assertEqual(preview['progress']['attempted'], len(attempted))
+            self.assertEqual(preview['progress']['responded'], responded)
+            self.assertEqual(preview['progress']['excluded'], 8)
+            self.assertEqual(preview['progress']['unavailable'], 0)
+            self.assertEqual(preview['progress']['still_unattempted'], 1016 - len(attempted))
+            if preview['state'] == 'exhausted':
+                break
+            remaining = preview['progress']['still_unattempted']
+            result, calls = self.invoke({'continue_batch_id': result['batch_id']}, response=response)
             self.assertTrue(result['queryable'], result)
-        preview = self.preview(result['batch_id'])
-        self.assertGreater(preview['progress']['still_unattempted'], 0)
+            self.assertEqual(result['observation_count'], remaining)
+            self.assertGreater(len(calls), 0)
+            self.assertFalse(calls & attempted)
+            self.assertFalse(any(address in {'192.0.2.0', '192.0.2.255'} for address, _ in calls))
+            self.assertEqual(result['state_counts']['no_response'] + result['state_counts']['closed'], len(calls))
+            self.assertEqual(result['state_counts']['unavailable'], 0)
+            attempted |= calls
+            responded += result['state_counts']['closed']
+            physical_rows += result['observation_count']
+            with storage.Store(self.policy) as store:
+                saved_claims = [tuple(row) for row in store.connection.execute(
+                    'SELECT * FROM endpoint_continuations ORDER BY rowid')]
+            self.assertEqual(saved_claims[:-1], claims)
+            self.assertEqual(len(saved_claims), run)
+            claims = saved_claims
+            preview = self.preview(result['batch_id'])
+        self.assertEqual(preview['state'], 'exhausted')
+        self.assertGreater(physical_rows, config.Limits().observations)
+        self.assertGreater(preview['progress']['runs'], 4)
+        self.assertEqual(len(attempted), 1016)
+        self.assertEqual(responded, 254)
+        self.assertEqual(self.policy.limits, limits)
+        self.assertEqual(self.history(root), original)
+        self.assertEqual(self.rows(root), original_rows)
         before = self.history()
-        blocked, calls = self.invoke({'continue_batch_id': result['batch_id']})
-        self.assertIn('successor would exceed lineage record budget', blocked['error'])
+        exhausted, calls = self.invoke({'continue_batch_id': result['batch_id']})
+        self.assertEqual(exhausted['state'], 'exhausted')
         self.assertFalse(calls)
+        self.assertEqual(self.history(), before)
+
+    def test_structural_batch_bound_refuses_before_reservation_and_bounds_ancestry_reads(self):
+        first, _ = self.partial()
+        second, _ = self.invoke({'continue_batch_id': first['batch_id']},
+                                response=lambda address, port: 'filtered')
+        self.assertTrue(second['queryable'], second)
+        self.assertGreater(self.preview(second['batch_id'])['progress']['still_unattempted'], 0)
+        before = self.history()
+        with patch.object(continuation, 'LINEAGE_BATCH_LIMIT', 2):
+            self.assertEqual(self.preview(second['batch_id'])['state'], 'ready')
+            result, calls = self.invoke({'continue_batch_id': second['batch_id']})
+        self.assertIn('lineage batch limit', result['error'])
+        self.assertIn('retain saved IDs and history for operator review', result['error'])
+        self.assertFalse(calls)
+        with patch.object(continuation, 'LINEAGE_BATCH_LIMIT', 1):
+            for key in ('preview_batch_id', 'continue_batch_id'):
+                result, calls = self.invoke({key: second['batch_id']})
+                self.assertIn('lineage batch limit', result['error'])
+                self.assertFalse(calls)
         self.assertEqual(self.history(), before)
 
     def test_invalid_missing_foreign_revoked_changed_intent_has_zero_effects(self):
@@ -173,6 +245,9 @@ class ContinuationTests(unittest.TestCase):
                 for key in ('preview_batch_id', 'continue_batch_id'):
                     result = json.loads(self.handler(policy).check_endpoints({key: first['batch_id']}))
                     self.assertIn('error', result, (policy, key, result))
+                    if policy.limits.observations == 1:
+                        self.assertIn('limits.observations', result['error'])
+                        self.assertIn('check the configured limit against the original grid', result['error'])
             for params in ({'continue_batch_id': first['batch_id'], 'network': 'lab'},
                            {'continue_batch_id': first['batch_id'], 'ports': [22]},
                            {'preview_batch_id': '../unsafe'}, {'continue_batch_id': False}):
@@ -197,6 +272,8 @@ class ContinuationTests(unittest.TestCase):
                     blocked = json.loads(pool.submit(self.handler().check_endpoints,
                                                      {'continue_batch_id': first['batch_id']}).result(5))
                     self.assertEqual(blocked['stage'], 'uncertain')
+                    self.assertIn('may still be in progress', blocked['error'])
+                    self.assertIn('preview parent again', blocked['error'])
                     self.assertFalse(blocked['collection_performed'])
                     self.assertFalse(fixture.calls)
                 finally:
@@ -272,6 +349,8 @@ class ContinuationTests(unittest.TestCase):
 
     def test_malformed_saved_evidence_refuses_before_claim_or_transport(self):
         first, _ = self.partial()
+        second, _ = self.invoke({'continue_batch_id': first['batch_id']})
+        self.assertTrue(second['queryable'], second)
         with storage.Store(self.policy, writable=True) as store, store.transaction():
             store.connection.execute('DROP TRIGGER immutable_probes_UPDATE')
             store.connection.execute('UPDATE probes SET probe_name="tcp_22_99" '
@@ -279,8 +358,9 @@ class ContinuationTests(unittest.TestCase):
                                      (first['batch_id'],))
         before = self.history()
         with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('corrupt evidence contacted')):
-            for key in ('preview_batch_id', 'continue_batch_id'):
-                self.assertIn('error', json.loads(self.handler().check_endpoints({key: first['batch_id']})))
+            for batch in (first['batch_id'], second['batch_id']):
+                for key in ('preview_batch_id', 'continue_batch_id'):
+                    self.assertIn('error', json.loads(self.handler().check_endpoints({key: batch})))
         self.assertEqual(self.history(), before)
 
     def test_contradictory_projection_and_saved_selection_cannot_authorize_contact(self):

@@ -61,7 +61,8 @@ def network_policy(policy: Policy, name: str) -> Network:
     network = _authorized_network(policy, name)
     if ip_network(network.cidr).num_addresses * len(network.endpoint_ports) > policy.limits.observations:
         raise EndpointObservationLimitError(
-            'limits.observations: endpoint address/port grid exceeds configured record budget')
+            'limits.observations: endpoint address/port grid exceeds configured record budget; '
+            'check the configured limit against the original grid before retrying')
     return network
 
 
