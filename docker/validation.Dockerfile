@@ -4,7 +4,7 @@ FROM python:3.14.7-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git build-essential libffi-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-ARG HERMES_REF=v0.22.2
+ARG HERMES_REF=v0.22.5
 RUN git clone --depth 1 --branch "$HERMES_REF" https://github.com/NousResearch/hermes-agent.git /opt/hermes
 COPY requirements-test.txt /opt/requirements-test.txt
 # PM's frozen build uses the release's uv.lock and supported editable install.
@@ -27,4 +27,4 @@ ENV HOME=/home/atlas HERMES_HOME=/home/atlas/hermes-test PYTHONDONTWRITEBYTECODE
 # Real fresh-home enablement resolves dependencies and therefore needs network.
 # A failing installer assertion fails the ordinary image build, including CI.
 RUN python3 -m pytest -q -rP tests/test_compatibility.py
-CMD ["sh", "-ec", "ruff check . && hermes --version && hermes plugins validate . && hermes plugins doctor . --ci && python3 -m pytest -q -rP --ignore=tests/test_compatibility.py"]
+CMD ["sh", "-ec", "ruff check . && ruff check --select C901 --config 'lint.mccabe.max-complexity = 15' __init__.py config.py commands.py tools.py conversion.py && hermes --version && hermes plugins validate . && hermes plugins doctor . --ci && python3 -m pytest -q -rP --ignore=tests/test_compatibility.py"]

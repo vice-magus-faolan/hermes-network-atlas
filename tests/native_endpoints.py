@@ -65,7 +65,7 @@ def main():
     elif mode == 'isolated':
         assert atlas.tool('network_query', {'view': 'endpoints'})['total_count'] == 0
         assert atlas.slash('status')['endpoint_count'] == 0
-        assert not (home / 'network-atlas' / 'atlas.sqlite3').exists()
+        assert not (home / 'plugin-data' / 'network-atlas' / 'atlas.sqlite3').exists()
     else:
         raise ValueError('unknown fixture mode')
     assert atlas.tool('network_query', {})['devices'] == []

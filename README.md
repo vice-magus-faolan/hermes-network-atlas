@@ -8,8 +8,8 @@ administer infrastructure. No external database or background service is needed.
 
 ## Requirements and installation
 
-Requires stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
-CI tests Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64.
+Requires stock Hermes **>=0.21.4** and its supported Python runtime (>=3.11).
+CI targets Hermes v0.21.7 and v0.22.5 on Linux x86_64 and arm64.
 The manifest follows Hermes's additive plugin contract without an upper bound;
 other releases are not individually verified.
 
@@ -32,15 +32,18 @@ If no gateway responds, follow the CLI's `hermes gateway restart` hint.
 ## Find policy and stored knowledge
 
 Atlas uses the selected Hermes profile home, not the repository or working
-directory. Its `network-atlas/config.yaml` is operator policy;
-`network-atlas/atlas.sqlite3` is stored knowledge. The default profile home is
+directory. Native `plugins.entries.network-atlas.settings.policy` is operator policy;
+`plugin-data/network-atlas/atlas.sqlite3` is the new default knowledge store. The default profile home is
 `~/.hermes`; named profiles normally use `~/.hermes/profiles/NAME`.
 An explicit `HERMES_HOME` can override the home. See
 [profile-local configuration](docs/operator-guide.md#profile-local-configuration)
 before editing anything. Profiles can share a database; each keeps its own policy.
 
-Keep policy private (0600 in a 0700 directory). A missing file grants nothing;
-an existing empty, malformed, or unknown-key policy fails closed.
+Keep the profile and its native config private. Missing settings grant nothing;
+Atlas validates the policy returned by Hermes. Hermes owns settings caching,
+fallback and worker snapshots. Existing users must explicitly
+[convert legacy policy and storage](docs/operator-guide.md#convert-legacy-policy-and-storage)
+before using the new default; registration and reads never move a database.
 
 ## Read existing inventory — no scan
 
@@ -67,21 +70,12 @@ pagination, unidentified responses, endpoint history, and shared-store queries.
 
 ## Collect your LAN, reconcile, then map
 
-Install iproute2 (the `ip` utility) for passive collection. In the selected home's
-`network-atlas/config.yaml`, use this policy, replacing `192.168.1.0/24` with your
+Install iproute2 (the `ip` utility) for passive collection. Set the selected profile's
+native policy, replacing `192.168.1.0/24` with your
 actual LAN's canonical network. It enables passive collection only, not scanning:
 
-```yaml
-version: 1
-networks:
-  home:
-    cidr: 192.168.1.0/24
-    discovery:
-      passive: true
-      ping: false
-ssh:
-  enabled: false
-  hosts: {}
+```sh
+hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy '{"networks":{"home":{"cidr":"192.168.1.0/24","discovery":{"passive":true}}}}'
 ```
 
 ```sh

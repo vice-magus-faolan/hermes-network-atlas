@@ -21,8 +21,7 @@ def _modules():
 
 def collect_methods(atlas, home: Path, root: Path) -> None:
     """Collect three public routes per policy; never use a production socket."""
-    path = home / 'network-atlas' / 'config.yaml'
-    original = path.read_bytes()
+    original = atlas.ctx.get_config('policy', {})
     scenarios = [({'icmp_echo': True, 'tcp_ports': [80, 443]}, 'icmp', None),
                  ({'icmp_echo': True, 'tcp_ports': []}, 'icmp', None),
                  ({'icmp_echo': False, 'tcp_ports': [2222]}, 'tcp', None),
@@ -35,13 +34,13 @@ def collect_methods(atlas, home: Path, root: Path) -> None:
     records = []
     try:
         for methods, kind, error in scenarios:
-            raw = json.loads(original)
+            raw = json.loads(json.dumps(original))
             raw['networks']['methodlab'] = {'cidr': '192.0.2.8/31', 'discovery': {'ping': True, **methods}}
-            path.write_text(json.dumps(raw))
+            atlas.ctx.set_config('policy', raw)
             records.extend(_scenario(atlas, methods, kind, error))
         (root / 'host-methods.json').write_text(json.dumps(records, sort_keys=True))
     finally:
-        path.write_bytes(original)
+        atlas.ctx.set_config('policy', original)
 
 
 def _scenario(atlas, methods, kind, error):

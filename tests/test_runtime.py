@@ -37,11 +37,11 @@ class NativeRuntimeTests(unittest.TestCase):
             copy_plugin(plugin)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
-            (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
             # Explicit native opt-in selection. No production configuration is copied.
             (home / "config.yaml").write_text(json.dumps({
                 "plugins": {"enabled": ["network-atlas"] if mode != "disabled" else [],
-                                                                        "disabled": []}}), encoding="utf-8")
+                            "disabled": [], "entries": {"network-atlas": {
+                                "settings": {"policy": policy}}}}}), encoding="utf-8")
             env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(scratch / "user"),
                    "HERMES_HOME": str(home), "TMPDIR": str(scratch), "PYTHONDONTWRITEBYTECODE": "1",
                    "HERMES_BUNDLED_PLUGINS": str(scratch / "empty-bundled"), "HERMES_ENABLE_PROJECT_PLUGINS": "0",
@@ -63,8 +63,11 @@ class NativeRuntimeTests(unittest.TestCase):
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
-            if mode in {"valid", "local_discovery", "ssh_inspection"}:
-                (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy), encoding="utf-8")
+            if mode in {"valid", "local_discovery", "ssh_inspection", "conversion"}:
+                if mode != "conversion":
+                    (home / "config.yaml").write_text(json.dumps({"plugins": {
+                        "enabled": ["network-atlas"], "entries": {"network-atlas": {
+                            "settings": {"policy": policy}}}}}))
                 reopen_mode = "reopen" if mode == "valid" else mode + "_reopen"
                 if mode in {"local_discovery", "ssh_inspection"}:
                     # If reopen accidentally collected, only a missing fake binary
@@ -88,8 +91,8 @@ class NativeRuntimeTests(unittest.TestCase):
         self.assertEqual(receipt["operator_cli_source"], "user")
         self.assertEqual(receipt["tool_source"], "inference")
 
-    def test_invalid_config_registers_no_tools_or_commands_in_real_runtime(self):
-        self.assertTrue(self.run_smoke("invalid")["registration_refused"])
+    def test_invalid_native_domain_settings_refuse_actions_not_registration(self):
+        self.assertTrue(self.run_smoke("invalid")["actions_refused"])
 
     def test_real_native_local_discovery_reconcile_and_fresh_process(self):
         self.assertTrue(self.run_smoke("local_discovery")["persistent_batches"])
@@ -99,6 +102,9 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_plugin_remains_disabled_without_explicit_opt_in(self):
         self.assertTrue(self.run_smoke("disabled")["registration_refused"])
+
+    def test_native_conversion_wal_conflicts_interruption_and_cold_retry(self):
+        self.assertTrue(self.run_smoke("conversion")["fresh_native_process_persistence"])
 
     def test_native_endpoints_fresh_profiles_shared_physical_store_and_isolated_control(self):
         root = runtime_root()
@@ -114,19 +120,19 @@ class NativeRuntimeTests(unittest.TestCase):
                 if mode == 'collect':
                     raw['networks'] = {'lab': {'cidr': '192.0.2.8/31',
                                               'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
-                (home / 'network-atlas' / 'config.yaml').write_text(json.dumps(raw))
-                (home / 'config.yaml').write_text(json.dumps({'plugins': {'enabled': ['network-atlas']}}))
+                (home / 'config.yaml').write_text(json.dumps({'plugins': {
+                    'enabled': ['network-atlas'], 'entries': {'network-atlas': {'settings': {'policy': raw}}}}}))
                 env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(scratch / 'user'),
                        'HERMES_HOME': str(home), 'TMPDIR': str(scratch), 'PYTHONDONTWRITEBYTECODE': '1',
                        'HERMES_BUNDLED_PLUGINS': str(scratch / 'empty-bundled'), 'HERMES_ENABLE_PROJECT_PLUGINS': '0',
                        'HERMES_DISABLE_LAZY_INSTALLS': '1', 'HERMES_MANAGED': 'false',
                        'XDG_CONFIG_HOME': str(scratch / 'xdg-config'), 'XDG_CACHE_HOME': str(scratch / 'xdg-cache'),
                        'XDG_DATA_HOME': str(scratch / 'xdg-data')}
-                policy_before = (home / 'network-atlas' / 'config.yaml').read_bytes()
+                policy_before = (home / 'config.yaml').read_bytes()
                 child = subprocess.run([sys.executable, str(ROOT / 'tests' / 'native_endpoints.py'), str(root), mode],
                                        env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
                 self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
-                self.assertEqual((home / 'network-atlas' / 'config.yaml').read_bytes(), policy_before)
+                self.assertEqual((home / 'config.yaml').read_bytes(), policy_before)
                 self.assertTrue(json.loads(child.stdout.strip().splitlines()[-1])['native_dispatch'])
 
     def test_missing_native_runtime_is_failure_not_skipped_coverage(self):

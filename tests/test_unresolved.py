@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from helpers import load_package, scratch_home
+from helpers import fixture_command, fixture_handlers, load_package, scratch_home
 from network_guard import deny_network
 from test_core import NOW
 from test_boundaries import synthetic_policy
@@ -258,7 +258,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
     def test_public_handler_cli_read_only_output_cap_and_no_collection(self):
         self.batch([self.observation()])
         before = self.snapshot()
-        handler = tools.Handlers(self.home)
+        handler = fixture_handlers(self.home)
         parser = argparse.ArgumentParser(allow_abbrev=False)
         commands.setup_parser(parser)
         output = io.StringIO()
@@ -267,7 +267,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
               patch.object(tools, "inspect_host", side_effect=AssertionError("query inspected"))):
             self.assertEqual(len(json.loads(handler.query({"view": "unresolved"}))["evidence"]), 1)
             with redirect_stdout(output):
-                self.assertEqual(commands.run_command(
+                self.assertEqual(fixture_command(
                     parser.parse_args(["query", "--query-json", '{"view":"unresolved"}']), self.home), 0)
             self.assertEqual(len(json.loads(output.getvalue())["evidence"]), 1)
         self.raw["limits"] = {"output_bytes": 128}
@@ -456,7 +456,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                 before = self.snapshot()
                 with self.assertRaisesRegex(ValueError, "invalid stored application"):
                     self.rows(batch_id=batch)
-                answer = json.loads(tools.Handlers(self.home).query({"view": "unresolved", "batch_id": batch}))
+                answer = json.loads(fixture_handlers(self.home).query({"view": "unresolved", "batch_id": batch}))
                 self.assertEqual(answer, {
                     "error": "atlas state or bounds: operation failed; check stored evidence and configured limits",
                     "applied": False,

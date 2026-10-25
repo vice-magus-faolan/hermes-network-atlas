@@ -16,8 +16,8 @@ source, permission, output path or limit arguments. Raw IPs/hostnames are not
 looked up as destinations. Operator policy can deliberately name an SSH alias;
 only that configured name is used, not a host value supplied by the model.
 
-Each public tool/slash/CLI invocation reloads the registration profile's
-operator-owned network-atlas/config.yaml. Policy is an immutable invocation
+Each public tool/slash/CLI invocation reads the current native `policy` setting
+through `ctx.get_config` (see the [runbook](operator-guide.md#profile-local-configuration)). Policy is an immutable invocation
 snapshot. `ssh.enabled` and `ssh.hosts.<name>.inspect` must both be true; host
 `alias` must validate. No default grants. Model proposals, shared device facts,
 foreign profile alias associations and previous successful access do not grant
@@ -25,9 +25,9 @@ inspection. Inference associations cannot anchor a device. A device with several
 eligible aliases requires the caller to select the configured alias explicitly.
 An ambiguous alias association is refused before transport. Mapping is checked
 again under the batch insertion lock; a concurrently invalidated device mapping
-cannot silently reroute the attempt or partially insert it. Policy edits affect
-the next invocation; V1 does not watch config mid-command or cancel an in-flight
-inspection merely because the file changes.
+cannot silently reroute the attempt or partially insert it. Policy visibility
+follows Hermes's native caching/fallback/worker refresh semantics; Atlas does not
+watch config mid-command or cancel an in-flight inspection because a file changes.
 
 Configure an existing OpenSSH alias, replacing this synthetic example:
 

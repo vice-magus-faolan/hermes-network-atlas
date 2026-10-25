@@ -5,11 +5,11 @@ Reading inventory does not require scan or SSH grants.
 
 ## Installation and support
 
-Use stock Hermes **>=0.21.4** and Python >=3.11,<3.15.
-CI tests Hermes v0.21.7 and v0.22.2 on Linux x86_64 and arm64. There is no Hermes
+Use stock Hermes **>=0.21.4** and its supported Python runtime (>=3.11).
+CI targets Hermes v0.21.7 and v0.22.5 on Linux x86_64 and arm64. There is no Hermes
 upper bound, following its additive plugin contract; other releases are not
 individually verified.
-The plugin declares `ruamel.yaml>=0.18.16,<0.19` as its extra runtime dependency.
+The plugin declares `ruamel.yaml>=0.18.16,<0.19` for explicit legacy conversion only.
 
 Replace PROFILE with an existing profile's name (`default` for the default
 profile), COMMIT_SHA with an immutable 40-character Atlas commit, and uppercase
@@ -50,23 +50,31 @@ profile; `HERMES_HOME` can override it. Paths beneath that home are:
 
 | Path beneath the selected home | Purpose |
 | --- | --- |
-| `network-atlas/config.yaml` | Operator-controlled collection, sharing, and limits policy |
-| `network-atlas/atlas.sqlite3` | Default knowledge, immutable evidence and history |
+| `config.yaml`: `plugins.entries.network-atlas.settings.policy` | Native operator-controlled Atlas policy |
+| `plugin-data/network-atlas/atlas.sqlite3` | New default knowledge, immutable evidence and history |
 | `network-atlas/exports/` | Optional generated maps, never authoritative |
 
-Atlas policy is separate from Hermes's own `config.yaml` and plugin selector.
-A missing Atlas config grants no collection and permits existing-knowledge reads.
-For read-only use, a minimal file is `version: 1` with `networks: {}`.
-Empty files, duplicate or unknown keys, invalid numbers, and noncanonical or
-overbroad CIDRs fail closed. Policy is checked before registration and again on
-invocation. A malformed policy can prevent `network-atlas` from being registered,
-leaving the command unavailable. If an already-registered CLI catches invalid
-policy during invocation, it exits 2 with `applied=false` and `persisted=false`
-before dispatch or store changes.
+Atlas declares one dictionary setting, `policy`, in its native `config_schema`.
+Use Hermes's config CLI or the plugin's native Desktop settings JSON editor,
+not model tools or a second Atlas config file. For example:
 
-Edit policy directly, not through model tools; use mode 0600 in a 0700 directory.
-This example enables passive collection only. Replace `192.168.1.0/24` with your
-actual LAN's canonical network. Active, endpoint and SSH collection stay disabled:
+```sh
+hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy '{"networks":{}}'
+```
+
+Keep the selected profile home and native configuration private (0700/0600).
+An absent setting or empty object grants no collection. Atlas validates returned
+values: unknown keys, invalid numbers, noncanonical or overbroad scopes refuse
+the action with exit 2 and `applied=false`, `persisted=false`. Registration remains
+available for repair/conversion. Hermes owns caching, last-known-good fallback,
+managed-worker snapshots, default initialization and refresh semantics; Atlas
+does not promise immediate revocation when the root config is unreadable or a
+worker still holds a native snapshot. Start a fresh native session after policy
+changes when needed. Stop active collectors before changing sensitive grants.
+
+The following is the shape of the `policy` value (shown as YAML for readability),
+not a standalone file. It enables passive collection only. Replace
+`192.168.1.0/24` with your LAN; active, endpoint and SSH collection stay disabled:
 
 ```yaml
 version: 1
@@ -110,7 +118,7 @@ Limit keys are `command_timeout_seconds`, `host_timeout_seconds`,
 `operation_timeout_seconds`, `concurrent_probes`, `output_bytes`, `observations`,
 `input_chars`, `result_count`, `page_offset`, and `busy_timeout_ms`. Each takes a
 positive integer no larger than the ceiling above. `observations` also caps probe
-outcomes per batch. Policy files are capped at 64 KiB, with at most 32 named
+outcomes per batch. Policy allows at most 32 named
 networks and 32 SSH hosts. Names and aliases use 1–64 ASCII letters, digits,
 underscores or hyphens and must start with a letter or digit. YAML booleans must
 be `true` or `false`, not strings or numbers.
@@ -129,6 +137,47 @@ not copy or merge the default store. Readers can query another profile's evidenc
 including endpoints, but cannot apply its batches or inherit collection, inspection
 or resume permissions. Keep the shared file private. See
 [shared endpoint queries](endpoint-checks.md#sharing-and-upgrades).
+
+### Convert legacy policy and storage
+
+Upgrading source does not move data. If `network-atlas/atlas.sqlite3` exists and
+no native store binding was chosen, normal actions refuse with conversion guidance
+instead of silently showing a new empty inventory. Legacy `network-atlas/config.yaml`
+is read only by the explicit converter (bounded to 64 KiB); it is never a runtime fallback.
+
+1. Stop every Atlas writer, including sessions/gateways using the old version and
+   other profiles writing the same store. Keep writers stopped and do not edit
+   native or legacy settings until conversion/recovery finishes. Make a consistent
+   private SQLite backup using your existing backup procedure, including WAL data.
+2. Install the reviewed new revision without starting collection. In a fresh CLI:
+
+   ```sh
+   hermes -p PROFILE network-atlas convert-legacy --writers-stopped
+   hermes -p PROFILE network-atlas status
+   hermes -p PROFILE network-atlas query --query-json '{"limit":10}'
+   ```
+
+3. Compare IDs, history and returned grants before restarting writers. The converter
+   copies a legacy default store into managed storage with SQLite backup, including
+   committed WAL rows; it retains schema, receipts and resolved-home ownership.
+   It then writes the complete policy through native `set_config`, binding the
+   new database explicitly. Exports keep their original profile-local location.
+   An explicit `store.shared_sqlite_path` stays in place, even when it names a
+   legacy location: this converts policy only, never makes private shared-store copies.
+
+The flag attests that you stopped writers; it is not a process detector. Originals
+are retained, not renamed/deleted. Existing nonempty native settings and an existing
+destination must match the conversion exactly; divergent stores/settings refuse
+without overwrite or merge. A failure before publication removes its temporary
+copy. A failure after DB publication but before settings commit leaves that complete
+copy for cold retry: keep writers stopped and repeat the command in a fresh CLI.
+Do not resume old and new writers together. Once native history changes, replaying
+the converter against old originals correctly conflicts. Preserve both stores and
+repair the selected binding deliberately; never delete history to force a retry.
+To roll back before any new writes, select the previous plugin revision and retained
+legacy policy/store. After new writes, preserve both histories for operator recovery;
+the converter does not merge them. Actual production conversion and backup are
+explicit operator effects, not part of installation, registration or query.
 
 ## Read existing knowledge
 
@@ -316,8 +365,8 @@ For endpoint failures, keep the returned `batch_id`, `stage` and persistence fla
 resume a saved batch after repairing the reported category, rather than rescanning.
 
 - Command unavailable: confirm PROFILE, supported Hermes version and
-  `plugins show network-atlas`. Check policy errors: malformed policy can stop
-  registration before the command exists. Correct the file, then retry
+  `plugins show network-atlas`. Atlas domain errors normally leave the command
+  registered; inspect native plugin-load diagnostics, then retry
   `network-atlas --help` in a fresh CLI process.
 - Policy refusal: check the selected profile's Atlas config, not the inventory.
   Correct the reported keys, types or noncanonical scopes. Read-only queries need

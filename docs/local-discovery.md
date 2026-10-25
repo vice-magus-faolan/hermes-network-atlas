@@ -9,8 +9,9 @@ profile selection and a passive-only quick start.
 `network_discover` takes exactly `network` (configured name) and `mode`
 (`passive` or `ping`). Unknown arguments, disabled/unconfigured modes, CIDR/URL/
 option strings as network names, IPv6 ping, noncanonical CIDRs and IPv4 ranges
-above 256 addresses fail closed. Policy is reloaded from the registration
-profile's operator-owned network-atlas/config.yaml for every invocation.
+above 256 addresses fail closed. Every invocation validates the current native
+`policy` value returned by `ctx.get_config`, using Hermes's settings lifecycle;
+see [configuration](operator-guide.md#profile-local-configuration).
 Empty allowlists are deny-all. No tool may modify policy or raise its bounds.
 
 Collection finishes before opening a writable store. It atomically inserts an

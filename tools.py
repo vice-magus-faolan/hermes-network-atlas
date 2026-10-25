@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from collections.abc import Callable
 import json
-from pathlib import Path
 import sqlite3
 
-from .config import load_policy
+from .config import Policy
 from .errors import RequestError, error_message
 from .updates import Update, inference_update
 from .core import apply_update
@@ -30,9 +30,8 @@ def update_receipt(update: Update) -> str:
                        "stage": "validation_only", "update": asdict(update)}, sort_keys=True)
 
 
-def status(home: Path) -> str:
+def status(policy: Policy) -> str:
     """Summarize stored knowledge separately from profile-local authorization."""
-    policy = load_policy(home)
     return response_json({**query(policy, {"view": "status"}), "stage": "v1", "persistence_available": True,
                           "collection_available": True, "ssh_transport_available": True,
                           "configured_networks": [network.name for network in policy.networks],
@@ -43,17 +42,17 @@ def status(home: Path) -> str:
 
 
 class Handlers:
-    """Capture registration's profile home; revalidate its policy at every invocation."""
+    """Resolve one validated native policy snapshot for each invocation."""
 
-    def __init__(self, home: Path):
-        self.home = home
+    def __init__(self, policy_loader: Callable[[], Policy]):
+        self.policy_loader = policy_loader
 
     def query(self, params: object, **runtime_context: object) -> str:
         """Read existing state only; runtime kwargs never attest origin or supply policy."""
         del runtime_context
         try:
-            policy = load_policy(self.home)
-            return (status(self.home) if params == {"view": "status"}
+            policy = self.policy_loader()
+            return (status(policy) if params == {"view": "status"}
                     else response_json(query(policy, params), policy.limits.output_bytes))
         except (OSError, ValueError, sqlite3.Error) as exc:
             return json.dumps({"error": error_message(exc), "applied": False})
@@ -62,7 +61,7 @@ class Handlers:
         """Persist inference only, ignoring origin-like kwargs from runtime dispatch."""
         del runtime_context
         try:
-            policy = load_policy(self.home)
+            policy = self.policy_loader()
             update = inference_update(params, policy)
             if not policy.database.exists():
                 raise RequestError("device_id: select an existing atlas device")
@@ -83,7 +82,7 @@ class Handlers:
                 raise RequestError("format: choose text, markdown or mermaid")
             if type(params.get("export", False)) is not bool:
                 raise RequestError("export: boolean required")
-            policy = load_policy(self.home)
+            policy = self.policy_loader()
             outputs = render_map(policy)
             files = ([str(policy.exports / name) for name in ("network_map.md", "network_map.mmd")]
                      if params.get("export", False) else [])
@@ -99,7 +98,7 @@ class Handlers:
         """Collect only an explicitly named current-policy network/mode; ignore kwargs."""
         del runtime_context
         try:
-            policy = load_policy(self.home)
+            policy = self.policy_loader()
             return response_json(collect(policy, params), policy.limits.output_bytes)
         except (OSError, ValueError, sqlite3.Error) as exc:
             return json.dumps({"error": error_message(exc), "applied": False, "persisted": False})
@@ -108,7 +107,7 @@ class Handlers:
         """Apply stored evidence only; no probe runs on this path."""
         del runtime_context
         try:
-            policy = load_policy(self.home)
+            policy = self.policy_loader()
             return response_json(reconcile(policy, params), policy.limits.output_bytes)
         except (OSError, ValueError, sqlite3.Error) as exc:
             return json.dumps({"error": error_message(exc), "applied": False})
@@ -117,7 +116,7 @@ class Handlers:
         """Primary durable endpoint operation; post-persistence failures retain ID/stages."""
         del runtime_context
         try:
-            policy = load_policy(self.home)
+            policy = self.policy_loader()
             return response_json(check_endpoints(policy, params), policy.limits.output_bytes)
         except (OSError, ValueError, sqlite3.Error) as exc:
             return json.dumps({"error": error_message(exc),
@@ -127,7 +126,7 @@ class Handlers:
         """Fixed probes only; runtime kwargs cannot supply target policy or commands."""
         del runtime_context
         try:
-            policy = load_policy(self.home)
+            policy = self.policy_loader()
             return response_json(inspect_host(policy, params), policy.limits.output_bytes)
         except (OSError, ValueError, sqlite3.Error) as exc:
             return json.dumps({"error": error_message(exc),

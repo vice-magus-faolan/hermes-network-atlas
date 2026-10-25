@@ -15,7 +15,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, load_package, scratch_home
+from helpers import ROOT, fixture_handlers, load_package, scratch_home
 from test_core import AtlasFixture, NOW
 
 load_package()
@@ -109,7 +109,7 @@ class DiscoveryTests(AtlasFixture):
         self.assertEqual(cached["interfaces"][0]["addresses"][0]["evidence_kind"], "cached_neighbor")
 
     def test_discover_handler_boundary_policy_reload_and_disabled_mode(self):
-        handler = tools.Handlers(self.home)
+        handler = fixture_handlers(self.home)
         bad = [{}, [], {"network": "192.0.2.0/24", "mode": "ping"}, {"network": "lab", "mode": "-sV"},
                {"network": "lab;touch x", "mode": "passive"}, {"network": "lab", "mode": True}]
         bad += [{"network": "lab", "mode": "ping", key: "x"}
@@ -380,7 +380,7 @@ class ReconciliationTests(AtlasFixture):
         # Real collectors persist the input; revocation must reject even an
         # explicit ID, without rewriting evidence or attempting recollection.
         path = self.home / "network-atlas" / "config.yaml"
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         for mode in ("passive", "ping"):
             with patch.object(discovery, "run", side_effect=lambda argv, *args, **kwargs:
                               runner.CommandResult("success", xml(argv[-1], up=False) if argv[0] == "nmap" else b"[]")):

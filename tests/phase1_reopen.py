@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import sys
 
-from helpers import load_package
+from helpers import fixture_policy, load_package
 
 
 def deny_network(event, args):
@@ -23,11 +23,11 @@ def main():
         raise RuntimeError("synthetic scratch home required")
     sys.addaudithook(deny_network)
     load_package()
-    config = importlib.import_module("atlas_test_plugin.config")
+
     query = importlib.import_module("atlas_test_plugin.query")
     render = importlib.import_module("atlas_test_plugin.render")
     storage = importlib.import_module("atlas_test_plugin.storage")
-    policy = config.load_policy(home)
+    policy = fixture_policy(home)
     now = datetime(2026, 9, 30, 12, tzinfo=timezone.utc)
     with storage.Store(policy) as store:
         count = store.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0]

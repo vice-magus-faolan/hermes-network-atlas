@@ -15,11 +15,46 @@ import json
 import os
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 
 def _deny_network(event: str, args: tuple) -> None:
     if event in {"socket.connect", "socket.getaddrinfo", "socket.bind"}:
         raise RuntimeError("runtime smoke must remain network-free")
+
+
+def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
+    """Re-enter the SAME registered callbacks with real native profile settings."""
+    original = dispatch("network_query", {})
+    histories = {item["id"]: dispatch("network_query", {"view": "history", "device_id": item["id"]})
+                 for item in original["devices"]}
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+    for name in ("reader", "isolated"):
+        current = home.parent / ("switch-" + name)
+        raw = {"store": {"shared_sqlite_path": str(database)}} if name == "reader" else {}
+        with patch.dict(os.environ, {"HERMES_HOME": str(current)}):
+            ctx.set_config("policy", raw)
+            assert ctx.get_config("policy", None) == raw
+            result = dispatch("network_query", {})
+            assert [item["id"] for item in result["devices"]] == (
+                [item["id"] for item in original["devices"]] if name == "reader" else [])
+            if name == "reader":
+                for device, history in histories.items():
+                    assert dispatch("network_query", {"view": "history", "device_id": device}) == history
+            status = json.loads(command("status"))
+            assert status["configured_networks"] == []
+            assert status["authorized_for_atlas_ssh_inspection"] == []
+            with patch("subprocess.Popen", side_effect=AssertionError("foreign authority")):
+                assert "error" in dispatch("network_inspect", {"target": "lab-router"})
+                assert "error" in dispatch("network_discover", {"network": "lab", "mode": "passive"})
+                assert "error" in dispatch("network_check_endpoints", {"network": "lab"})
+                if batch_id is not None:
+                    assert "error" in dispatch("network_reconcile", {"batch_id": batch_id})
+            exported = dispatch("network_map", {"export": True})
+            assert all(Path(path).is_relative_to(current / "network-atlas" / "exports")
+                       for path in exported["exports"])
+            assert not (current / "plugin-data" / "network-atlas" / "atlas.sqlite3").exists()
+    assert dispatch("network_query", {}) == original
 
 
 def _inspection_smoke(mode, home, manager, dispatch, command):
@@ -70,6 +105,10 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
     assert dispatch("network_map", {"format": "text"})["content"] == data["content"]
     assert {row["source"] for row in dispatch(
         "network_query", {"view": "history", "device_id": detail["id"]})["observations"]} == {"ssh:lab-router"}
+    from hermes_cli.plugins import PluginContext
+    loaded = next(item for item in manager._plugins.values() if item.manifest.name == "network-atlas")
+    _profile_switch_smoke(home, PluginContext(loaded.manifest, manager), dispatch, command,
+                          data["result"]["batch_id"])
     manager.unload()
     print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
                       "persistent_ssh_batches": True, "fresh_native_process_persistence": True}))
@@ -102,10 +141,8 @@ def main() -> int:
         return json.loads(result)
 
     plugin = next(item for item in manager.list_plugins() if item["name"] == "network-atlas")
-    if mode in {"invalid", "disabled"}:
+    if mode == "disabled":
         assert not plugin["enabled"], plugin
-        if mode == "invalid":
-            assert plugin["error"], plugin
         for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile",
                      "network_inspect", "network_check_endpoints"):
             assert registry.get_entry(name, scope=manager.scope_key) is None
@@ -115,6 +152,20 @@ def main() -> int:
         return 0
 
     assert plugin["enabled"] and not plugin["error"], plugin
+    from hermes_cli.plugins import PluginContext
+    loaded = next(item for item in manager._plugins.values() if item.manifest.name == "network-atlas")
+    ctx = PluginContext(loaded.manifest, manager)
+    if mode in {"conversion", "conversion_reopen"}:
+        from native_conversion import run_conversion
+        return run_conversion(mode, home, manager)
+    if mode == "invalid":
+        for name in ("network_query", "network_update", "network_map", "network_discover", "network_reconcile",
+                     "network_inspect", "network_check_endpoints"):
+            assert "policy:" in dispatch(name, {})["error"]
+        assert get_plugin_command_handler("network") is not None
+        assert "network-atlas" in manager._cli_commands
+        print(json.dumps({"mode": mode, "actions_refused": True}))
+        return 0
     definitions = registry.get_definitions({"network_query", "network_update", "network_map", "network_discover",
                                             "network_reconcile", "network_inspect", "network_check_endpoints"})
     assert len(definitions) == 7, definitions
@@ -161,6 +212,7 @@ def main() -> int:
         assert {device["status"] for device in devices} == {"observed", "known"}
         assert "cached_neighbor" in json.dumps(devices)
         assert "observed" in dispatch("network_map", {"format": "text"})["content"]
+        _profile_switch_smoke(home, ctx, dispatch, command, result["batch_id"])
         manager.unload()
         print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
                           "persistent_batches": True, "fresh_native_process_persistence": True}))
@@ -204,14 +256,25 @@ def main() -> int:
     operator = cli(["update", "--device-id", device, "--field", "retired", "--value-json", "true"])
     assert operator["update"]["source"] == "user" and operator["update"]["confidence"] == "user_supplied"
     assert operator["applied"] and operator["persisted"]
-    assert (home / "network-atlas" / "atlas.sqlite3").exists()
+    assert (home / "plugin-data" / "network-atlas" / "atlas.sqlite3").exists()
     topology = dispatch("network_map", {"format": "mermaid", "export": True})
     assert "retired" in topology["content"]
     assert [Path(path).name for path in topology["exports"]] == ["network_map.md", "network_map.mmd"]
     assert cli(["query"])["devices"][0]["id"] == device
     assert "retired" in json.loads(command("map"))["content"]
-    # Re-check policy after registration: a now-invalid policy cannot use old grants.
-    (home / "network-atlas" / "config.yaml").write_text("ssh: {enabled: true, command: bad}", encoding="utf-8")
+    _profile_switch_smoke(home, ctx, dispatch, command)
+    # Hermes may retain last-known-good settings after malformed root YAML. Atlas
+    # follows that native result, rather than inventing a stronger reload veto.
+    saved = (home / "config.yaml").read_bytes()
+    good = ctx.get_config("policy", {})
+    try:
+        (home / "config.yaml").write_text("plugins: [")
+        assert ctx.get_config("policy", {}) == good
+        assert dispatch("network_query", {"view": "status"})["authorized_for_atlas_ssh_inspection"] == ["lab-router"]
+    finally:
+        (home / "config.yaml").write_bytes(saved)
+    # Use the real native writer, not an Atlas root-YAML reload contract.
+    ctx.set_config("policy", {"ssh": {"enabled": True, "command": "bad"}})
     assert "error" in dispatch("network_query", {"view": "status"})
     assert "error" in dispatch("network_update", params)
     manager.unload()

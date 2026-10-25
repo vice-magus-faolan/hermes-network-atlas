@@ -30,6 +30,35 @@ def scratch_home():
     return tempfile.TemporaryDirectory(prefix="network-atlas-test-", dir=SCRATCH_ROOT)
 
 
+def fixture_policy(home: Path):
+    """Domain-test adapter for old synthetic YAML fixtures, not runtime loading.
+
+    Native settings/profile behavior is exercised separately through actual
+    PluginContext callbacks in runtime_smoke.py and native_endpoints.py.
+    """
+    import importlib
+    load_package()
+    config = importlib.import_module("atlas_test_plugin.config")
+    conversion = importlib.import_module("atlas_test_plugin.conversion")
+    return config.validate_policy(conversion.read_legacy(home), home)
+
+
+def fixture_handlers(home: Path):
+    """Inject a domain policy into real handlers without mocking native APIs."""
+    import importlib
+    load_package()
+    tools = importlib.import_module("atlas_test_plugin.tools")
+    return tools.Handlers(lambda: fixture_policy(home))
+
+
+def fixture_command(args, home: Path):
+    """Exercise CLI domain behavior against an explicit synthetic policy loader."""
+    import importlib
+    load_package()
+    commands = importlib.import_module("atlas_test_plugin.commands")
+    return commands.run_command(args, lambda: fixture_policy(home))
+
+
 def copy_plugin(destination: Path) -> None:
     """Copy plugin source and metadata so native admission sees the shipped files."""
     import shutil

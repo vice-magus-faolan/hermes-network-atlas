@@ -17,7 +17,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, load_package, scratch_home
+from helpers import ROOT, fixture_command, fixture_handlers, load_package, scratch_home
 from test_boundaries import synthetic_policy
 
 load_package()
@@ -62,7 +62,7 @@ class AtlasFixture(unittest.TestCase):
         commands.setup_parser(parser)
         output = io.StringIO()
         with redirect_stdout(output):
-            code = commands.run_command(parser.parse_args(argv), self.home)
+            code = fixture_command(parser.parse_args(argv), self.home)
         return code, json.loads(output.getvalue())
 
     def counts(self):
@@ -304,7 +304,7 @@ class QueryUpdateMapTests(AtlasFixture):
 
     def test_update_receipts_refuse_overflow_without_mutation(self):
         self.set_output_limit(512)
-        handler = tools.Handlers(self.home)
+        handler = fixture_handlers(self.home)
         for value, explanation in (("x" * 4096, "e" * 4096), ("雪" * 64, "Unicode expansion"),
                                    ('"\\' * 64, "JSON escaping")):
             with self.subTest(value=value):
@@ -316,7 +316,7 @@ class QueryUpdateMapTests(AtlasFixture):
                 self.assertLessEqual(len(result.encode("utf-8")), 512)
 
     def test_update_receipt_exact_byte_boundary_and_success_control(self):
-        handler = tools.Handlers(self.home)
+        handler = fixture_handlers(self.home)
         params = {"device_id": self.device, "field": "os", "value": "雪", "explanation": 'JSON "\\ 雪'}
         result = handler.update(params)
         receipt = json.loads(result)
@@ -390,7 +390,7 @@ class QueryUpdateMapTests(AtlasFixture):
         commands.setup_parser(parser)
         output = io.StringIO()
         with redirect_stdout(output):
-            code = commands.run_command(parser.parse_args(argv), self.home)
+            code = fixture_command(parser.parse_args(argv), self.home)
         self.assertEqual(code, 0)
         self.assertEqual(len(output.getvalue().encode("utf-8")), size)
         self.assertTrue(json.loads(output.getvalue())["persisted"])
@@ -461,7 +461,7 @@ class QueryUpdateMapTests(AtlasFixture):
         self.assertEqual(before, after)
         self.raw["limits"]["output_bytes"] = 1
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
-        self.assertIn("error", json.loads(tools.Handlers(self.home).map({"export": True})))
+        self.assertIn("error", json.loads(fixture_handlers(self.home).map({"export": True})))
         self.assertFalse(self.policy.exports.exists())
 
     def test_query_filters_pagination_and_literal_sql_like_injection(self):
@@ -507,7 +507,7 @@ class QueryUpdateMapTests(AtlasFixture):
         self.assertEqual(len(first["observations"]), 1)
 
     def test_tool_provenance_no_policy_edits_existing_reference_required(self):
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         params = {"device_id": self.device, "field": "description", "value": "Model proposal",
                   "explanation": "Model rationale"}
         receipt = json.loads(handlers.update(params, source="user", confidence="user_supplied", operator=True))
@@ -532,7 +532,7 @@ class QueryUpdateMapTests(AtlasFixture):
         other_interface = core.add_interface(self.store, created["device_id"], "eth0", now=NOW)
         valid = {"target_device": created["device_id"], "source_interface": interface,
                  "target_interface": other_interface, "relationship_type": "virtual"}
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         history = tuple(self.store.connection.iterdump())
         for field in ("target_device", "source_interface", "target_interface"):
             value = {**valid, field: "PRIVATE_missing_reference"}
@@ -594,7 +594,7 @@ class QueryUpdateMapTests(AtlasFixture):
         self.assertEqual(Path(files[0]).read_text(), after["markdown"])
 
     def test_map_rejects_arbitrary_export_path_symlink_and_oversized_output(self):
-        handler = tools.Handlers(self.home)
+        handler = fixture_handlers(self.home)
         for params in ({"path": "/bad"}, {"format": []}, {"export": "true"}):
             self.assertIn("error", json.loads(handler.map(params)))
         small = config.validate_policy({"limits": {"output_bytes": 1}}, self.home)

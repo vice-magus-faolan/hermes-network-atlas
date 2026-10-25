@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import json
-from pathlib import Path
 import sqlite3
+from typing import TYPE_CHECKING
 
-from .config import Policy, load_policy
+from .config import Policy
 from .errors import RequestError, error_message
 from .tools import Handlers, status, update_receipt
 from .updates import Update, operator_update
 from .core import add_address, add_interface, apply_update, create_device, end_address
 from .storage import Store, response_json
+
+if TYPE_CHECKING:
+    from .conversion import WritableSettings
 
 
 def setup_parser(parser: argparse.ArgumentParser) -> None:
@@ -22,6 +26,9 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     # invalid values. Native argparse still owns syntax/unknown-option errors.
     commands = parser.add_subparsers(dest="atlas_action", required=True)
     commands.add_parser("status", allow_abbrev=False)
+    conversion = commands.add_parser("convert-legacy", allow_abbrev=False,
+                                     help="Explicit one-time conversion; stop all Atlas writers first")
+    conversion.add_argument("--writers-stopped", required=True, action="store_true")
     create = commands.add_parser("create", allow_abbrev=False, help="Create a known device (not an observation)")
     create.add_argument("--name", required=True)
     for action in ("update", "validate-update"):
@@ -58,11 +65,17 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     resume.add_argument("batch_id", help="Resume stored local endpoint evidence; never collects")
 
 
-def run_command(args: argparse.Namespace, home: Path) -> int:
+def run_command(args: argparse.Namespace, policy_loader: Callable[[], Policy], *,
+                ctx: WritableSettings | None = None) -> int:
     """Run a bounded trusted local command, emitting audited persistence receipts."""
     try:
-        policy = load_policy(home)
-        result = _read_command(args, home, policy)
+        if args.atlas_action == "convert-legacy":
+            from .conversion import convert_legacy
+            result = convert_legacy(ctx, writers_stopped=args.writers_stopped)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        policy = policy_loader()
+        result = _read_command(args, policy)
         if result is None:
             result = _write_command(args, policy)
         # Native mutations have already checked this exact receipt before commit;
@@ -83,23 +96,24 @@ def _decode(text: str, policy: Policy) -> object:
         raise RequestError("JSON input: valid bounded JSON required for query-json or value-json") from exc
 
 
-def _read_command(args: argparse.Namespace, home: Path, policy: Policy) -> dict | None:
+def _read_command(args: argparse.Namespace, policy: Policy) -> dict | None:
+    handlers = Handlers(lambda: policy)
     if args.atlas_action == "check-endpoints":
-        return json.loads(Handlers(home).check_endpoints({"network": args.network}))
+        return json.loads(handlers.check_endpoints({"network": args.network}))
     if args.atlas_action == "resume-endpoints":
-        return json.loads(Handlers(home).check_endpoints({"batch_id": args.batch_id}))
+        return json.loads(handlers.check_endpoints({"batch_id": args.batch_id}))
     if args.atlas_action == "inspect":
-        return json.loads(Handlers(home).inspect({"target": args.target}))
+        return json.loads(handlers.inspect({"target": args.target}))
     if args.atlas_action == "discover":
-        return json.loads(Handlers(home).discover({"network": args.network, "mode": args.mode}))
+        return json.loads(handlers.discover({"network": args.network, "mode": args.mode}))
     if args.atlas_action == "reconcile":
-        return json.loads(Handlers(home).reconcile({"batch_id": args.batch_id} if args.batch_id else {}))
+        return json.loads(handlers.reconcile({"batch_id": args.batch_id} if args.batch_id else {}))
     if args.atlas_action == "status":
-        return json.loads(status(home))
+        return json.loads(status(policy))
     if args.atlas_action == "query":
-        return json.loads(Handlers(home).query(_decode(args.query_json, policy)))
+        return json.loads(handlers.query(_decode(args.query_json, policy)))
     if args.atlas_action == "map":
-        return json.loads(Handlers(home).map({"format": args.format, "export": args.export}))
+        return json.loads(handlers.map({"format": args.format, "export": args.export}))
     if args.atlas_action == "validate-update":
         update = operator_update({"device_id": args.device_id, "field": args.field,
                                   "value": _decode(args.value_json, policy)}, policy)

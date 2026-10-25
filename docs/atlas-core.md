@@ -6,20 +6,23 @@ and [Authorized SSH Inspection](authorized-ssh-inspection.md).
 
 ## Storage and profile boundary
 
-Registration resolves `get_hermes_home()` and validates the entire policy before
-registering any surface. Every invocation reloads that profile's policy. The
-default database is `<profile-home>/network-atlas/atlas.sqlite3`. Missing policy
-means empty allowlists. Existing empty/invalid policy fails closed. Configuration
-is read-only to the plugin; the operator must maintain it with mode 0600 in a
-private directory. No model update can change configuration.
+Each invocation reads `ctx.get_config("policy", {})` and resolves public
+`plugin_data_dir("network-atlas")`. The documented `<profile-home>/plugin-data/network-atlas`
+layout supplies the new default `atlas.sqlite3` and the resolved profile ancestor
+for existing ownership/export semantics. Hermes owns settings fallback, caching
+and worker snapshots; Atlas validates the returned domain values. Empty settings
+mean empty allowlists. No model update can change configuration. Only the explicit
+operator converter writes native settings; see [conversion](operator-guide.md#convert-legacy-policy-and-storage).
 
 `store.shared_sqlite_path` explicitly selects an absolute shared SQLite file.
-Only knowledge is shared. Alias associations carry the registration profile's
+Only knowledge is shared. Alias associations carry the current invocation profile's
 resolved home as their policy context. Another profile cannot obtain inspection
 permission or use its identically spelled alias as an identity anchor simply by
 reading that shared store. Ambiguous alias associations authorize no device.
 Authorization is always current local policy, not an access result or atlas fact.
-No database read creates a second profile directory or changes its configuration.
+Native storage resolution can create managed directories, but no read creates or
+migrates the database or changes settings. Store remains Atlas's relational,
+read-only/deadline/transaction boundary rather than a second JSON state store.
 
 The original schema is in `storage_schema.sql`; store schema 2 adds the
 endpoint projection through `storage_endpoints.sql`. `storage.py` initializes or
@@ -32,7 +35,8 @@ and rollback even on interruption. WAL supports simultaneous readers. SQLite
 may maintain private WAL/shared-memory coordination files; queries do not mutate
 canonical rows, initialize/migrate the store, or collect data.
 
-New directories are 0700, database/WAL/journal files and generated exports 0600.
+Atlas-created directories are 0700, database/WAL/journal files and generated exports 0600;
+Hermes-managed storage directories follow native defaults. Keep the profile private.
 Existing shared parent directories are not chmodded. The database file itself
 is made private on writable open. Existing operator config is not silently
 chmodded or rewritten. Same-UID processes and trusted native code are not isolated

@@ -26,7 +26,8 @@ class CumulativeAcceptanceTests(unittest.TestCase):
                       "ssh": {"enabled": True, "hosts": {alias: {"alias": alias, "inspect": True}
                                                         for alias in ("lab-a", "lab-b", "lab-c")}},
                       "limits": {"result_count": 100}, "retention": {"stale_after_days": 14}}
-            (atlas / "config.yaml").write_text(json.dumps(policy))
+            (home / "config.yaml").write_text(json.dumps({"plugins": {
+                "enabled": ["network-atlas"], "entries": {"network-atlas": {"settings": {"policy": policy}}}}}))
             fixture = root / "fixture-bin"
             fixture.mkdir()
             (fixture / "offline-fixture").touch()

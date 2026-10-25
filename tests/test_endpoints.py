@@ -10,7 +10,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, load_package, scratch_home
+from helpers import ROOT, fixture_handlers, fixture_policy, load_package, scratch_home
 from synthetic_sockets import SyntheticSockets
 
 load_package()
@@ -33,7 +33,7 @@ class EndpointTests(unittest.TestCase):
         path = self.home / 'network-atlas' / 'config.yaml'
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(raw))
-        return config.load_policy(self.home)
+        return fixture_policy(self.home)
 
     def collect(self, policy, fixture=None):
         fixture = fixture or SyntheticSockets(lambda address, port: 'positive' if port == 22 else 'closed')
@@ -110,7 +110,7 @@ class EndpointTests(unittest.TestCase):
 
     def test_all_public_request_injections_refuse_before_effects(self):
         policy = self.policy()
-        handler = tools.Handlers(self.home)
+        handler = fixture_handlers(self.home)
         with patch.object(transport.socket, 'socket', side_effect=AssertionError('unexpected socket')):
             for params in ({}, {'network': 'lab', 'batch_id': 'x'}, {'network': '192.0.2.8'},
                            {'network': '-oProxyCommand=id'},
@@ -325,7 +325,7 @@ class EndpointTests(unittest.TestCase):
             path.write_text(json.dumps(raw))
             with self.subTest(change=change), patch.object(endpoints.Scheduler, 'run') as collect, \
                     patch.object(transport.socket, 'socket') as socket, patch('subprocess.Popen') as spawn:
-                emitted = tools.Handlers(self.home).check_endpoints({'batch_id': result['batch_id']})
+                emitted = fixture_handlers(self.home).check_endpoints({'batch_id': result['batch_id']})
                 failed = json.loads(emitted)
                 if change.startswith('observations'):
                     self.assertTrue(failed['error'].startswith('limits.observations:'), failed)
@@ -352,7 +352,7 @@ class EndpointTests(unittest.TestCase):
             self.assertEqual(self.rows(policy), page)
         path.write_bytes(original)
         with patch.object(endpoints.Scheduler, 'run') as collect:
-            recovered = json.loads(tools.Handlers(self.home).check_endpoints({'batch_id': result['batch_id']}))
+            recovered = json.loads(fixture_handlers(self.home).check_endpoints({'batch_id': result['batch_id']}))
             self.assertTrue(recovered['queryable'])
             self.assertFalse(recovered['collection_performed'])
             collect.assert_not_called()
@@ -389,7 +389,7 @@ class EndpointTests(unittest.TestCase):
         minimum = len(storage.response_json(recovery, config.Limits().output_bytes).encode())
         self.policy(limits={'output_bytes': minimum - 1})
         with patch.object(endpoints.Scheduler, 'run') as collect, patch.object(transport.socket, 'socket') as socket:
-            refused = json.loads(tools.Handlers(self.home).check_endpoints({'network': 'lab'}))
+            refused = json.loads(fixture_handlers(self.home).check_endpoints({'network': 'lab'}))
             self.assertTrue(refused['error'].startswith('atlas state or bounds:'), refused)
             self.assertFalse(refused['persisted'])
             collect.assert_not_called()
@@ -398,7 +398,7 @@ class EndpointTests(unittest.TestCase):
         policy = self.policy(limits={'output_bytes': 500})
         fixture = SyntheticSockets()
         with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock):
-            emitted = tools.Handlers(self.home).check_endpoints({'network': 'lab'})
+            emitted = fixture_handlers(self.home).check_endpoints({'network': 'lab'})
         self.assertLessEqual(len(emitted.encode()), 500)
         failed = json.loads(emitted)
         self.assertIn('error', failed)
@@ -412,7 +412,7 @@ class EndpointTests(unittest.TestCase):
         self.policy(limits={'observations': 3, 'output_bytes': 500})
         with patch.object(endpoints.Scheduler, 'run') as collect, \
                 patch.object(transport.socket, 'socket') as socket, patch('subprocess.Popen') as spawn:
-            emitted = tools.Handlers(self.home).check_endpoints({'batch_id': failed['batch_id']})
+            emitted = fixture_handlers(self.home).check_endpoints({'batch_id': failed['batch_id']})
             limited = json.loads(emitted)
             self.assertLessEqual(len(emitted.encode()), 500)
             self.assertTrue(limited['error'].startswith('limits.observations:'), limited)
@@ -431,7 +431,7 @@ class EndpointTests(unittest.TestCase):
             self.assertEqual(tuple(store.connection.iterdump()), history)
         restored = self.policy()
         with patch.object(transport.socket, 'socket', side_effect=AssertionError('recovery recollected')):
-            recovered = json.loads(tools.Handlers(self.home).check_endpoints({'batch_id': failed['batch_id']}))
+            recovered = json.loads(fixture_handlers(self.home).check_endpoints({'batch_id': failed['batch_id']}))
         self.assertTrue(recovered['queryable'])
         self.assertEqual(self.counts(restored)['batches'], 1)
 
@@ -473,7 +473,7 @@ class EndpointTests(unittest.TestCase):
     def test_additive_v1_migration_read_only_no_effects_rollback_and_immutable_history(self):
         policy = self.policy()
         policy = replace(policy, networks=(replace(policy.networks[0], ping=True),))
-        policy.database.parent.mkdir(exist_ok=True)
+        policy.database.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(policy.database) as connection:
             connection.executescript((ROOT / 'storage_schema.sql').read_text())
             # Build an otherwise genuine v1 store, including shipped immutable guards.

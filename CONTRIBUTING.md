@@ -3,7 +3,7 @@
 This project is licensed GPL-3.0-or-later. Read [README.md](README.md),
 [SECURITY.md](SECURITY.md), and the relevant feature guide before changing behavior.
 
-Run `python3 -m pytest -q` as a non-root user with official Hermes v0.21.7 or v0.22.2,
+Run `python3 -m pytest -q` as a non-root user with official Hermes v0.21.7 or v0.22.5,
 its installed `hermes` CLI on PATH, and requirements-test.txt. The native installer
 tests need network for dependency resolution; Atlas application fixtures refuse
 Python network connections. Docker adds network isolation for application-test
@@ -22,7 +22,7 @@ docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges h
 ```
 
 The build runs tests/test_compatibility.py online. The container runs everything
-else without network. The default is Hermes v0.22.2; use
+else without network. The default is Hermes v0.22.5; use
 `--build-arg HERMES_REF=v0.21.7` to test the oldest supported release in the CI matrix.
 
 ## Style and changes
@@ -35,6 +35,9 @@ structured fixtures. Intentional assertions are allowed only under `tests/`.
 Settings live in `ruff.toml`, separate from Python packaging metadata so the
 lint configuration does not affect Hermes plugin dependency resolution.
 This is a lint check, not a required formatter pass.
+
+The Docker entrypoint also enforces C901 at 15 for the native settings, CLI,
+handlers and converter. CI also reports soft-10 findings; diagnostics are not exact scores.
 
 Prefer simple standard-library Python, small typed boundaries, and focused
 Conventional Commits. Explain non-obvious intent and failure behavior. Avoid
