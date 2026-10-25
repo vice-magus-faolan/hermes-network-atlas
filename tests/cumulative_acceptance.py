@@ -76,17 +76,22 @@ def counts(home: Path) -> dict:
 
 def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
     """Refuse hostile method grants on real tool/slash/CLI before any effects."""
-    original = atlas.ctx.get_config("policy", {})
+    original = json.loads(json.dumps(atlas.ctx.get_config("policy", {})))
+    config_path = home / "config.yaml"
+    native_config = config_path.read_bytes()
+    healthy_status = atlas.slash("status")
+    assert "error" not in healthy_status, healthy_status
     database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
     before = counts(home) if database.exists() else None
     files = set(database.parent.rglob("*"))
     calls_path = root / "fixture-bin" / "calls.jsonl"
     calls = calls_path.read_bytes()
-    try:
-        for methods in ({"icmp_echo": 1}, {"tcp_ports": [4403]}, {"icmp_echo": True, "options": "-PE"}):
+    for methods in ({"icmp_echo": 1}, {"tcp_ports": [4403]}, {"icmp_echo": True, "options": "-PE"}):
+        try:
             raw = json.loads(json.dumps(original))
             raw["networks"]["lab"]["discovery"].update(methods)
             atlas.ctx.set_config("policy", raw)
+            assert atlas.ctx.get_config("policy", None) == raw
 
             results = (atlas.tool("network_discover", {"network": "lab", "mode": "ping"}),
                        atlas.slash("discover lab ping"),
@@ -96,8 +101,14 @@ def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
                 assert not result["applied"] and not result["persisted"], result
             assert files == set(database.parent.rglob("*")) and calls_path.read_bytes() == calls
             assert before == (counts(home) if database.exists() else None)
-    finally:
-        atlas.ctx.set_config("policy", original)
+        finally:
+            # Native dictionary writes merge omitted keys. Restore the complete
+            # synthetic file so each negative varies only its intended setting.
+            config_path.write_bytes(native_config)
+        assert atlas.ctx.get_config("policy", None) == original
+        assert atlas.slash("status") == healthy_status
+        assert atlas.tool("network_query", {"view": "status"}) == healthy_status
+        assert atlas.cli(["status"]) == healthy_status
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:

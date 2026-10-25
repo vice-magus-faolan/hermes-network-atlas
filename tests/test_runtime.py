@@ -37,6 +37,9 @@ class NativeRuntimeTests(unittest.TestCase):
             copy_plugin(plugin)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
+            if mode == "conversion":
+                (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy))
+                policy = {}
             # Explicit native opt-in selection. No production configuration is copied.
             (home / "config.yaml").write_text(json.dumps({
                 "plugins": {"enabled": ["network-atlas"] if mode != "disabled" else [],

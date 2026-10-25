@@ -288,7 +288,7 @@ class BoundaryTests(unittest.TestCase):
                 for result in results:
                     self.assertIn(setting, json.loads(result)["error"])
                     self.assertNotIn("PRIVATE_", result)
-                self.assertFalse((path.parent / "atlas.sqlite3").exists())
+                self.assertFalse(self.policy.database.exists())
             spawn.assert_not_called()
 
     def test_infrastructure_and_unexpected_errors_never_reflect_exception_payloads(self):

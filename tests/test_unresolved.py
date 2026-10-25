@@ -43,6 +43,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.policy = config.validate_policy(self.raw, self.home)
         self.store = storage.Store(self.policy, writable=True)
         self.addCleanup(self.store.__exit__)
+        (self.home / "network-atlas").mkdir()
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
 
     def observation(self, address="192.0.2.10", *, anchor=None, at=NOW, state=None):

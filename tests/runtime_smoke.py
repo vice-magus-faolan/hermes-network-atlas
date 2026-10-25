@@ -9,11 +9,12 @@ No registry, PluginContext, loader, command handler, or config mocks are used.
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 import io
 import json
 import os
 from pathlib import Path
+import sqlite3
 import sys
 from unittest.mock import patch
 
@@ -21,6 +22,12 @@ from unittest.mock import patch
 def _deny_network(event: str, args: tuple) -> None:
     if event in {"socket.connect", "socket.getaddrinfo", "socket.bind"}:
         raise RuntimeError("runtime smoke must remain network-free")
+
+
+def _database_dump(database: Path) -> list[str]:
+    """Read exact fixture history without initializing an absent database."""
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
+        return list(connection.iterdump())
 
 
 def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
@@ -31,6 +38,9 @@ def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
     database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
     for name in ("reader", "isolated"):
         current = home.parent / ("switch-" + name)
+        private_database = current / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+        private_before = _database_dump(private_database) if private_database.exists() else None
+        shared_before = _database_dump(database)
         raw = {"store": {"shared_sqlite_path": str(database)}} if name == "reader" else {}
         with patch.dict(os.environ, {"HERMES_HOME": str(current)}):
             ctx.set_config("policy", raw)
@@ -50,11 +60,36 @@ def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
                 assert "error" in dispatch("network_check_endpoints", {"network": "lab"})
                 if batch_id is not None:
                     assert "error" in dispatch("network_reconcile", {"batch_id": batch_id})
+            assert _database_dump(database) == shared_before
+            assert (_database_dump(private_database) if private_database.exists() else None) == private_before
             exported = dispatch("network_map", {"export": True})
+            assert "error" not in exported, exported
+            assert {Path(path).name for path in exported["exports"]} == {"network_map.md", "network_map.mmd"}
             assert all(Path(path).is_relative_to(current / "network-atlas" / "exports")
                        for path in exported["exports"])
-            assert not (current / "plugin-data" / "network-atlas" / "atlas.sqlite3").exists()
+            for path in exported["exports"]:
+                assert Path(path).is_file()
+            if name == "reader":
+                assert not private_database.exists()
+                shared_after = _database_dump(database)
+                assert set(shared_before) <= set(shared_after)
+                additions = set(shared_after) - set(shared_before)
+                assert len(additions) == 2
+                assert all(row.startswith('INSERT INTO "audit_events"') for row in additions)
+            else:
+                # Export is an explicit audited write, unlike query/map reads.
+                # It may initialize this isolated DB, but never copy inventory.
+                assert _database_dump(database) == shared_before
+                with closing(sqlite3.connect(private_database.as_uri() + "?mode=ro", uri=True)) as isolated:
+                    tables = isolated.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name!='audit_events'").fetchall()
+                    assert all(isolated.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
+                               for (table,) in tables)
+                    assert {row[0] for row in isolated.execute("SELECT action FROM audit_events")} == {
+                        "map_export_requested", "map_exported"}
     assert dispatch("network_query", {}) == original
+    for device, history in histories.items():
+        assert dispatch("network_query", {"view": "history", "device_id": device}) == history
 
 
 def _inspection_smoke(mode, home, manager, dispatch, command):

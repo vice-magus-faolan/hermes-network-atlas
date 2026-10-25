@@ -21,7 +21,9 @@ def _modules():
 
 def collect_methods(atlas, home: Path, root: Path) -> None:
     """Collect three public routes per policy; never use a production socket."""
-    original = atlas.ctx.get_config('policy', {})
+    original = json.loads(json.dumps(atlas.ctx.get_config('policy', {})))
+    config_path = home / 'config.yaml'
+    native_config = config_path.read_bytes()
     scenarios = [({'icmp_echo': True, 'tcp_ports': [80, 443]}, 'icmp', None),
                  ({'icmp_echo': True, 'tcp_ports': []}, 'icmp', None),
                  ({'icmp_echo': False, 'tcp_ports': [2222]}, 'tcp', None),
@@ -40,7 +42,10 @@ def collect_methods(atlas, home: Path, root: Path) -> None:
             records.extend(_scenario(atlas, methods, kind, error))
         (root / 'host-methods.json').write_text(json.dumps(records, sort_keys=True))
     finally:
-        atlas.ctx.set_config('policy', original)
+        # set_config merges dictionaries; omission cannot remove methodlab.
+        # Restore only this disposable fixture's original native configuration.
+        config_path.write_bytes(native_config)
+    assert atlas.ctx.get_config('policy', None) == original
 
 
 def _scenario(atlas, methods, kind, error):

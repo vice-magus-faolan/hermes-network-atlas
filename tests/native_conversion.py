@@ -35,9 +35,9 @@ def run_conversion(mode, home, manager):
     destination = home / 'plugin-data' / 'network-atlas' / 'atlas.sqlite3'
     saved = home.parent / 'conversion.json'
     if mode == 'conversion':
-        raw = ctx.get_config('policy', {})
-        (home / 'network-atlas' / 'config.yaml').write_text(json.dumps(raw))
-        ctx.set_config('policy', {})
+        raw = conversion.read_legacy(home)
+        assert ctx.get_config('policy', None) == {}
+        native_config = (home / 'config.yaml').read_bytes()
         policy = replace(config.validate_policy(raw, home), database=legacy)
         with storage.Store(policy, writable=True) as store:
             store.connection.execute('PRAGMA wal_autocheckpoint=0')
@@ -55,8 +55,9 @@ def run_conversion(mode, home, manager):
                         if path.is_file() and not path.name.endswith('-shm')}
             assert 'legacy store' in cli(['query'], 2)['error']
             # A pre-publication failure must remove only its temporary copy.
-            with patch.object(conversion.os, 'link', side_effect=OSError('synthetic publish interruption')):
+            with patch.object(conversion.os, 'link', side_effect=OSError('synthetic publish interruption')) as publish:
                 assert not cli(action, 2)['persisted']
+            publish.assert_called_once()
             assert not destination.exists()
             assert list(destination.parent.glob('.atlas-convert-*')) == []
             # A divergent destination is never overwritten or silently selected.
@@ -67,17 +68,24 @@ def run_conversion(mode, home, manager):
             assert destination.read_bytes() == conflict_bytes
             destination.unlink()
             # A nonempty native policy is also a conflict, before DB publication.
-            ctx.set_config('policy', {'render': {'include_addresses': False}})
-            assert 'conflicts' in cli(action, 2)['error']
-            assert not destination.exists()
-            ctx.set_config('policy', {})
+            try:
+                ctx.set_config('policy', {'render': {'include_addresses': False}})
+                assert 'conflicts' in cli(action, 2)['error']
+                assert not destination.exists()
+            finally:
+                # {} merges rather than clears native settings. Restore the
+                # complete synthetic input, not a mocked settings result.
+                (home / 'config.yaml').write_bytes(native_config)
+            assert ctx.get_config('policy', None) == {}
             real_copy = conversion._copy_store
             def publish_then_interrupt(*args):
                 real_copy(*args)
                 raise OSError('synthetic interruption before settings commit')
-            with patch.object(conversion, '_copy_store', publish_then_interrupt):
+            with patch.object(conversion, '_copy_store', side_effect=publish_then_interrupt) as copy_store:
                 assert not cli(action, 2)['persisted']
-            assert destination.exists() and ctx.get_config('policy', None) == {}
+            copy_store.assert_called_once()
+            assert destination.exists(), 'interruption must follow DB publication'
+            assert ctx.get_config('policy', None) == {}, 'interruption must precede native settings commit'
             assert original == {path.name: path.read_bytes() for path in legacy.parent.iterdir()
                                 if path.is_file() and not path.name.endswith('-shm')}
             # Producer rows, triggers, IDs, receipts and ownership must all survive.
@@ -91,7 +99,8 @@ def run_conversion(mode, home, manager):
         assert 'legacy store' in cli(['query'], 2)['error']
         result = cli(action)
         assert result['converted'] and not result['copied'] and result['originals_retained']
-        assert ctx.get_config('policy', {})['store']['shared_sqlite_path'] == str(destination)
+        converted = {**data['raw'], 'store': {'shared_sqlite_path': str(destination)}}
+        assert ctx.get_config('policy', None) == converted
         assert cli(['query'])['devices'][0]['id'] == data['device']
         assert cli(['status'])['authorized_for_atlas_ssh_inspection'] == ['lab-router']
         assert cli(['reconcile', '--batch-id', data['batch']]) == data['application']

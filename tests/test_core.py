@@ -46,6 +46,9 @@ class AtlasFixture(unittest.TestCase):
         self.store = storage.Store(self.policy, writable=True)
         self.addCleanup(self.store.__exit__)
         self.device = core.create_device(self.store, "Synthetic router", now=NOW)["device_id"]
+        # Domain adapters still use synthetic YAML; managed DB setup no longer
+        # creates this separate fixture directory as a side effect.
+        (self.home / "network-atlas").mkdir()
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
 
     def update(self, field, value, *, operator=True, device=None, now=NOW):
