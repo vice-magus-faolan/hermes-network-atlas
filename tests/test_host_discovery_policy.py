@@ -132,7 +132,7 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                     discovery.collect(policy, {"network": "lab", "mode": "ping"})
                 self.assertEqual(
                     discovery.validate_request({"network": "lab", "mode": "passive"}, policy)[1], "passive")
-                handler = tools.Handlers(lambda: policy)
+                handler = tools.Handlers(lambda policy=policy: policy)
                 for text in (handler.discover({"network": "lab", "mode": "ping"}, icmp_echo=False),
                              handler.command("discover lab ping")):
                     result = json.loads(text)
@@ -143,7 +143,7 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                 args = parser.parse_args(["discover", "--network", "lab", "--mode", "ping"])
                 output = io.StringIO()
                 with redirect_stdout(output):
-                    self.assertEqual(commands.run_command(args, lambda: policy), 2)
+                    self.assertEqual(commands.run_command(args, lambda policy=policy: policy), 2)
                 self.assertIn("error", json.loads(output.getvalue()))
             self.assertEqual(list(self.home.iterdir()), [])
 

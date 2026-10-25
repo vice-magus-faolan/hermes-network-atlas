@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from helpers import ROOT, fixture_command, fixture_handlers, fixture_policy, scratch_home
 from test_boundaries import synthetic_policy
-from test_core import NOW, batches, commands, config, core, query, storage, tools
+from test_core import NOW, batches, commands, core, query, storage, tools
 from test_discovery import discovery, runner, xml
 
 
