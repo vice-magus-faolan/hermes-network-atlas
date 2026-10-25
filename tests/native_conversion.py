@@ -155,7 +155,11 @@ def run_conversion(mode, home, manager):
     if mode == 'conversion_kill_child':
         def wait_before_publication(temporary, target):
             assert Path(target) == destination
-            (home.parent / 'conversion-kill-ready.json').write_text(json.dumps({'temporary': str(temporary)}))
+            ready = home.parent / 'conversion-kill-ready.json'
+            pending = ready.with_suffix('.pending')
+            pending.write_text(json.dumps({'temporary': str(temporary)}))
+            # The parent treats existence as readiness, so publish only complete JSON.
+            os.replace(pending, ready)
             while True:
                 signal.pause()
         with patch.object(conversion.os, 'link', side_effect=wait_before_publication):
