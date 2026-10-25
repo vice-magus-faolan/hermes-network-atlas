@@ -30,6 +30,21 @@ def scratch_home():
     return tempfile.TemporaryDirectory(prefix="network-atlas-test-", dir=SCRATCH_ROOT)
 
 
+def symlink_plugin_data(home: Path, layout: str) -> Path:
+    """Relocate synthetic per-profile data beneath one shared ancestor."""
+    target = home.parent / "relocated-data" / home.name
+    target.mkdir(parents=True)
+    if layout == "plugin-data":
+        link = home / "plugin-data"
+    elif layout == "network-atlas":
+        link = home / "plugin-data" / "network-atlas"
+    else:
+        raise ValueError("unknown synthetic data layout")
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target, target_is_directory=True)
+    return target / "network-atlas" if layout == "plugin-data" else target
+
+
 def fixture_policy(home: Path):
     """Domain-test adapter for old synthetic YAML fixtures, not runtime loading.
 

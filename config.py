@@ -198,8 +198,8 @@ def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:
     return enabled, tuple(sorted(hosts, key=lambda host: host.name))
 
 
-def validate_policy(raw: object, home: Path) -> Policy:
-    """Validate a complete operator policy; unknown keys and coercion fail closed."""
+def validate_policy(raw: object, home: Path, *, data_dir: Path | None = None) -> Policy:
+    """Validate policy with independent profile identity and managed storage location."""
     data = _object(raw, {"version", "networks", "ssh", "limits", "retention", "render", "store"}, "policy")
     if type(data.get("version", 1)) is not int or data.get("version", 1) != 1:
         raise ConfigError("unsupported configuration version")
@@ -215,7 +215,7 @@ def validate_policy(raw: object, home: Path) -> Policy:
     render = _object(data.get("render", {}), {"include_addresses", "include_interfaces"}, "render")
     store = _object(data.get("store", {}), {"shared_sqlite_path"}, "store")
     home = home.resolve()
-    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+    database = (home / "plugin-data" / "network-atlas" if data_dir is None else data_dir) / "atlas.sqlite3"
     if "shared_sqlite_path" in store:
         path = store["shared_sqlite_path"]
         if not isinstance(path, str) or not 1 <= len(path) <= 4096 or any(ord(c) < 32 for c in path):
@@ -239,14 +239,15 @@ def load_policy(ctx: Settings) -> Policy:
 
     Hermes owns config caching, fallback and managed-worker snapshots. Its public
     storage helper creates the directory, not an Atlas database or collection.
-    The documented <home>/plugin-data/<name> layout preserves shipped ownership
-    keys and profile-local export paths without importing home-resolution internals.
+    Profile identity follows the native home resolver, never the storage target:
+    plugin-data or its Atlas subdirectory may be symlinked to another disk.
     """
+    from hermes_constants import get_hermes_home
     from plugins.plugin_storage import plugin_data_dir
 
     raw = ctx.get_config("policy", {})
     data = plugin_data_dir("network-atlas").resolve()
-    policy = validate_policy(raw, data.parent.parent)
+    policy = validate_policy(raw, get_hermes_home(), data_dir=data)
     legacy = policy.home / "network-atlas" / "atlas.sqlite3"
     if isinstance(raw, dict) and "shared_sqlite_path" not in raw.get("store", {}) and legacy.exists():
         raise ConfigError("legacy store present; stop writers and run network-atlas convert-legacy first")

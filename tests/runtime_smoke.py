@@ -10,13 +10,18 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing, redirect_stdout
+import importlib
 import io
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
+import subprocess
 import sys
 from unittest.mock import patch
+
+from helpers import symlink_plugin_data
 
 
 def _deny_network(event: str, args: tuple) -> None:
@@ -38,6 +43,9 @@ def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
     database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
     for name in ("reader", "isolated"):
         current = home.parent / ("switch-" + name)
+        layout = os.environ.get("NETWORK_ATLAS_TEST_DATA_LAYOUT")
+        if layout is not None:
+            symlink_plugin_data(current, layout)
         private_database = current / "plugin-data" / "network-atlas" / "atlas.sqlite3"
         private_before = _database_dump(private_database) if private_database.exists() else None
         shared_before = _database_dump(database)
@@ -90,6 +98,134 @@ def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
     assert dispatch("network_query", {}) == original
     for device, history in histories.items():
         assert dispatch("network_query", {"view": "history", "device_id": device}) == history
+
+
+def _registered_cli(manager, argv, code=0):
+    """Call the same native parser/handler pair registered by Atlas."""
+    entry = manager._cli_commands["network-atlas"]
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    entry["setup_fn"](parser)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        result = entry["handler_fn"](parser.parse_args(argv))
+    assert result == code, output.getvalue()
+    return json.loads(output.getvalue())
+
+
+def _symlink_profiles_smoke(home, ctx, manager, dispatch, command):
+    """Separate actual profile identity from two genuinely relocated data layouts."""
+    from hermes_constants import get_hermes_home, set_hermes_home_override, reset_hermes_home_override
+    from plugins.plugin_storage import plugin_data_dir
+
+    loaded = next(item for item in manager._plugins.values() if item.manifest.name == "network-atlas")
+    config = importlib.import_module(loaded.module.__name__ + ".config")
+    raw = ctx.get_config("policy", {})
+    database = plugin_data_dir("network-atlas").resolve() / "atlas.sqlite3"
+    policy = config.load_policy(ctx)
+    assert policy.home == home and policy.database == database
+    receipt = dispatch("network_discover", {"network": "lab", "mode": "passive"})
+    assert receipt["completion"] == "complete", receipt
+    assert "error" not in dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as connection:
+        assert {row[0] for row in connection.execute("SELECT DISTINCT policy_context FROM batches")} == {str(home)}
+    _profile_switch_smoke(home, ctx, dispatch, command, receipt["batch_id"])
+    original = dispatch("network_query", {})
+    assert original["devices"], "the first profile must have inventory to distinguish isolation"
+    exported = _registered_cli(manager, ["map", "--export"])
+    assert len(exported["exports"]) == 2
+    assert all(Path(path).is_file() and Path(path).is_relative_to(home / "network-atlas" / "exports")
+               for path in exported["exports"])
+    before = _database_dump(database)
+    other = home.parent / "symlink-other"
+    other_data = symlink_plugin_data(other, os.environ["NETWORK_ATLAS_TEST_DATA_LAYOUT"])
+    # Native context-local routing must win even while the process env remains A.
+    token = set_hermes_home_override(other)
+    try:
+        assert get_hermes_home().resolve() == other and Path(os.environ["HERMES_HOME"]) == home
+        ctx.set_config("policy", raw)
+        policy = config.load_policy(ctx)
+        assert policy.home == other
+        assert policy.database == plugin_data_dir("network-atlas").resolve() / "atlas.sqlite3"
+        assert policy.database == other_data / "atlas.sqlite3" and policy.database != database
+        assert dispatch("network_query", {})["devices"] == []
+        device = _registered_cli(manager, ["create", "--name", "Separate profile inventory"])["device_id"]
+        assert [row["id"] for row in dispatch("network_query", {})["devices"]] == [device]
+        batch = dispatch("network_discover", {"network": "lab", "mode": "passive"})
+        assert batch["completion"] == "complete", batch
+        with closing(sqlite3.connect(policy.database.as_uri() + "?mode=ro", uri=True)) as connection:
+            assert {row[0] for row in connection.execute("SELECT DISTINCT policy_context FROM batches")} == {str(other)}
+        exported = dispatch("network_map", {"export": True})
+        assert "error" not in exported, exported
+        assert len(exported["exports"]) == 2
+        assert all(Path(path).is_file() and Path(path).is_relative_to(other / "network-atlas" / "exports")
+                   for path in exported["exports"])
+        assert _database_dump(database) == before
+    finally:
+        reset_hermes_home_override(token)
+    assert dispatch("network_query", {}) == original
+    assert _database_dump(database) == before
+    manager.unload()
+    print(json.dumps({"mode": "symlink_profiles", "profile_isolation": True}))
+    return 0
+
+
+def _policy_revocation_smoke(home, ctx, manager, dispatch, command):
+    """Replace real native policy via the documented CLI, then use registered consumers."""
+    hermes = shutil.which("hermes")
+    assert hermes is not None, "installed stock Hermes CLI required"
+    retained = ctx.get_config("policy", {})
+    expanded = json.loads(json.dumps(retained))
+    expanded["networks"]["removed"] = {"cidr": "198.51.100.0/24", "discovery": {"passive": True}}
+    expanded["ssh"]["hosts"]["removed-host"] = {"alias": "removed-router", "inspect": True}
+
+    def replace_policy(raw):
+        result = subprocess.run([hermes, "-p", "default", "config", "set",
+                                 "plugins.entries.network-atlas.settings.policy", json.dumps(raw)],
+                                cwd=home.parent, env=os.environ.copy(), input="", capture_output=True,
+                                text=True, timeout=45)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert ctx.get_config("policy", None) == raw
+
+    def refuse(network, alias):
+        database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+        before = _database_dump(database) if database.exists() else None
+        with patch("subprocess.Popen", side_effect=AssertionError("revoked grant attempted transport")) as transport:
+            for result in (
+                dispatch("network_discover", {"network": network, "mode": "passive"}),
+                json.loads(command("discover " + network + " passive")),
+                _registered_cli(manager, ["discover", "--network", network, "--mode", "passive"], 2),
+                dispatch("network_inspect", {"target": alias}),
+                json.loads(command("inspect " + alias)),
+                _registered_cli(manager, ["inspect", "--target", alias], 2),
+            ):
+                assert "error" in result and not result["applied"] and not result["persisted"], result
+            transport.assert_not_called()
+        assert (_database_dump(database) if database.exists() else None) == before
+
+    replace_policy(expanded)
+    status = json.loads(command("status"))
+    assert status["configured_networks"] == ["lab", "removed"]
+    assert status["authorized_for_atlas_ssh_inspection"] == ["lab-router", "removed-router"]
+    replace_policy(retained)
+    status = _registered_cli(manager, ["status"])
+    assert status["configured_networks"] == ["lab"]
+    assert status["authorized_for_atlas_ssh_inspection"] == ["lab-router"]
+    refuse("removed", "removed-router")
+    # Retained permissions still reach real code through offline-only executables.
+    discovery = dispatch("network_discover", {"network": "lab", "mode": "passive"})
+    inspection = json.loads(command("inspect lab-router"))
+    for receipt in (discovery, inspection):
+        assert receipt["completion"] == "complete" and receipt["persisted"], receipt
+        assert "error" not in _registered_cli(manager, ["reconcile", "--batch-id", receipt["batch_id"]])
+    replace_policy({})
+    status = json.loads(command("status"))
+    assert status["configured_networks"] == []
+    assert status["authorized_for_atlas_ssh_inspection"] == []
+    refuse("lab", "lab-router")
+    assert dispatch("network_query", {})["devices"], "revocation must retain collected knowledge"
+    manager.unload()
+    print(json.dumps({"mode": "revocation", "replacement_revocation": True}))
+    return 0
 
 
 def _inspection_smoke(mode, home, manager, dispatch, command):
@@ -190,6 +326,10 @@ def main() -> int:
     from hermes_cli.plugins import PluginContext
     loaded = next(item for item in manager._plugins.values() if item.manifest.name == "network-atlas")
     ctx = PluginContext(loaded.manifest, manager)
+    if mode == "symlink_profiles":
+        return _symlink_profiles_smoke(home, ctx, manager, dispatch, get_plugin_command_handler("network"))
+    if mode == "revocation":
+        return _policy_revocation_smoke(home, ctx, manager, dispatch, get_plugin_command_handler("network"))
     if mode in {"conversion", "conversion_reopen"}:
         from native_conversion import run_conversion
         return run_conversion(mode, home, manager)

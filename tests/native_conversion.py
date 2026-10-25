@@ -10,8 +10,12 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+from helpers import symlink_plugin_data
+
 
 def run_conversion(mode, home, manager):
+    from plugins.plugin_storage import plugin_data_dir
+
     loaded = next(item for item in manager._plugins.values() if item.manifest.name == 'network-atlas')
     assert loaded.module is not None
     package = loaded.module.__name__
@@ -32,7 +36,7 @@ def run_conversion(mode, home, manager):
 
     action = ['convert-legacy', '--writers-stopped']
     legacy = home / 'network-atlas' / 'atlas.sqlite3'
-    destination = home / 'plugin-data' / 'network-atlas' / 'atlas.sqlite3'
+    destination = plugin_data_dir('network-atlas').resolve() / 'atlas.sqlite3'
     saved = home.parent / 'conversion.json'
     if mode == 'conversion':
         raw = conversion.read_legacy(home)
@@ -61,7 +65,7 @@ def run_conversion(mode, home, manager):
             assert not destination.exists()
             assert list(destination.parent.glob('.atlas-convert-*')) == []
             # A divergent destination is never overwritten or silently selected.
-            with storage.Store(config.validate_policy({}, home), writable=True) as other:
+            with storage.Store(config.validate_policy({}, home, data_dir=destination.parent), writable=True) as other:
                 core.create_device(other, 'Independent conflicting inventory')
             conflict_bytes = destination.read_bytes()
             assert 'conflicts' in cli(action, 2)['error']
@@ -106,8 +110,13 @@ def run_conversion(mode, home, manager):
         assert cli(['reconcile', '--batch-id', data['batch']]) == data['application']
         assert not cli(action)['copied']
         policy = config.load_policy(ctx)
+        assert policy.home == home
+        assert policy.database == destination
+        assert policy.exports == home / 'network-atlas' / 'exports'
         with storage.Store(policy) as copied:
             assert list(copied.connection.iterdump()) == data['history']
+            assert {row[0] for row in copied.connection.execute('SELECT DISTINCT policy_context FROM batches')} == {
+                str(home)}
         # Explicit sharing is policy conversion only, including a legacy-location
         # binding: never make a private copy or rewrite source ownership.
         shared_home = home.parent / 'conversion-shared-reader'
@@ -115,6 +124,9 @@ def run_conversion(mode, home, manager):
         shared_link.symlink_to(legacy)
         shared_raw = {'store': {'shared_sqlite_path': str(shared_link)}}
         (shared_home / 'network-atlas').mkdir(parents=True)
+        layout = os.environ.get('NETWORK_ATLAS_TEST_DATA_LAYOUT')
+        if layout is not None:
+            symlink_plugin_data(shared_home, layout)
         (shared_home / 'network-atlas' / 'config.yaml').write_text(json.dumps(shared_raw))
         with patch.dict(os.environ, {'HERMES_HOME': str(shared_home)}):
             result = cli(action)

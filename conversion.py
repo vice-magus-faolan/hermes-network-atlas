@@ -114,14 +114,15 @@ def convert_legacy(ctx: WritableSettings | None, *, writers_stopped: bool) -> di
     native settings write. On interruption, keep originals and cold-retry with all
     writers stopped; never overwrite/merge a divergent destination or settings.
     """
+    from hermes_constants import get_hermes_home
     from plugins.plugin_storage import plugin_data_dir
 
     if not writers_stopped or ctx is None:
         raise ConfigError("legacy conversion requires stopped writers and native settings context")
     data = plugin_data_dir("network-atlas").resolve()
-    home = data.parent.parent
+    home = get_hermes_home().resolve()
     raw = read_legacy(home)
-    policy = validate_policy(raw, home)
+    policy = validate_policy(raw, home, data_dir=data)
     legacy = home / "network-atlas" / "atlas.sqlite3"
     if not (home / "network-atlas" / "config.yaml").exists() and not legacy.exists():
         raise ConfigError("legacy conversion: no legacy policy or store found")

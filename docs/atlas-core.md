@@ -6,10 +6,11 @@ and [Authorized SSH Inspection](authorized-ssh-inspection.md).
 
 ## Storage and profile boundary
 
-Each invocation reads `ctx.get_config("policy", {})` and resolves public
-`plugin_data_dir("network-atlas")`. The documented `<profile-home>/plugin-data/network-atlas`
-layout supplies the new default `atlas.sqlite3` and the resolved profile ancestor
-for existing ownership/export semantics. Hermes owns settings fallback, caching
+Each invocation reads `ctx.get_config("policy", {})` and resolves the current
+profile home through native `get_hermes_home()` for ownership and exports.
+Public `plugin_data_dir("network-atlas")` independently supplies the default
+`atlas.sqlite3` location. Symlinking `plugin-data` or its `network-atlas` subdirectory
+relocates data without changing profile identity. Hermes owns settings fallback, caching
 and worker snapshots; Atlas validates the returned domain values. Empty settings
 mean empty allowlists. No model update can change configuration. Only the explicit
 operator converter writes native settings; see [conversion](operator-guide.md#convert-legacy-policy-and-storage).

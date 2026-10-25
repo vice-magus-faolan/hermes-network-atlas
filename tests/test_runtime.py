@@ -10,7 +10,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, copy_plugin, scratch_home
+from helpers import ROOT, copy_plugin, scratch_home, symlink_plugin_data
 from test_boundaries import synthetic_policy
 
 
@@ -26,7 +26,7 @@ def runtime_root() -> Path:
 
 
 class NativeRuntimeTests(unittest.TestCase):
-    def run_smoke(self, mode: str):
+    def run_smoke(self, mode: str, *, data_layout: str | None = None):
         root = runtime_root()
         self.assertTrue((root / "hermes_cli" / "plugins.py").is_file())
         with scratch_home() as directory:
@@ -35,6 +35,8 @@ class NativeRuntimeTests(unittest.TestCase):
             home = scratch / "hermes"
             plugin = home / "plugins" / "network-atlas"
             copy_plugin(plugin)
+            if data_layout is not None:
+                symlink_plugin_data(home, data_layout)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
             if mode == "conversion":
@@ -51,9 +53,13 @@ class NativeRuntimeTests(unittest.TestCase):
                    "HERMES_DISABLE_LAZY_INSTALLS": "1", "HERMES_MANAGED": "false",
                    "XDG_CONFIG_HOME": str(scratch / "xdg-config"), "XDG_CACHE_HOME": str(scratch / "xdg-cache"),
                    "XDG_DATA_HOME": str(scratch / "xdg-data")}
+            if data_layout is not None:
+                env["NETWORK_ATLAS_TEST_DATA_LAYOUT"] = data_layout
+            if "HERMES_RUNTIME_DIR" in os.environ:
+                env["HERMES_RUNTIME_DIR"] = os.environ["HERMES_RUNTIME_DIR"]
             fixture_bin = scratch / "fixture-bin"
             binary = "ip" if mode == "local_discovery" else "ssh"
-            if mode in {"local_discovery", "ssh_inspection"}:
+            if mode in {"local_discovery", "ssh_inspection", "symlink_profiles", "revocation"}:
                 fixture_bin.mkdir()
                 (fixture_bin / "offline-fixture").touch()
                 source = "offline_probe.py" if binary == "ip" else "offline_ssh.py"
@@ -61,8 +67,14 @@ class NativeRuntimeTests(unittest.TestCase):
                 (fixture_bin / binary).chmod(0o700)
                 env["PATH"] = str(fixture_bin) + os.pathsep + env["PATH"]
                 env["NETWORK_ATLAS_OFFLINE_FIXTURE_DIR"] = str(fixture_bin)
+                if mode in {"symlink_profiles", "revocation"}:
+                    shutil.copy2(ROOT / "tests" / "offline_probe.py", fixture_bin / "ip")
+                    (fixture_bin / "ip").chmod(0o700)
+            # Revocation also launches the documented installed config CLI;
+            # each native subprocess retains its own bounded timeout.
+            timeout = 180 if mode == "revocation" else 60
             child = subprocess.run([sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), mode],
-                                   env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
+                                   env=env, cwd=scratch, capture_output=True, text=True, timeout=timeout)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
@@ -108,6 +120,19 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_conversion_wal_conflicts_interruption_and_cold_retry(self):
         self.assertTrue(self.run_smoke("conversion")["fresh_native_process_persistence"])
+
+    def test_native_symlinked_data_preserves_profile_identity_and_default_inventory(self):
+        for layout in ("plugin-data", "network-atlas"):
+            with self.subTest(layout=layout):
+                self.assertTrue(self.run_smoke("symlink_profiles", data_layout=layout)["profile_isolation"])
+
+    def test_native_symlinked_conversion_retains_legacy_refusal_history_and_cold_retry(self):
+        for layout in ("plugin-data", "network-atlas"):
+            with self.subTest(layout=layout):
+                self.assertTrue(self.run_smoke("conversion", data_layout=layout)["fresh_native_process_persistence"])
+
+    def test_documented_native_config_cli_replaces_network_ssh_and_empty_policy(self):
+        self.assertTrue(self.run_smoke("revocation")["replacement_revocation"])
 
     def test_native_endpoints_fresh_profiles_shared_physical_store_and_isolated_control(self):
         root = runtime_root()

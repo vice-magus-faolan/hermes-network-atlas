@@ -55,12 +55,19 @@ profile; `HERMES_HOME` can override it. Paths beneath that home are:
 | `network-atlas/exports/` | Optional generated maps, never authoritative |
 
 Atlas declares one dictionary setting, `policy`, in its native `config_schema`.
-Use Hermes's config CLI or the plugin's native Desktop settings JSON editor,
-not model tools or a second Atlas config file. For example:
+Use Hermes's config CLI to replace the complete policy value, not model tools or
+a second Atlas config file. Include every grant and setting you intend to retain:
 
 ```sh
 hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy '{"networks":{}}'
 ```
+
+This replacement removes omitted network and SSH-host grants. To revoke all
+collection grants, replace the value with `{}` using the same command. Verify
+with `hermes -p PROFILE network-atlas status` in a fresh process.
+Do not use the Desktop settings JSON editor or `ctx.set_config` for grant removal:
+their merging writer retains omitted keys, and writing `{}` there does not clear
+existing grants.
 
 Keep the selected profile home and native configuration private (0700/0600).
 An absent setting or empty object grants no collection. Atlas validates returned
