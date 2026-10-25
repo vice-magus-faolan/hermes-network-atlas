@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 
 from .config import Policy
+from .errors import RequestError, StoreError
 from .query import device_detail
 from .storage import Store, identifier, private_directory, timestamp, utc_now
 
@@ -200,8 +201,13 @@ def export_map(policy: Policy, outputs: dict[str, str], *, now: datetime | None 
     can leave mismatched generated files; rerun export to repair them. No timestamp
     appears in generated content. Explicit exports are audited locally.
     """
-    private_directory(policy.exports)
-    os.chmod(policy.exports, 0o700)
+    try:
+        private_directory(policy.exports)
+        os.chmod(policy.exports, 0o700)
+    except (StoreError, OSError) as exc:
+        # The shared directory guard uses StoreError, but this path is an export,
+        # not SQLite. Keep the later Store/audit failures outside this translation.
+        raise RequestError("export: directory unavailable; check export access and available space") from exc
     with Store(policy, writable=True) as store, store.transaction():
         store.audit(identifier(), "map_export_requested", "local_render", timestamp(now or utc_now()),
                     details={"files": ["network_map.md", "network_map.mmd"]})

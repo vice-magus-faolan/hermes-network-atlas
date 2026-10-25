@@ -213,6 +213,132 @@ class OperatorStatusTests(unittest.TestCase):
         self.assertTrue(json.loads(output.getvalue())["error"].startswith("store:"))
         self.assertNotIn("PRIVATE", output.getvalue())
 
+    def test_missing_query_ids_name_fields_with_and_without_store(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        for populated in (False, True):
+            if populated:
+                with storage.Store(self.policy, writable=True) as store:
+                    device = core.create_device(store, "Synthetic retained device", now=NOW)["device_id"]
+                    at = storage.timestamp(NOW)
+                    batch = batches.store_batch(store, "local_passive", "lab", at, at, "failed", (
+                        batches.Probe("ip_addr", "unavailable", at, at, "none", "", "none", "missing_executable"),))
+                self.assertTrue(json.loads(self.handlers.query({"view": "history", "device_id": device}))[
+                    "observations"])
+                self.assertEqual(json.loads(self.handlers.query({"view": "unresolved", "batch_id": batch}))[
+                    "evidence"], [])
+            before = self.policy.database.read_bytes() if populated else None
+            paths = set(self.home.rglob("*"))
+            for view, field in (("history", "device_id"), ("unresolved", "batch_id")):
+                with self.subTest(populated=populated, view=view), patch("subprocess.Popen") as spawn, \
+                        patch("socket.socket") as socket:
+                    params = {"view": view, field: "PRIVATE_ABSENT_ID"}
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        code = fixture_command(parser.parse_args(["query", "--query-json", json.dumps(params)]),
+                                               self.home)
+                    self.assertEqual(code, 2)
+                    for emitted in (self.handlers.query(params), output.getvalue()):
+                        result = json.loads(emitted)
+                        self.assertEqual(result["error"], field + ": select an existing atlas entity")
+                        self.assertFalse(result["applied"])
+                        self.assertNotIn("PRIVATE", emitted)
+                        self.assertNotIn(str(self.home), emitted)
+                    spawn.assert_not_called()
+                    socket.assert_not_called()
+            self.assertEqual(self.policy.database.exists(), populated)
+            self.assertEqual(self.policy.database.read_bytes() if populated else None, before)
+            self.assertEqual(set(self.home.rglob("*")), paths)
+
+    def test_export_directory_failures_are_not_store_errors(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        with storage.Store(self.policy, writable=True) as store:
+            core.create_device(store, "Synthetic retained device", now=NOW)
+        before = self.policy.database.read_bytes()
+        outside = self.home / "PRIVATE_EXPORT_TARGET"
+        outside.mkdir()
+        sentinel = outside / "sentinel"
+        sentinel.write_text("PRIVATE_UNCHANGED")
+        for symlink in (False, True):
+            if symlink:
+                self.policy.exports.symlink_to(outside, target_is_directory=True)
+            else:
+                self.policy.exports.write_text("PRIVATE_NOT_A_DIRECTORY")
+            with self.subTest(symlink=symlink), patch("subprocess.Popen") as spawn, \
+                    patch("socket.socket") as socket:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    code = fixture_command(parser.parse_args(["map", "--export"]), self.home)
+                self.assertEqual(code, 2)
+                for emitted in (self.handlers.map({"export": True}), output.getvalue()):
+                    result = json.loads(emitted)
+                    self.assertEqual(result["error"],
+                                     "export: directory unavailable; check export access and available space")
+                    self.assertFalse(result["applied"])
+                    self.assertNotIn("PRIVATE", emitted)
+                    self.assertNotIn(str(self.home), emitted)
+                # Slash map never exports; a broken export directory cannot break reads.
+                self.assertNotIn("error", json.loads(self.handlers.command("map markdown")))
+                spawn.assert_not_called()
+                socket.assert_not_called()
+            self.assertEqual(self.policy.database.read_bytes(), before)
+            self.assertEqual(sentinel.read_text(), "PRIVATE_UNCHANGED")
+            self.assertEqual(list(outside.iterdir()), [sentinel])
+            if not symlink:
+                self.assertEqual(self.policy.exports.read_text(), "PRIVATE_NOT_A_DIRECTORY")
+            self.policy.exports.unlink()
+        # Restored access uses the same real export/audit path successfully.
+        exported = json.loads(self.handlers.map({"export": True}))
+        self.assertNotIn("error", exported)
+        self.assertEqual([Path(path).name for path in exported["exports"]], ["network_map.md", "network_map.mmd"])
+        with storage.Store(self.policy) as store:
+            self.assertEqual([row[0] for row in store.connection.execute(
+                "SELECT action FROM audit_events WHERE action LIKE 'map_export%' ORDER BY rowid")],
+                ["map_export_requested", "map_exported"])
+
+    def test_export_preserves_real_store_failure_categories(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        with storage.Store(self.policy, writable=True) as store:
+            core.create_device(store, "Synthetic retained device", now=NOW)
+        target = self.home / "PRIVATE_STORE_TARGET.sqlite3"
+        self.policy.database.rename(target)
+        self.policy.database.symlink_to(target)
+        for failure in ("writable_layout", "schema", "sqlite"):
+            if failure == "schema":
+                self.policy.database.unlink()
+                target.rename(self.policy.database)
+                with storage.Store(self.policy, writable=True) as store:
+                    store.connection.execute("PRAGMA user_version=999")
+            elif failure == "sqlite":
+                self.policy.database.write_bytes(b"PRIVATE_NOT_SQLITE")
+            before = self.policy.database.read_bytes()
+            with self.subTest(failure=failure), patch("subprocess.Popen") as spawn, \
+                    patch("socket.socket") as socket:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    code = fixture_command(parser.parse_args(["map", "--export"]), self.home)
+                self.assertEqual(code, 2)
+                results = [self.handlers.map({"export": True}), output.getvalue()]
+                slash = self.handlers.command("map markdown")
+                if failure == "writable_layout":
+                    # Read rendering succeeds; the actual writable Store refuses its symlink.
+                    self.assertNotIn("error", json.loads(slash))
+                else:
+                    results.append(slash)
+                for emitted in results:
+                    result = json.loads(emitted)
+                    self.assertEqual(result["error"],
+                                     "store: database operation failed; check availability and compatible schema")
+                    self.assertFalse(result["applied"])
+                    self.assertNotIn("PRIVATE", emitted)
+                    self.assertNotIn(str(self.home), emitted)
+                spawn.assert_not_called()
+                socket.assert_not_called()
+            self.assertEqual(self.policy.database.read_bytes(), before)
+            self.assertEqual(list(self.policy.exports.iterdir()), [])
+
 
 class RuntimeGuardTests(unittest.TestCase):
     """Also run by ordinary pytest in a fresh -O child; unittest assertions survive."""

@@ -360,7 +360,7 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
         return query_endpoints(policy, args)
     if not policy.database.exists():
         if args.get("view") == "history":
-            raise ValueError("unknown atlas entity")
+            raise RequestError("device_id: select an existing atlas entity")
         return {"devices": [], "has_more": False, "discovery_performed": False,
                 "known_devices": 0, "observed_devices": 0, "stale_devices": 0, "status_counts": {},
                 "authorized_devices_for_atlas_ssh_inspection": 0,
