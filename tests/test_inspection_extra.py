@@ -12,10 +12,10 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from helpers import ROOT
+from helpers import ROOT, fixture_handlers
 import test_inspection as fixtures
 from test_inspection import (outputs, ALIAS, MAC, MAC2, inspection, core, config,
-                             runner, reconcile, query, storage, tools, updates)
+                             runner, reconcile, query, storage, updates)
 from test_core import AtlasFixture, NOW
 
 
@@ -133,10 +133,10 @@ class ExtraInspectionTests(AtlasFixture):
     def test_query_map_never_collect_and_surface_unknown_flags_refused(self):
         self.associate()
         with patch.object(inspection, "run", side_effect=AssertionError("reads never inspect")):
-            self.assertNotIn("error", json.loads(tools.Handlers(self.home).query({})))
-            self.assertNotIn("error", json.loads(tools.Handlers(self.home).map({})))
-            self.assertIn("error", json.loads(tools.Handlers(self.home).command("inspect lab-router id")))
-            self.assertIn("error", json.loads(tools.Handlers(self.home).command("inspect -oX")))
+            self.assertNotIn("error", json.loads(fixture_handlers(self.home).query({})))
+            self.assertNotIn("error", json.loads(fixture_handlers(self.home).map({})))
+            self.assertIn("error", json.loads(fixture_handlers(self.home).command("inspect lab-router id")))
+            self.assertIn("error", json.loads(fixture_handlers(self.home).command("inspect -oX")))
         import argparse
         import importlib
         setup_parser = importlib.import_module("atlas_test_plugin.commands").setup_parser
@@ -182,7 +182,7 @@ class ExtraInspectionTests(AtlasFixture):
         alias_removed = json.loads(json.dumps(self.raw))
         alias_removed["ssh"]["hosts"] = {}
         before = list(self.store.connection.iterdump())
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         with (patch.object(inspection, "run") as transport, patch("subprocess.Popen") as spawn,
               patch("socket.socket") as socket):
             for raw in (disabled, alias_disabled, alias_removed):

@@ -12,13 +12,13 @@ from datetime import timedelta
 import sys
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 if __name__ == "__main__":
     from network_guard import deny_network
     deny_network()
 
-from helpers import ROOT, scratch_home
+from helpers import ROOT, fixture_command, fixture_handlers, fixture_policy, scratch_home
 from test_boundaries import synthetic_policy
 from test_core import NOW, batches, core, query, storage, config, tools
 
@@ -37,8 +37,20 @@ class OperatorStatusTests(unittest.TestCase):
         directory = self.home / "network-atlas"
         directory.mkdir()
         (directory / "config.yaml").write_text(json.dumps(raw))
-        self.policy = config.load_policy(self.home)
-        self.handlers = tools.Handlers(self.home)
+        self.policy = fixture_policy(self.home)
+        self.handlers = fixture_handlers(self.home)
+
+    def test_cli_and_status_read_one_policy_snapshot_each(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        for action in ('status', 'query'):
+            with self.subTest(action=action), redirect_stdout(io.StringIO()):
+                loader = Mock(side_effect=[self.policy, AssertionError('second policy read')])
+                self.assertEqual(commands.run_command(parser.parse_args([action]), loader), 0)
+                loader.assert_called_once_with()
+        loader = Mock(side_effect=[self.policy, AssertionError('second policy read')])
+        self.assertNotIn('error', json.loads(tools.Handlers(loader).query({'view': 'status'})))
+        loader.assert_called_once_with()
 
     def test_empty_status_has_consistent_counts_scopes_and_no_file_effects(self):
         before = set(self.home.rglob("*"))
@@ -80,7 +92,7 @@ class OperatorStatusTests(unittest.TestCase):
                         with self.subTest(existing_store=existing_store, methods=methods, argv=argv):
                             output = io.StringIO()
                             with redirect_stdout(output):
-                                code = commands.run_command(parser.parse_args(argv), self.home)
+                                code = fixture_command(parser.parse_args(argv), self.home)
                             result = json.loads(output.getvalue())
                             self.assertEqual(code, 2)
                             self.assertIn("error", result)
@@ -155,7 +167,7 @@ class OperatorStatusTests(unittest.TestCase):
                                 (['resume-endpoints', 'saved-batch'], {'batch_id': 'saved-batch'})):
             with (patch.object(tools.Handlers, 'check_endpoints', return_value='{}') as check,
                   redirect_stdout(io.StringIO())):
-                self.assertEqual(commands.run_command(parser.parse_args(argv), self.home), 0)
+                self.assertEqual(fixture_command(parser.parse_args(argv), self.home), 0)
                 check.assert_called_once_with(selection)
         with patch.object(tools.Handlers, 'check_endpoints') as check, redirect_stderr(io.StringIO()):
             for argv in (['check-endpoints'], ['resume-endpoints'], ['check-endpoints', 'lab', 'extra'],
@@ -186,16 +198,17 @@ class OperatorStatusTests(unittest.TestCase):
                 with self.subTest(argv=argv):
                     output = io.StringIO()
                     with redirect_stdout(output):
-                        code = commands.run_command(parser.parse_args(argv), self.home)
+                        code = fixture_command(parser.parse_args(argv), self.home)
                     self.assertEqual(code, 2)
                     self.assertIn(field, json.loads(output.getvalue())["error"])
                     self.assertNotIn("PRIVATE", output.getvalue())
             spawn.assert_not_called()
         self.assertEqual(before, {path: path.read_bytes() for path in self.home.rglob("*") if path.is_file()})
+        self.policy.database.parent.mkdir(parents=True, exist_ok=True)
         self.policy.database.write_bytes(b"PRIVATE_NOT_SQLITE")
         output = io.StringIO()
         with redirect_stdout(output):
-            code = commands.run_command(parser.parse_args(["query"]), self.home)
+            code = fixture_command(parser.parse_args(["query"]), self.home)
         self.assertEqual(code, 2)
         self.assertTrue(json.loads(output.getvalue())["error"].startswith("store:"))
         self.assertNotIn("PRIVATE", output.getvalue())
@@ -211,10 +224,10 @@ class RuntimeGuardTests(unittest.TestCase):
         path = self.home / "network-atlas" / "config.yaml"
         path.parent.mkdir()
         path.write_text(json.dumps(synthetic_policy()))
-        self.policy = config.load_policy(self.home)
+        self.policy = fixture_policy(self.home)
 
     def test_invalid_requests_and_policy_ports_reject_before_effects(self):
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         with patch("subprocess.Popen") as spawn, patch.object(storage.Store, "__init__") as open_store:
             for result in (handlers.command("discover PRIVATE_SCOPE passive"),
                            handlers.command("inspect PRIVATE_ALIAS"),
@@ -233,7 +246,7 @@ class RuntimeGuardTests(unittest.TestCase):
         self.assertFalse(self.policy.database.exists())
 
     def test_collection_record_budgets_name_setting_on_all_public_routes_before_effects(self):
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         parser = argparse.ArgumentParser(allow_abbrev=False)
         commands.setup_parser(parser)
         path = self.home / "network-atlas" / "config.yaml"
@@ -257,7 +270,7 @@ class RuntimeGuardTests(unittest.TestCase):
                     patch("socket.socket") as socket, patch.object(storage.Store, "__init__") as open_store:
                 output = io.StringIO()
                 with redirect_stdout(output):
-                    code = commands.run_command(parser.parse_args(argv), self.home)
+                    code = fixture_command(parser.parse_args(argv), self.home)
                 model = (handlers.inspect({"target": "lab-router"}) if mode == "inspect" else
                          handlers.discover({"network": "lab", "mode": mode}))
                 slash = handlers.command("inspect lab-router" if mode == "inspect" else "discover lab " + mode)
@@ -279,7 +292,7 @@ class RuntimeGuardTests(unittest.TestCase):
     def test_invalid_collector_receipts_fail_closed_at_handlers(self):
         at = storage.timestamp(storage.utc_now())
         probe = batches.Probe("fixture", "unavailable", at, at, "none", "", "none", "executable_missing")
-        handlers = tools.Handlers(self.home)
+        handlers = fixture_handlers(self.home)
         for module, route, params in ((discovery, handlers.discover, {"network": "lab", "mode": "passive"}),
                                       (inspection, handlers.inspect, {"target": "lab-router"})):
             with self.subTest(route=route.__name__), patch.object(module, "_probe", return_value=probe), \
@@ -332,17 +345,18 @@ class RuntimeGuardTests(unittest.TestCase):
         params = {"device_id": device, "field": "description", "value": "Proposed",
                   "explanation": "Synthetic inference"}
         with patch.object(storage.Store, "audit", side_effect=ValueError("PRIVATE_INTERNAL_FAILURE")):
-            failed = json.loads(tools.Handlers(self.home).update(params))
+            failed = json.loads(fixture_handlers(self.home).update(params))
         self.assertFalse(failed["applied"])
         self.assertNotIn("PRIVATE", json.dumps(failed))
         with storage.Store(self.policy) as store:
             self.assertFalse(store.connection.in_transaction)
             self.assertEqual(store.connection.execute("SELECT COUNT(*) FROM observations").fetchone()[0], before)
-        self.assertTrue(json.loads(tools.Handlers(self.home).update(params))["persisted"])
+        self.assertTrue(json.loads(fixture_handlers(self.home).update(params))["persisted"])
 
     def test_store_layout_failure_retains_explicit_exception_cause(self):
         target = self.home / "private-target"
         target.write_text("synthetic")
+        self.policy.database.parent.mkdir(parents=True, exist_ok=True)
         self.policy.database.symlink_to(target)
         with self.assertRaises(ValueError) as caught:
             storage.Store(self.policy, writable=True)

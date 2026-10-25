@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from helpers import load_package, scratch_home
+from helpers import fixture_handlers, load_package, scratch_home
 from test_core import AtlasFixture, NOW
 
 load_package()
@@ -75,7 +75,7 @@ class InspectionTests(AtlasFixture):
         before = self.counts()
         with patch.object(inspection, "run", side_effect=AssertionError("unauthorized transport")):
             for params in bad:
-                self.assertIn("error", json.loads(tools.Handlers(self.home).inspect(params)))
+                self.assertIn("error", json.loads(fixture_handlers(self.home).inspect(params)))
         self.assertEqual(self.counts(), before)
 
     def test_fixed_transport_strict_keys_and_no_config_side_channels(self):
@@ -160,7 +160,7 @@ class InspectionTests(AtlasFixture):
                 with self.assertRaises(ValueError):
                     reconcile.reconcile(policy, {"batch_id": receipt["batch_id"]})
             (self.home / "network-atlas" / "config.yaml").write_text("{}")
-            self.assertIn("error", json.loads(tools.Handlers(self.home).inspect({"target": ALIAS}, operator=True)))
+            self.assertIn("error", json.loads(fixture_handlers(self.home).inspect({"target": ALIAS}, operator=True)))
         self.assertEqual(self.counts(), before)
         other = core.create_device(self.store, "Other fixture", now=NOW)["device_id"]
         self.associate(other)

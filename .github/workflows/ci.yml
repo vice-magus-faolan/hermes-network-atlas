@@ -19,11 +19,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Verify stock Hermes v0.21.7 and v0.22.2
+          fetch-depth: 0
+      - name: Verify stock Hermes v0.21.7 and v0.22.5
         shell: bash
         run: |
           set -eu
-          for ref in v0.21.7 v0.22.2; do
+          baseline="$RUNNER_TEMP/atlas-complexity-${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -m 755 "$baseline"
+          for file in __init__.py config.py commands.py tools.py; do
+            git show df5268aa0380aaea5a6dd6a199c94f9382ee965d:"$file" > "$baseline/$file"
+          done
+          chmod 644 "$baseline"/*.py
+          for ref in v0.21.7 v0.22.5; do
             (
               name=atlas-tests-${{ github.run_id }}-${{ github.run_attempt }}-$ref
               cleanup() {
@@ -43,6 +50,11 @@ jobs:
               trap cleanup EXIT
               trap 'exit 130' HUP INT TERM
               docker build --build-arg HERMES_REF="$ref" --file docker/validation.Dockerfile --tag hermes-network-atlas-tests:local .
+              # Report baseline debt separately; the product entrypoint enforces 15.
+              if [ "$ref" = v0.22.5 ]; then
+                docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$baseline,dst=/baseline,readonly" hermes-network-atlas-tests:local ruff check --exit-zero --select C901 --config 'lint.mccabe.max-complexity = 10' /baseline
+                docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local ruff check --exit-zero --select C901 --config 'lint.mccabe.max-complexity = 10' __init__.py config.py commands.py tools.py conversion.py
+              fi
               docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local
             )
           done

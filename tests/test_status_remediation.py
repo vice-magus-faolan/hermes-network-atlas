@@ -14,9 +14,9 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, scratch_home
+from helpers import ROOT, fixture_command, fixture_handlers, fixture_policy, scratch_home
 from test_boundaries import synthetic_policy
-from test_core import NOW, batches, commands, config, core, query, storage, tools
+from test_core import NOW, batches, commands, core, query, storage, tools
 from test_discovery import discovery, runner, xml
 
 
@@ -35,17 +35,17 @@ print(json.dumps(public_status(Path(sys.argv[2]))))
 
 def public_status(home: Path) -> dict:
     """Exercise the real tool/slash/operator handlers, with collection forbidden."""
-    handlers = tools.Handlers(home)
+    handlers = fixture_handlers(home)
     parser = argparse.ArgumentParser()
     commands.setup_parser(parser)
     stdout = io.StringIO()
     with patch.object(tools, "collect", side_effect=AssertionError("query collected")), \
             patch.object(tools, "inspect_host", side_effect=AssertionError("query inspected")):
-        result = {"direct": query.query(config.load_policy(home), {"view": "status"}),
+        result = {"direct": query.query(fixture_policy(home), {"view": "status"}),
                   "tool": json.loads(handlers.query({"view": "status"})),
                   "slash": json.loads(handlers.command("status"))}
         with redirect_stdout(stdout):
-            result["cli_exit"] = commands.run_command(parser.parse_args(["status"]), home)
+            result["cli_exit"] = fixture_command(parser.parse_args(["status"]), home)
         result["cli"] = json.loads(stdout.getvalue())
     return result
 
@@ -63,7 +63,7 @@ class StatusBatchBoundsTests(unittest.TestCase):
         self.raw["networks"]["lab"]["cidr"] = f"192.0.2.0/{prefix}"
         self.raw["limits"] = {"result_count": limit}
         (self.home / "network-atlas" / "config.yaml").write_text(json.dumps(self.raw))
-        self.policy = config.load_policy(self.home)
+        self.policy = fixture_policy(self.home)
 
     def assert_summary(self, batch, receipt, limit):
         expected = Counter(probe["outcome"] for probe in receipt["probes"])
@@ -120,7 +120,7 @@ class StatusBatchBoundsTests(unittest.TestCase):
         with storage.Store(self.policy, writable=True) as store:
             core.create_device(store, "Synthetic known host", now=NOW)
         with patch.object(discovery, "run", transport):
-            receipt = json.loads(tools.Handlers(self.home).discover({"network": "lab", "mode": "ping"}))
+            receipt = json.loads(fixture_handlers(self.home).discover({"network": "lab", "mode": "ping"}))
         self.assertTrue(receipt["persisted"], receipt)
         self.assertEqual(receipt["completion"], completion)
         self.assertEqual(len(receipt["probes"]), size + 1)

@@ -15,7 +15,7 @@ if __name__ == "__main__":
     from network_guard import deny_network
     deny_network()
 
-from helpers import load_package, scratch_home
+from helpers import fixture_policy, load_package, scratch_home
 
 load_package()
 config = importlib.import_module("atlas_test_plugin.config")
@@ -115,9 +115,9 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                        '      icmp_echo: yes\n', '      tcp_ports: null\n', '      helper: ping\n'):
             path.write_text(prefix + suffix)
             with self.subTest(suffix=suffix), self.assertRaises(config.ConfigError):
-                config.load_policy(self.home)
+                fixture_policy(self.home)
         path.write_text(prefix + '      icmp_echo: true\n      tcp_ports: []\n')
-        self.assertEqual(config.load_policy(self.home).networks[0].tcp_ports, ())
+        self.assertEqual(fixture_policy(self.home).networks[0].tcp_ports, ())
 
     def test_combined_bounds_refuse_before_any_effect_and_report_on_public_routes(self):
         for methods in ({"icmp_echo": True}, {"tcp_ports": [2222]}, {"icmp_echo": True, "tcp_ports": []}):
@@ -132,20 +132,19 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
                     discovery.collect(policy, {"network": "lab", "mode": "ping"})
                 self.assertEqual(
                     discovery.validate_request({"network": "lab", "mode": "passive"}, policy)[1], "passive")
-                with patch.object(tools, "load_policy", return_value=policy):
-                    handler = tools.Handlers(self.home)
-                    for text in (handler.discover({"network": "lab", "mode": "ping"}, icmp_echo=False),
-                                 handler.command("discover lab ping")):
-                        result = json.loads(text)
-                        self.assertIn("error", result)
-                        self.assertFalse(result["persisted"])
-                    parser = argparse.ArgumentParser()
-                    commands.setup_parser(parser)
-                    args = parser.parse_args(["discover", "--network", "lab", "--mode", "ping"])
-                    output = io.StringIO()
-                    with patch.object(commands, "load_policy", return_value=policy), redirect_stdout(output):
-                        self.assertEqual(commands.run_command(args, self.home), 2)
-                    self.assertIn("error", json.loads(output.getvalue()))
+                handler = tools.Handlers(lambda policy=policy: policy)
+                for text in (handler.discover({"network": "lab", "mode": "ping"}, icmp_echo=False),
+                             handler.command("discover lab ping")):
+                    result = json.loads(text)
+                    self.assertIn("error", result)
+                    self.assertFalse(result["persisted"])
+                parser = argparse.ArgumentParser()
+                commands.setup_parser(parser)
+                args = parser.parse_args(["discover", "--network", "lab", "--mode", "ping"])
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(commands.run_command(args, lambda policy=policy: policy), 2)
+                self.assertIn("error", json.loads(output.getvalue()))
             self.assertEqual(list(self.home.iterdir()), [])
 
     def test_unknown_tool_inputs_and_native_invalid_snapshots_refuse_before_effects(self):
@@ -246,7 +245,7 @@ class ICMPCapabilityTests(unittest.TestCase):
         self.assertEqual(self.capability(platform="linux", socket_factory=factory).state, "unverified")
         self.assertEqual(self.capability(platform="linux", socket_factory=factory).state, "unavailable")
         with patch.object(self.module, "icmp_capability", side_effect=AssertionError("query never checks")):
-            self.assertEqual(json.loads(tools.Handlers(self.policy.home).query({}))["devices"], [])
+            self.assertEqual(json.loads(tools.Handlers(lambda: self.policy).query({}))["devices"], [])
 
 
 if __name__ == "__main__":

@@ -25,6 +25,9 @@ class NativeAtlas:
         from tools.registry import registry
         discover_plugins()
         self.manager = get_plugin_manager()
+        from hermes_cli.plugins import PluginContext
+        loaded = next(item for item in self.manager._plugins.values() if item.manifest.name == "network-atlas")
+        self.ctx = PluginContext(loaded.manifest, self.manager)
         self.registry = registry
         self.command = get_plugin_command_handler("network")
         assert self.command is not None
@@ -65,7 +68,7 @@ class NativeAtlas:
 
 
 def counts(home: Path) -> dict:
-    database = home / "network-atlas" / "atlas.sqlite3"
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
     with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
         return {name: connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in
                 ("devices", "interfaces", "observations", "batches", "applications", "audit_events", "access_evidence")}
@@ -73,17 +76,22 @@ def counts(home: Path) -> dict:
 
 def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
     """Refuse hostile method grants on real tool/slash/CLI before any effects."""
-    path = home / "network-atlas" / "config.yaml"
-    original = path.read_bytes()
-    before = counts(home) if (path.parent / "atlas.sqlite3").exists() else None
-    files = set(path.parent.rglob("*"))
+    original = json.loads(json.dumps(atlas.ctx.get_config("policy", {})))
+    config_path = home / "config.yaml"
+    native_config = config_path.read_bytes()
+    healthy_status = atlas.slash("status")
+    assert "error" not in healthy_status, healthy_status
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+    before = counts(home) if database.exists() else None
+    files = set(database.parent.rglob("*"))
     calls_path = root / "fixture-bin" / "calls.jsonl"
     calls = calls_path.read_bytes()
-    try:
-        for methods in ({"icmp_echo": 1}, {"tcp_ports": [4403]}, {"icmp_echo": True, "options": "-PE"}):
-            raw = json.loads(original)
+    for methods in ({"icmp_echo": 1}, {"tcp_ports": [4403]}, {"icmp_echo": True, "options": "-PE"}):
+        try:
+            raw = json.loads(json.dumps(original))
             raw["networks"]["lab"]["discovery"].update(methods)
-            path.write_text(json.dumps(raw))
+            atlas.ctx.set_config("policy", raw)
+            assert atlas.ctx.get_config("policy", None) == raw
 
             results = (atlas.tool("network_discover", {"network": "lab", "mode": "ping"}),
                        atlas.slash("discover lab ping"),
@@ -91,10 +99,16 @@ def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
             for result in results:
                 assert "error" in result, result
                 assert not result["applied"] and not result["persisted"], result
-            assert files == set(path.parent.rglob("*")) and calls_path.read_bytes() == calls
-            assert before == (counts(home) if (path.parent / "atlas.sqlite3").exists() else None)
-    finally:
-        path.write_bytes(original)
+            assert files == set(database.parent.rglob("*")) and calls_path.read_bytes() == calls
+            assert before == (counts(home) if database.exists() else None)
+        finally:
+            # Native dictionary writes merge omitted keys. Restore the complete
+            # synthetic file so each negative varies only its intended setting.
+            config_path.write_bytes(native_config)
+        assert atlas.ctx.get_config("policy", None) == original
+        assert atlas.slash("status") == healthy_status
+        assert atlas.tool("network_query", {"view": "status"}) == healthy_status
+        assert atlas.cli(["status"]) == healthy_status
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:

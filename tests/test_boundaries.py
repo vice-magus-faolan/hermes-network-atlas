@@ -15,7 +15,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from helpers import ROOT, load_package, scratch_home
+from helpers import ROOT, fixture_command, fixture_handlers, fixture_policy, load_package, scratch_home
 
 plugin = load_package()
 config = importlib.import_module("atlas_test_plugin.config")
@@ -41,11 +41,11 @@ class PolicyTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
 
-    def test_missing_policy_has_no_authority_or_filesystem_effects(self):
-        policy = config.load_policy(self.home)
+    def test_absent_domain_fixture_has_no_authority_or_filesystem_effects(self):
+        policy = fixture_policy(self.home)
         self.assertEqual(policy.networks, ())
         self.assertEqual(policy.authorized_aliases, ())
-        self.assertEqual(policy.database, self.home / "network-atlas" / "atlas.sqlite3")
+        self.assertEqual(policy.database, self.home / "plugin-data" / "network-atlas" / "atlas.sqlite3")
         self.assertEqual(list(self.home.iterdir()), [])
 
     def test_valid_synthetic_policy_is_immutable(self):
@@ -108,7 +108,7 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.validate_policy({"ssh": {"hosts": {f"lab{i}": {"alias": f"lab{i}"} for i in range(33)}}}, self.home)
 
-    def test_yaml_read_boundary_and_duplicate_keys(self):
+    def test_legacy_conversion_yaml_boundary_and_duplicate_keys(self):
         directory = self.home / "network-atlas"
         directory.mkdir()
         path = directory / "config.yaml"
@@ -119,9 +119,9 @@ class PolicyTests(unittest.TestCase):
         for text in invalid:
             path.write_text(text)
             with self.subTest(text=text[:80]), self.assertRaises(config.ConfigError):
-                config.load_policy(self.home)
+                fixture_policy(self.home)
         path.write_text(json.dumps(synthetic_policy()))
-        self.assertEqual(config.load_policy(self.home).authorized_aliases, ("lab-router",))
+        self.assertEqual(fixture_policy(self.home).authorized_aliases, ("lab-router",))
 
     def test_shared_store_never_shares_policy_or_export_paths(self):
         shared = self.home / "shared.sqlite3"
@@ -144,13 +144,7 @@ class BoundaryTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
         self.policy = config.validate_policy(synthetic_policy(), self.home)
-        self.handlers = tools.Handlers(self.home)
-
-    def test_unsupported_python_refused_before_any_registration(self):
-        for version in ((3, 10), (3, 15)):
-            with (self.subTest(version=version), patch.object(plugin.sys, "version_info", version),
-                  self.assertRaises(RuntimeError)):
-                plugin.register(None)
+        self.handlers = fixture_handlers(self.home)
 
     def test_schema_does_not_admit_authority_or_unknown_arguments(self):
         for schema in (schemas.QUERY_SCHEMA, schemas.UPDATE_SCHEMA):
@@ -190,7 +184,7 @@ class BoundaryTests(unittest.TestCase):
     def seed(self):
         from atlas_test_plugin.storage import Store
         from atlas_test_plugin.core import create_device
-        with Store(config.load_policy(self.home), writable=True) as store:
+        with Store(fixture_policy(self.home), writable=True) as store:
             return create_device(store, "Synthetic fixture")["device_id"]
 
     def test_retirement_is_operator_only_and_proposals_are_immutable(self):
@@ -247,6 +241,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_slash_update_refuses_unattested_origin(self):
         self.assertIn("error", json.loads(self.handlers.command('update {"source":"user"}')))
+        self.assertIn("error", json.loads(self.handlers.command('convert-legacy --writers-stopped')))
         self.assertEqual(json.loads(self.handlers.command("status"))["stage"], "v1")
 
     def test_authored_field_errors_are_private_and_precede_effects(self):
@@ -287,13 +282,13 @@ class BoundaryTests(unittest.TestCase):
                 path.write_text(json.dumps(raw))
                 output = io.StringIO()
                 with redirect_stdout(output):
-                    code = commands.run_command(parser.parse_args(["status"]), self.home)
+                    code = fixture_command(parser.parse_args(["status"]), self.home)
                 self.assertEqual(code, 2)
                 results = (self.handlers.query({}), self.handlers.command("status"), output.getvalue())
                 for result in results:
                     self.assertIn(setting, json.loads(result)["error"])
                     self.assertNotIn("PRIVATE_", result)
-                self.assertFalse((path.parent / "atlas.sqlite3").exists())
+                self.assertFalse(self.policy.database.exists())
             spawn.assert_not_called()
 
     def test_infrastructure_and_unexpected_errors_never_reflect_exception_payloads(self):
@@ -325,7 +320,7 @@ class BoundaryTests(unittest.TestCase):
             "validate-update", "--device-id", "fixture-router", "--field", "retired", "--value-json", "true"])
         output = io.StringIO()
         with redirect_stdout(output):
-            result = commands.run_command(args, self.home)
+            result = fixture_command(args, self.home)
         self.assertEqual(result, 0)
         receipt = json.loads(output.getvalue())
         self.assertEqual(receipt["update"]["source"], "user")

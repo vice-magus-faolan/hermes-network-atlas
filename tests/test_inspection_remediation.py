@@ -7,11 +7,11 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-from helpers import ROOT
+from helpers import ROOT, fixture_handlers
 from test_core import AtlasFixture, NOW, render
 from test_discovery import discovery, xml
 from test_inspection import (ALIAS, MAC, MAC2, config, core, inspection, outputs,
-                             query, reconcile, runner, storage, tools, updates)
+                             query, reconcile, runner, storage, updates)
 
 
 class InspectionReachabilityTests(AtlasFixture):
@@ -81,7 +81,7 @@ class InspectionReachabilityTests(AtlasFixture):
               patch.object(discovery, "run", side_effect=AssertionError("query must not discover")),
               patch.object(query, "utc_now", return_value=NOW)):
             self.assert_inventory_not_reachability(self.detail(), receipt["batch_id"])
-            handlers = tools.Handlers(self.home)
+            handlers = fixture_handlers(self.home)
             public = json.loads(handlers.query({"device_id": self.device}))
             slash = json.loads(handlers.command("show " + self.device))
             code, cli = self.cli(["query", "--query-json", json.dumps({"device_id": self.device})])

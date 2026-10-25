@@ -7,8 +7,10 @@ It is not a generic shell, vulnerability scanner, or privileged network manager.
 
 Collection is explicit and restricted to named networks, enabled methods, or SSH
 aliases in the selected profile's operator-controlled policy. Missing policy
-grants no collection; malformed policy fails closed. Policy is validated before
-registration and reloaded on invocation. Tool arguments, stored facts, past
+grants no collection. Each invocation validates the policy returned by native
+`ctx.get_config`; Hermes owns loading, caching, last-known-good fallback and
+managed-worker snapshots. A malformed returned Atlas value is refused, but an
+invalid root config does not override Hermes's native fallback behavior. Tool arguments, stored facts, past
 successes and shared evidence cannot grant or expand access. Query and map only
 read stored knowledge; map export is a separate explicit local write.
 
@@ -76,6 +78,13 @@ configuration, SQLite/WAL, history, exports and backups private; they can reveal
 addresses, hostnames, aliases and topology. Use a consistent SQLite backup before
 upgrades. Generated exports are not authoritative or cross-file atomic; regenerate
 both after interruption. See the [operator runbook](docs/operator-guide.md).
+
+Default storage uses the public per-call `plugin_data_dir` API, which can create
+Hermes-managed directories even for a read. This is not database initialization
+or collection. The explicit legacy converter requires stopped writers and no
+concurrent settings edits; it uses SQLite backup (including committed WAL),
+refuses divergent destinations/settings, and retains originals. It does not
+claim a database/settings cross-file transaction or automatically delete backups.
 
 ## Testing and reporting
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Strict, immutable profile-local policy. Loading never creates files or grants defaults."""
+"""Atlas domain validation over native Hermes settings and profile storage."""
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
@@ -7,9 +7,8 @@ from ipaddress import IPv4Network, IPv6Network, ip_network
 from pathlib import Path
 import re
 from collections.abc import Mapping
+from typing import Protocol
 
-from ruamel.yaml import YAML
-from ruamel.yaml.error import YAMLError
 from .errors import RequestError
 
 MAX_CONFIG_BYTES = 65536
@@ -21,7 +20,7 @@ EXCLUDED_TCP_PORTS = frozenset({4403})
 
 
 class ConfigError(RequestError):
-    """Operator policy is malformed; no plugin surface may become usable."""
+    """Returned Atlas settings are malformed; refuse the requested action."""
 
     def __init__(self, diagnostic: str):
         super().__init__("policy: " + diagnostic)
@@ -199,8 +198,8 @@ def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:
     return enabled, tuple(sorted(hosts, key=lambda host: host.name))
 
 
-def validate_policy(raw: object, home: Path) -> Policy:
-    """Validate a complete operator policy; unknown keys and coercion fail closed."""
+def validate_policy(raw: object, home: Path, *, data_dir: Path | None = None) -> Policy:
+    """Validate policy with independent profile identity and managed storage location."""
     data = _object(raw, {"version", "networks", "ssh", "limits", "retention", "render", "store"}, "policy")
     if type(data.get("version", 1)) is not int or data.get("version", 1) != 1:
         raise ConfigError("unsupported configuration version")
@@ -216,7 +215,7 @@ def validate_policy(raw: object, home: Path) -> Policy:
     render = _object(data.get("render", {}), {"include_addresses", "include_interfaces"}, "render")
     store = _object(data.get("store", {}), {"shared_sqlite_path"}, "store")
     home = home.resolve()
-    database = home / "network-atlas" / "atlas.sqlite3"
+    database = (home / "plugin-data" / "network-atlas" if data_dir is None else data_dir) / "atlas.sqlite3"
     if "shared_sqlite_path" in store:
         path = store["shared_sqlite_path"]
         if not isinstance(path, str) or not 1 <= len(path) <= 4096 or any(ord(c) < 32 for c in path):
@@ -229,22 +228,27 @@ def validate_policy(raw: object, home: Path) -> Policy:
                   _bool(render.get("include_interfaces", False), "include_interfaces"))
 
 
-def load_policy(home: Path) -> Policy:
-    """Read only this profile's policy, bounded to 64 KiB; absent file means no permissions."""
-    path = home / "network-atlas" / "config.yaml"
-    try:
-        with path.open("rb") as handle:
-            content = handle.read(MAX_CONFIG_BYTES + 1)
-    except FileNotFoundError:
-        return validate_policy({}, home)
-    except OSError as exc:
-        raise ConfigError("cannot read configuration; check access and file availability") from exc
-    if len(content) > MAX_CONFIG_BYTES:
-        raise ConfigError("configuration exceeds 64 KiB")
-    try:
-        parser = YAML(typ="safe", pure=True)
-        parser.version = (1, 2)
-        raw = parser.load(content)
-    except (YAMLError, UnicodeError, RecursionError) as exc:
-        raise ConfigError("invalid policy YAML") from exc
-    return validate_policy(raw, home)
+class Settings(Protocol):
+    """The supported plugin-relative settings boundary supplied by Hermes."""
+
+    def get_config(self, key: str, default: object = None) -> object: ...
+
+
+def load_policy(ctx: Settings) -> Policy:
+    """Resolve native settings and current profile storage for this invocation.
+
+    Hermes owns config caching, fallback and managed-worker snapshots. Its public
+    storage helper creates the directory, not an Atlas database or collection.
+    Profile identity follows the native home resolver, never the storage target:
+    plugin-data or its Atlas subdirectory may be symlinked to another disk.
+    """
+    from hermes_constants import get_hermes_home
+    from plugins.plugin_storage import plugin_data_dir
+
+    raw = ctx.get_config("policy", {})
+    data = plugin_data_dir("network-atlas").resolve()
+    policy = validate_policy(raw, get_hermes_home(), data_dir=data)
+    legacy = policy.home / "network-atlas" / "atlas.sqlite3"
+    if isinstance(raw, dict) and "shared_sqlite_path" not in raw.get("store", {}) and legacy.exists():
+        raise ConfigError("legacy store present; stop writers and run network-atlas convert-legacy first")
+    return policy

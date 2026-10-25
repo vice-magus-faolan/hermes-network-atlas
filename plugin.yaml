@@ -9,6 +9,11 @@ license: GPL-3.0-or-later
 requires_hermes: ">=0.21.4"
 python_dependencies:
   - "ruamel.yaml>=0.18.16,<0.19"
+config_schema:
+  policy:
+    type: dict
+    default: {}
+    description: Atlas network and SSH grants, resource limits, rendering and explicit shared SQLite path.
 provides_tools:
   - network_query
   - network_update
