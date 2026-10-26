@@ -274,7 +274,11 @@ class BoundaryTests(unittest.TestCase):
         cases = (({"networks": {"lab": {"cidr": "PRIVATE_CIDR"}}}, "cidr"),
                  ({"networks": {"lab": {"cidr": "192.0.2.0/24", "discovery": {"tcp_ports": [4403]}}}}, "tcp_ports"),
                  ({"ssh": {"hosts": {"lab": {"alias": "PRIVATE_ALIAS;id"}}}}, "alias"),
-                 ({"limits": {"output_bytes": "PRIVATE_LIMIT"}}, "limits.output_bytes"))
+                 ({"limits": {"output_bytes": "PRIVATE_LIMIT"}}, "limits.output_bytes"),
+                 ({"store": {"shared_sqlite_path": False}}, "store.shared_sqlite_path"),
+                 ({"store": {"shared_sqlite_path": "PRIVATE_RELATIVE.sqlite3"}}, "store.shared_sqlite_path"),
+                 ({"ssh": {"hosts": {"a": {"alias": "PRIVATE_DUPLICATE"},
+                                     "b": {"alias": "PRIVATE_DUPLICATE"}}}}, "ssh.host.alias"))
         parser = argparse.ArgumentParser()
         commands.setup_parser(parser)
         with patch("subprocess.Popen") as spawn:

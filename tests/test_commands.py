@@ -213,6 +213,75 @@ class OperatorStatusTests(unittest.TestCase):
         self.assertTrue(json.loads(output.getvalue())["error"].startswith("store:"))
         self.assertNotIn("PRIVATE", output.getvalue())
 
+    def test_json_errors_identify_the_selected_option_before_mutation(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        with storage.Store(self.policy, writable=True) as store:
+            device = core.create_device(store, "Synthetic retained device", now=NOW)["device_id"]
+        path = self.home / "network-atlas" / "config.yaml"
+        raw = json.loads(path.read_text())
+        raw["limits"] = {"input_chars": 16}
+        path.write_text(json.dumps(raw))
+        before = self.policy.database.read_bytes()
+        for action in ("query", "validate-update", "update"):
+            option = "query-json" if action == "query" else "value-json"
+            prefix = ([action] if action == "query" else
+                      [action, "--device-id", device, "--field", "description"])
+            for text in ("PRIVATE_INVALID_JSON", "PRIVATE_" * 80):
+                with self.subTest(action=action, oversized=len(text) > 608), \
+                        patch("subprocess.Popen") as spawn, patch("socket.socket") as socket:
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        code = fixture_command(parser.parse_args([*prefix, "--" + option, text]), self.home)
+                    result = json.loads(output.getvalue())
+                    self.assertEqual(code, 2)
+                    self.assertTrue(result["error"].startswith(option + ":"), result)
+                    self.assertIn("JSON", result["error"])
+                    self.assertFalse(result["applied"] or result["persisted"])
+                    self.assertNotIn("PRIVATE", output.getvalue())
+                    self.assertNotIn(str(self.home), output.getvalue())
+                    spawn.assert_not_called()
+                    socket.assert_not_called()
+                self.assertEqual(self.policy.database.read_bytes(), before)
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = fixture_command(parser.parse_args([*prefix, "--" + option,
+                                                          "{}" if action == "query" else '"Restored"']), self.home)
+            self.assertEqual(code, 0, output.getvalue())
+            self.assertNotIn("error", json.loads(output.getvalue()))
+            # Only the explicitly restored update may append history.
+            if action != "update":
+                self.assertEqual(self.policy.database.read_bytes(), before)
+
+    def test_missing_inspection_target_keeps_public_field_on_all_routes(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        commands.setup_parser(parser)
+        for populated in (False, True):
+            if populated:
+                with storage.Store(self.policy, writable=True) as store:
+                    core.create_device(store, "Synthetic retained device", now=NOW)
+            before = self.policy.database.read_bytes() if populated else None
+            with self.subTest(populated=populated), patch("subprocess.Popen") as spawn, \
+                    patch("socket.socket") as socket:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    code = fixture_command(parser.parse_args(["inspect", "--target", "PRIVATE_ABSENT_ID"]), self.home)
+                self.assertEqual(code, 2)
+                for emitted in (self.handlers.inspect({"target": "PRIVATE_ABSENT_ID"}),
+                                self.handlers.command("inspect PRIVATE_ABSENT_ID"), output.getvalue()):
+                    result = json.loads(emitted)
+                    self.assertTrue(result["error"].startswith("target:"), result)
+                    self.assertIn("select", result["error"])
+                    self.assertFalse(result["applied"] or result["persisted"])
+                    self.assertNotIn("device_id", result["error"])
+                    self.assertNotIn("PRIVATE", emitted)
+                    self.assertNotIn(str(self.home), emitted)
+                spawn.assert_not_called()
+                socket.assert_not_called()
+            self.assertEqual(self.policy.database.exists(), populated)
+            self.assertEqual(self.policy.database.read_bytes() if populated else None, before)
+            self.assertNotIn("error", json.loads(self.handlers.command("status")))
+
     def test_missing_query_ids_name_fields_with_and_without_store(self):
         parser = argparse.ArgumentParser(allow_abbrev=False)
         commands.setup_parser(parser)

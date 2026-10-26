@@ -253,7 +253,7 @@ class Store:
         """Validate stable references with code-owned table and diagnostic labels."""
         if table not in {"devices", "interfaces", "batches"}:
             raise ValueError("invalid reference kind")
-        labels = {"devices": ("device_id", "value.target_device"),
+        labels = {"devices": ("device_id", "value.target_device", "target"),
                   "interfaces": ("interface_id", "value.source_interface", "value.target_interface"),
                   "batches": ("batch_id",)}
         if field is not None and field not in labels[table]:

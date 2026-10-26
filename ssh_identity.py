@@ -21,7 +21,7 @@ def alias_candidates(store: Store, alias: str) -> list[str]:
 
 
 def _mapped_alias(store: Store, device: str) -> str:
-    store.require("devices", device)
+    store.require("devices", device, field="target")
     rows = store.connection.execute(
         "SELECT alias FROM aliases WHERE device_id=? AND policy_context=? ORDER BY alias LIMIT ?",
                                     (device, str(store.policy.home), store.policy.limits.result_count + 1)).fetchall()
