@@ -139,8 +139,11 @@ The immutable reservation and exact saved subset establish parent/child order;
 UTC timestamps are historical evidence, not a causal clock. A backward UTC step
 between runs or between reservation and child start does not invalidate a legitimate
 saved successor. Times are never clamped or rewritten, and timestamp-sorted query
-rows can therefore place a successor before its parent. Ancestry progress follows
-the reservation links instead. Operation and host deadlines use monotonic time.
+rows can therefore place a successor before its parent. Status `last_collection`
+also selects by UTC `ended_at`, not causal successor order, so it can still show
+an older ancestor after rollback. Follow preview's `successor_batch_id` to the
+newer successor; ancestry progress follows the reservation links instead.
+Operation and host deadlines use monotonic time.
 Within each batch, probe times must still be ordered inside the batch envelope.
 A clock reversal during collection that violates that envelope prevents saving
 the child; its reservation remains uncertain, with no automatic recollection.

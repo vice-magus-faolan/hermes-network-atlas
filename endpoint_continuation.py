@@ -238,7 +238,6 @@ def _preview(store: Store, lineage: Lineage) -> dict:
 
 def _validate_reservation(lineage: Lineage, claim) -> None:
     if (_selection(claim) != lineage.remaining or not lineage.remaining
-            or claim['parent_batch_id'] != lineage.batch['id']
             or not isinstance(claim['child_batch_id'], str)
             or re.fullmatch(NAME_PATTERN, claim['child_batch_id']) is None):
         raise RequestError('endpoint continuation: inconsistent saved reservation; retain history')
