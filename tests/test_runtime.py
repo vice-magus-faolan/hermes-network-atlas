@@ -39,7 +39,7 @@ class NativeRuntimeTests(unittest.TestCase):
                 symlink_plugin_data(home, data_layout)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
-            if mode == "conversion":
+            if mode in {"conversion", "conversion_overlap", "conversion_hardkill"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy))
                 policy = {}
             # Explicit native opt-in selection. No production configuration is copied.
@@ -78,8 +78,9 @@ class NativeRuntimeTests(unittest.TestCase):
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
-            if mode in {"valid", "local_discovery", "ssh_inspection", "conversion"}:
-                if mode != "conversion":
+            if mode in {"valid", "local_discovery", "ssh_inspection", "conversion",
+                        "conversion_overlap", "conversion_hardkill"}:
+                if not mode.startswith("conversion"):
                     (home / "config.yaml").write_text(json.dumps({"plugins": {
                         "enabled": ["network-atlas"], "entries": {"network-atlas": {
                             "settings": {"policy": policy}}}}}))
@@ -120,6 +121,12 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_conversion_wal_conflicts_interruption_and_cold_retry(self):
         self.assertTrue(self.run_smoke("conversion")["fresh_native_process_persistence"])
+
+    def test_native_conversion_writer_overlap_refuses_changed_source_and_stale_cold_retry(self):
+        self.assertTrue(self.run_smoke("conversion_overlap")["fresh_native_process_persistence"])
+
+    def test_native_conversion_hardkill_retains_owned_stage_foreign_copies_and_cold_retry(self):
+        self.assertTrue(self.run_smoke("conversion_hardkill")["fresh_native_process_persistence"])
 
     def test_native_symlinked_data_preserves_profile_identity_and_default_inventory(self):
         for layout in ("plugin-data", "network-atlas"):
