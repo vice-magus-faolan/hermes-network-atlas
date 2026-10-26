@@ -80,7 +80,15 @@ success and packet-free capability diagnostics do not prove reachability now.
 Retirement remains operator-owned. See [provenance and identity](docs/atlas-core.md).
 
 Profiles may share a database; each keeps its own collection/SSH policy and local
-exports. File permissions and SQLite do not isolate same-UID processes. Keep
+exports. Native config-only clones inherit policy grants and absolute store
+bindings, including those written by conversion: they can write the source's
+database until deliberately rebound. See [clone guidance](docs/operator-guide.md#cloning-a-converted-profile).
+Native managed directories follow the process umask. Atlas creates new databases
+as 0600 and resets the selected database file to 0600 on every writable open,
+including shared stores; loosened modes for cross-UID sharing do not persist.
+This is not a 0700 storage-directory guarantee or a general permissions repair
+for native config, WAL sidecars, backups or unselected legacy stores.
+File permissions and SQLite do not isolate same-UID processes. Keep
 configuration, SQLite/WAL, history, exports and backups private; they can reveal
 addresses, hostnames, aliases and topology. Use a consistent SQLite backup before
 upgrades. Generated exports are not authoritative or cross-file atomic; regenerate

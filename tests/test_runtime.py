@@ -26,7 +26,7 @@ def runtime_root() -> Path:
 
 
 class NativeRuntimeTests(unittest.TestCase):
-    def run_smoke(self, mode: str, *, data_layout: str | None = None):
+    def run_smoke(self, mode: str, *, data_layout: str | None = None, umask: int = 0o022):
         root = runtime_root()
         self.assertTrue((root / "hermes_cli" / "plugins.py").is_file())
         with scratch_home() as directory:
@@ -39,7 +39,7 @@ class NativeRuntimeTests(unittest.TestCase):
                 symlink_plugin_data(home, data_layout)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
-            if mode in {"conversion", "conversion_overlap", "conversion_hardkill"}:
+            if mode in {"conversion", "conversion_overlap", "conversion_hardkill", "native_clone"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy))
                 policy = {}
             # Explicit native opt-in selection. No production configuration is copied.
@@ -55,6 +55,7 @@ class NativeRuntimeTests(unittest.TestCase):
                    "XDG_DATA_HOME": str(scratch / "xdg-data")}
             if data_layout is not None:
                 env["NETWORK_ATLAS_TEST_DATA_LAYOUT"] = data_layout
+            env["NETWORK_ATLAS_TEST_UMASK"] = oct(umask)
             if "HERMES_RUNTIME_DIR" in os.environ:
                 env["HERMES_RUNTIME_DIR"] = os.environ["HERMES_RUNTIME_DIR"]
             fixture_bin = scratch / "fixture-bin"
@@ -72,8 +73,9 @@ class NativeRuntimeTests(unittest.TestCase):
                     (fixture_bin / "ip").chmod(0o700)
             # Revocation also launches the documented installed config CLI;
             # each native subprocess retains its own bounded timeout.
-            timeout = 180 if mode == "revocation" else 60
-            child = subprocess.run([sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), mode],
+            timeout = 180 if mode in {"revocation", "native_clone"} else 60
+            script = "native_profiles.py" if mode in {"native_clone", "native_privacy"} else "runtime_smoke.py"
+            child = subprocess.run([sys.executable, str(ROOT / "tests" / script), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=timeout)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
@@ -127,6 +129,17 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_conversion_hardkill_retains_owned_stage_foreign_copies_and_cold_retry(self):
         self.assertTrue(self.run_smoke("conversion_hardkill")["fresh_native_process_persistence"])
+
+    def test_native_clone_converted_binding_sharing_ownership_and_explicit_rebinding(self):
+        self.assertTrue(self.run_smoke("native_clone")["native_clone_binding"])
+
+    def test_native_privacy_records_native_directory_and_database_modes(self):
+        for mask in (0o022, 0o077):
+            with self.subTest(umask=oct(mask)):
+                receipt = self.run_smoke("native_privacy", umask=mask)
+                self.assertEqual(receipt["umask"], oct(mask))
+                self.assertEqual(receipt["directory_modes"], [oct(0o777 & ~mask)] * 2)
+                self.assertEqual(receipt["database_mode"], "0o600")
 
     def test_native_symlinked_data_preserves_profile_identity_and_default_inventory(self):
         for layout in ("plugin-data", "network-atlas"):

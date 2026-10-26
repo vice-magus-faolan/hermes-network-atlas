@@ -69,7 +69,22 @@ Do not use the Desktop settings JSON editor or `ctx.set_config` for grant remova
 their merging writer retains omitted keys, and writing `{}` there does not clear
 existing grants.
 
-Keep the selected profile home and native configuration private (0700/0600).
+Keep the selected profile home and native configuration private (0700/0600 is
+the recommended operator boundary, not a guarantee Atlas enforces). On Linux
+with stock Hermes v0.22.5, the public storage helper creates `plugin-data/` and
+`plugin-data/network-atlas/` using the process umask: 0755 under 0022, 0700 under
+0077. Even a query can create these directories without initializing a database.
+Atlas creates a new database as 0600 and resets the selected database file to
+0600 on every writable open, including an existing shared database. Loosening
+that file's mode for cross-UID sharing will be undone by the next writable open.
+This does not tighten existing storage directories or repair permissions on
+native config, WAL sidecars, backups or unselected legacy stores. A private
+database file does not make directory names, native config, exports or backups
+private. Review the actual selected home, ancestor directories, files and any
+shared target using your normal
+filesystem policy before use; do not assume installation repaired permissions.
+Same-UID processes remain trusted regardless of these mode bits.
+
 An absent setting or empty object grants no collection. Atlas validates returned
 values: unknown keys, invalid numbers, noncanonical or overbroad scopes refuse
 the action with exit 2 and `applied=false`, `persisted=false`. Registration remains
@@ -144,6 +159,44 @@ not copy or merge the default store. Readers can query another profile's evidenc
 including endpoints, but cannot apply its batches or inherit collection, inspection
 or resume permissions. Keep the shared file private. See
 [shared endpoint queries](endpoint-checks.md#sharing-and-upgrades).
+
+### Cloning a converted profile
+
+A native config-only profile clone copies Atlas's policy, including its grants
+and any absolute `store.shared_sqlite_path`; it does not rebind that path to the
+clone's home. Conversion writes such an explicit path even for a formerly local
+store. The converted clone therefore reads AND writes the source's database,
+not an independent copy. In contrast, a config-only clone with no explicit store
+binding starts with its own empty default store; it does not copy local history.
+This behavior is exercised with the real native clone and public Atlas actions,
+not inferred only from the copied config.
+
+Before running collection or making inventory changes in a clone, inspect its
+complete native policy in that profile's `config.yaml`, especially the absolute
+store binding (or its absence). Fresh `hermes -p CLONE network-atlas status` and
+`query` calls verify grants and inventory, but do not report the resolved database
+path; they cannot by themselves prove isolation. Sharing is intentional when the
+inherited path is retained. Each caller still owns evidence by its own
+resolved home and keeps local exports; copied grants do not authorize applying
+the source profile's saved batches. A clone does, however, inherit the configured
+grants for NEW collection until you explicitly replace them.
+
+To choose independent EMPTY history instead, stop affected writers and use the
+native replacing config CLI to set the clone's complete policy without `store`.
+For example, the following also deliberately revokes every collection/SSH grant:
+
+```sh
+hermes -p CLONE config set plugins.entries.network-atlas.settings.policy '{}'
+hermes -p CLONE network-atlas status
+hermes -p CLONE network-atlas query --query-json '{"limit":10}'
+```
+
+Include every intended grant when replacing the policy, or explicitly select
+another absolute shared path. Do not use the merging settings writer to remove
+an inherited binding. Rebinding selects a store; it does not copy, split, merge
+or rewrite existing history or ownership. Preserve the source and any existing
+clone-local store and investigate unexpected inventory before writing. Moving
+populated history between owners is not provided by this clone procedure.
 
 ### Convert legacy policy and storage
 
