@@ -93,13 +93,14 @@ def run_command(args: argparse.Namespace, policy_loader: Callable[[], Policy], *
         return 2
 
 
-def _decode(text: str, policy: Policy) -> object:
+def _decode(text: str, policy: Policy, field: str) -> object:
+    """Decode JSON with the code-owned option name supplied by each CLI route."""
     if len(text) > policy.limits.input_chars * 6 + 512:
-        raise RequestError("JSON input: reduce input to the configured size limit")
+        raise RequestError(f"{field}: JSON input exceeds configured size limit")
     try:
         return json.loads(text)
     except (ValueError, RecursionError) as exc:
-        raise RequestError("JSON input: valid bounded JSON required for query-json or value-json") from exc
+        raise RequestError(f"{field}: JSON input requires valid bounded JSON") from exc
 
 
 def _read_command(args: argparse.Namespace, policy: Policy) -> dict | None:
@@ -119,12 +120,12 @@ def _read_command(args: argparse.Namespace, policy: Policy) -> dict | None:
     if args.atlas_action == "status":
         return json.loads(status(policy))
     if args.atlas_action == "query":
-        return json.loads(handlers.query(_decode(args.query_json, policy)))
+        return json.loads(handlers.query(_decode(args.query_json, policy, "query-json")))
     if args.atlas_action == "map":
         return json.loads(handlers.map({"format": args.format, "export": args.export}))
     if args.atlas_action == "validate-update":
         update = operator_update({"device_id": args.device_id, "field": args.field,
-                                  "value": _decode(args.value_json, policy)}, policy)
+                                  "value": _decode(args.value_json, policy, "value-json")}, policy)
         return json.loads(update_receipt(update))
     return None
 
@@ -142,7 +143,7 @@ def _write_command(args: argparse.Namespace, policy: Policy) -> dict:
             raise RequestError("prefix_length: integer required") from exc
     if args.atlas_action == "update":
         update = operator_update({"device_id": args.device_id, "field": args.field,
-                                  "value": _decode(args.value_json, policy)}, policy)
+                                  "value": _decode(args.value_json, policy, "value-json")}, policy)
     if args.atlas_action != "create" and not policy.database.exists():
         raise RequestError("entity reference: select an existing atlas entity before updating")
     with Store(policy, writable=True) as store:

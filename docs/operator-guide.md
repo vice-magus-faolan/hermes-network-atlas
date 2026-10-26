@@ -439,6 +439,8 @@ symlink targets or database, then retry. Symlink-destination refusals retain a
 
 Application errors name the responsible field or policy setting without echoing
 its value. Correct that field in the request or the selected profile's policy.
+CLI JSON errors distinguish `query-json` from `value-json`; an inspection `target`
+error refers to the requested SSH alias or device ID, not a separate update field.
 `limits.observations` refusals mean the selected scope/methods or fixed SSH probes
 cannot fit the record budget; reduce collection scope/methods or restore a
 sufficient budget within the hard ceiling before retrying.

@@ -573,6 +573,24 @@ class ContinuationTests(unittest.TestCase):
                 self.assertIn('error', json.loads(self.handler().check_endpoints(params)))
         self.assertEqual(self.history(), before)
 
+    def test_malformed_selection_names_the_actual_public_field_without_effects(self):
+        first, _ = self.partial()
+        before = self.history()
+        with patch.object(transport, 'begin_endpoint', side_effect=AssertionError('invalid selection contacted')):
+            for key in ('preview_batch_id', 'continue_batch_id'):
+                for value in ('PRIVATE/INVALID', False):
+                    with self.subTest(key=key, value=value):
+                        emitted = self.handler().check_endpoints({key: value})
+                        result = json.loads(emitted)
+                        self.assertTrue(result['error'].startswith(key + ':'), result)
+                        self.assertIn('stable saved endpoint batch ID required', result['error'])
+                        self.assertFalse(result['applied'] or result['persisted'])
+                        self.assertNotIn('PRIVATE', emitted)
+                        self.assertNotIn(str(self.home), emitted)
+        self.assertEqual(self.history(), before)
+        self.assertNotIn('error', self.preview(first['batch_id']))
+        self.assertEqual(self.history(), before)
+
     def test_concurrent_valid_intents_reserve_one_successor_before_transport(self):
         first, _ = self.partial()
         entered, release = threading.Event(), threading.Event()

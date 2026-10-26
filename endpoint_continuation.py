@@ -247,7 +247,8 @@ def continuation(policy: Policy, params: dict) -> dict:
     """Preview is observational; continue reserves once then makes NEW TCP traffic."""
     key, batch_id = next(iter(params.items()))
     if not isinstance(batch_id, str) or re.fullmatch(NAME_PATTERN, batch_id) is None:
-        raise RequestError('batch_id: stable saved endpoint batch ID required')
+        # check() admits only the two code-owned continuation selection keys.
+        raise RequestError(f'{key}: stable saved endpoint batch ID required')
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     # Read-only first: invalid/foreign intent cannot create or upgrade a store.
     with Store(policy, deadline=deadline) as reader:

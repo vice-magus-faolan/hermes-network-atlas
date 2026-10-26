@@ -194,7 +194,7 @@ def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:
         hosts.append(SSHHost(name, _name(host.get("alias"), "ssh.host.alias"),
                              _bool(host.get("inspect", False), "ssh.host.inspect")))
     if len({host.alias for host in hosts}) != len(hosts):
-        raise ConfigError("duplicate SSH alias anchors")
+        raise ConfigError("ssh.host.alias: aliases must be distinct across ssh.hosts")
     return enabled, tuple(sorted(hosts, key=lambda host: host.name))
 
 
@@ -219,9 +219,10 @@ def validate_policy(raw: object, home: Path, *, data_dir: Path | None = None) ->
     if "shared_sqlite_path" in store:
         path = store["shared_sqlite_path"]
         if not isinstance(path, str) or not 1 <= len(path) <= 4096 or any(ord(c) < 32 for c in path):
-            raise ConfigError("invalid shared SQLite path")
+            raise ConfigError(
+                "store.shared_sqlite_path: nonempty bounded path text without control characters required")
         if not Path(path).is_absolute() or Path(path).suffix != ".sqlite3":
-            raise ConfigError("shared SQLite path must be absolute and end in .sqlite3")
+            raise ConfigError("store.shared_sqlite_path: path must be absolute and end in .sqlite3")
         database = Path(path).resolve()
     return Policy(home, database, networks, ssh_enabled, ssh_hosts, limits, stale_days,
                   _bool(render.get("include_addresses", True), "include_addresses"),
