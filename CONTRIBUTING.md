@@ -24,6 +24,9 @@ docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges h
 The build runs tests/test_compatibility.py online. The container runs everything
 else without network. The default is Hermes v0.22.5; use
 `--build-arg HERMES_REF=v0.21.7` to test the oldest supported release in the CI matrix.
+As of 2026-10-26, v0.21.7 is the manifest minimum and oldest tested stable release;
+v0.22.5 is the latest stable release checked that date. Other releases are not
+individually verified; the manifest has no upper bound.
 
 ## Style and changes
 
