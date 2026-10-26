@@ -8,8 +8,9 @@ administer infrastructure. No external database or background service is needed.
 
 ## Requirements and installation
 
-Requires stock Hermes **>=0.21.4** and its supported Python runtime (>=3.11).
-CI targets Hermes v0.21.7 and v0.22.5 on Linux x86_64 and arm64.
+Requires stock Hermes **>=0.21.7** and its supported Python runtime (>=3.11).
+As of 2026-10-26, CI targets Hermes v0.21.7 (oldest tested stable release) and
+v0.22.5 (latest stable release checked that date) on Linux x86_64 and arm64.
 The manifest follows Hermes's additive plugin contract without an upper bound;
 other releases are not individually verified.
 
