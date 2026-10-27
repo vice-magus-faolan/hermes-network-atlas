@@ -83,6 +83,58 @@ class ContinuationTests(unittest.TestCase):
     def preview(self, batch):
         return json.loads(self.handler().check_endpoints({'preview_batch_id': batch}))
 
+    def test_named_scope_recovery_budget_before_reservation_and_no_contact_retry(self):
+        name = 'n' * 64
+        self.policy = replace(self.policy,
+                              networks=(replace(self.policy.networks[0], name=name),),
+                              limits=replace(self.policy.limits, result_count=1))
+        first, prior_calls = self.invoke({'network': name}, response=lambda address, port:
+                                        'closed' if address == '192.0.2.1' else 'filtered')
+        self.assertTrue(first['queryable'], first)
+        self.assertEqual(first['completion'], 'partial')
+        batch = first['batch_id']
+        history = self.history()
+        original = self.history(batch)
+        revoked = replace(self.policy.networks[0], allow_public=False)
+        with self.assertRaises(config.ActiveScopeError) as denied:
+            config.validate_network(revoked, active=True)
+        envelope = {'batch_id': '0' * 36, 'parent_batch_id': batch, 'persisted': True,
+                    'applied': False, 'projected': False, 'queryable': False,
+                    'stage': 'projection', 'collection_performed': False, 'completion': 'complete'}
+        minimum = max(len(storage.response_json({**envelope, 'error': error},
+                                                config.Limits().output_bytes).encode())
+                      for error in (*endpoints.RECOVERY_ERRORS.values(), continuation.UNCERTAIN_ERROR,
+                                    str(denied.exception)))
+        tight = replace(self.policy, limits=replace(self.policy.limits, output_bytes=minimum - 1))
+        with patch.object(continuation.Scheduler, 'run') as collect, \
+                patch.object(continuation, 'Store', wraps=storage.Store) as opened, \
+                patch.object(transport.socket, 'socket') as socket:
+            refused = json.loads(self.handler(tight).check_endpoints({'continue_batch_id': batch}))
+        self.assertTrue(refused['error'].startswith('atlas state or bounds:'), refused)
+        self.assertFalse(refused['persisted'])
+        collect.assert_not_called()
+        socket.assert_not_called()
+        self.assertFalse(any(call.kwargs.get('writable') for call in opened.call_args_list))
+        self.assertEqual(self.history(), history)
+        sufficient = replace(self.policy, limits=replace(self.policy.limits, output_bytes=minimum))
+        second, calls = self.invoke({'continue_batch_id': batch}, policy=sufficient)
+        self.assertTrue(second['persisted'], second)
+        self.assertEqual(second['parent_batch_id'], batch)
+        self.assertNotEqual(second['batch_id'], batch)
+        self.assertTrue(calls)
+        self.assertFalse(calls & prior_calls)
+        self.assertLessEqual(len(storage.response_json(second, minimum).encode()), minimum)
+        self.assertEqual(self.history(batch), original)
+        history = self.history()
+        with patch.object(transport.socket, 'socket') as socket:
+            repeated = json.loads(self.handler(sufficient).check_endpoints({'continue_batch_id': batch}))
+        self.assertTrue(repeated['persisted'], repeated)
+        self.assertEqual(repeated['batch_id'], second['batch_id'])
+        self.assertEqual(repeated['parent_batch_id'], batch)
+        self.assertFalse(repeated['collection_performed'])
+        socket.assert_not_called()
+        self.assertEqual(self.history(), history)
+
     def test_timed_out_producer_preview_targeted_successor_and_immutable_history(self):
         first, prior_calls = self.partial()
         batch = first['batch_id']

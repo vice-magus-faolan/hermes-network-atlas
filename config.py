@@ -31,6 +31,12 @@ class ConfigError(RequestError):
 class ActiveScopeError(ConfigError):
     """Current named scope lacks its explicit non-LAN collection grant."""
 
+    def __init__(self, network_name: str):
+        super().__init__(
+            f"networks.{network_name}.allow_public: active collection outside RFC1918/private or "
+            "IPv4 link-local scopes requires explicit true for this network; "
+            "check its cidr before opting in (IPv6 remains passive-only)")
+
 
 @dataclass(frozen=True)
 class Limits:
@@ -203,10 +209,7 @@ def validate_network(network: Network, *, active: bool = False) -> None:
         "passive": network.passive, "ping": network.ping, "icmp_echo": network.icmp_echo,
         "tcp_ports": list(network.tcp_ports)}})
     if active and not active_scope_allowed(network):
-        raise ActiveScopeError(
-            f"networks.{network.name}.allow_public: active collection outside RFC1918/private or "
-            "IPv4 link-local scopes requires explicit true for this network; "
-            "check its cidr before opting in (IPv6 remains passive-only)")
+        raise ActiveScopeError(network.name)
 
 
 def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:

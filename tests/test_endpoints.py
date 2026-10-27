@@ -436,6 +436,61 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(recovered['queryable'])
         self.assertEqual(self.counts(restored)['batches'], 1)
 
+    def test_named_scope_recovery_receipt_budget_precedes_collection_and_store_effects(self):
+        name = 'n' * 64
+        policy = config.validate_policy({'networks': {name: {
+            'cidr': '192.0.2.8/31', 'allow_public': True,
+            'endpoints': {'enabled': True, 'tcp_ports': [22]}}}}, self.home)
+        fixture = SyntheticSockets()
+        with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock), \
+                patch.object(endpoints, '_project', side_effect=sqlite3.OperationalError('projection interrupted')):
+            original = json.loads(tools.Handlers(lambda: policy).check_endpoints({'network': name}))
+        self.assertTrue(original['persisted'], original)
+        self.assertFalse(original['applied'] or original['queryable'])
+        self.assertTrue(all(sock.closed for sock in fixture.sockets))
+        revoked = replace(policy, networks=(replace(policy.networks[0], allow_public=False),))
+        with self.assertRaises(config.ActiveScopeError) as denied:
+            config.validate_network(revoked.networks[0], active=True)
+        diagnostic = str(denied.exception)
+        self.assertIn(f'networks.{name}.allow_public', diagnostic)
+        recovery = {'batch_id': original['batch_id'], 'persisted': True,
+                    'applied': False, 'projected': False, 'queryable': False,
+                    'stage': 'projection', 'collection_performed': False,
+                    'completion': original['completion'], 'error': diagnostic}
+        minimum = len(storage.response_json(recovery, config.Limits().output_bytes).encode())
+        tight = minimum - 1
+        # The old enum-only reserve fits; the real named-scope receipt does not.
+        storage.response_json({**recovery, 'error': max(endpoints.RECOVERY_ERRORS.values(), key=len)}, tight)
+        with storage.Store(policy) as store:
+            history = tuple(store.connection.iterdump())
+        for params, current in (({'network': name}, policy),
+                                ({'batch_id': original['batch_id']}, revoked)):
+            current = replace(current, limits=replace(current.limits, output_bytes=tight))
+            with self.subTest(params=params), \
+                    patch.object(endpoints.Scheduler, 'run', side_effect=AssertionError('collection before reserve')) \
+                    as collect, patch.object(endpoints, 'Store', wraps=storage.Store) as opened, \
+                    patch.object(transport.socket, 'socket') as socket:
+                refused = json.loads(tools.Handlers(lambda current=current: current).check_endpoints(params))
+                self.assertTrue(refused['error'].startswith('atlas state or bounds:'), refused)
+                self.assertFalse(refused['persisted'])
+                collect.assert_not_called()
+                socket.assert_not_called()
+                self.assertFalse(any(call.kwargs.get('writable') for call in opened.call_args_list))
+        sufficient = replace(revoked, limits=replace(revoked.limits, output_bytes=minimum))
+        with patch.object(endpoints.Scheduler, 'run') as collect, patch.object(transport.socket, 'socket') as socket:
+            emitted = tools.Handlers(lambda: sufficient).check_endpoints({'batch_id': original['batch_id']})
+        failed = json.loads(emitted)
+        self.assertLessEqual(len(emitted.encode()), minimum)
+        self.assertEqual(failed['error'], diagnostic)
+        self.assertEqual(failed['batch_id'], original['batch_id'])
+        self.assertTrue(failed['persisted'])
+        self.assertFalse(failed['applied'] or failed['projected'])
+        self.assertFalse(failed['collection_performed'] or failed['queryable'])
+        collect.assert_not_called()
+        socket.assert_not_called()
+        with storage.Store(policy) as store:
+            self.assertEqual(tuple(store.connection.iterdump()), history)
+
     def test_tcp_immediate_results_numeric_transport_and_no_receive_or_payload(self):
         policy = self.policy(ports=[22])
         cases = ((0, 'open', 'tcp_connected_response'),
