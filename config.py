@@ -17,6 +17,8 @@ NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
 LEGACY_TCP_PORTS = (80, 443)
 MAX_TCP_DISCOVERY_PORTS = 4
 EXCLUDED_TCP_PORTS = frozenset({4403})
+LAN_SCOPES = tuple(IPv4Network(cidr) for cidr in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"))
 
 
 class ConfigError(RequestError):
@@ -24,6 +26,10 @@ class ConfigError(RequestError):
 
     def __init__(self, diagnostic: str):
         super().__init__("policy: " + diagnostic)
+
+
+class ActiveScopeError(ConfigError):
+    """Current named scope lacks its explicit non-LAN collection grant."""
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,7 @@ class Network:
     icmp_echo: bool = False
     tcp_ports: tuple[int, ...] = LEGACY_TCP_PORTS
     endpoint_ports: tuple[int, ...] = ()
+    allow_public: bool = False
 
 
 @dataclass(frozen=True)
@@ -149,8 +156,9 @@ def _tcp_ports(value: object, label: str = "network.discovery.tcp_ports") -> tup
 
 
 def _network(name: str, raw: object) -> Network:
-    data = _object(raw, {"cidr", "discovery", "endpoints"}, "network")
+    data = _object(raw, {"cidr", "discovery", "endpoints", "allow_public"}, "network")
     network = _scope(data.get("cidr"))
+    allow_public = _bool(data.get("allow_public", False), f"networks.{name}.allow_public")
     modes = _object(data.get("discovery", {}), {"passive", "ping", "icmp_echo", "tcp_ports"}, "network.discovery")
     passive = _bool(modes.get("passive", False), "network.discovery.passive")
     ping = _bool(modes.get("ping", False), "network.discovery.ping")
@@ -169,20 +177,36 @@ def _network(name: str, raw: object) -> Network:
         raise ConfigError("network.endpoints: enabled must match a nonempty tcp_ports list")
     if enabled and network.version != 4:
         raise ConfigError("network.endpoints: checks require an IPv4 cidr")
-    return Network(name, str(network), passive, ping, icmp_echo, ports, endpoint_ports)
+    return Network(name, str(network), passive, ping, icmp_echo, ports, endpoint_ports, allow_public)
 
 
-def validate_network(network: Network) -> None:
+def active_scope_allowed(network: Network) -> bool:
+    """RFC1918/link-local only by default, not ipaddress's broader is_private.
+
+    Apply only to current active authority, never to parsing passive policy or
+    reading historical evidence. Public opt-in cannot enable IPv6 transport.
+    """
+    scope = ip_network(network.cidr)
+    return isinstance(scope, IPv4Network) and (network.allow_public or any(
+        scope.subnet_of(lan) for lan in LAN_SCOPES))
+
+
+def validate_network(network: Network, *, active: bool = False) -> None:
     """Revalidate native snapshots before invocation, not just YAML at startup."""
     if type(network.tcp_ports) is not tuple or len(network.tcp_ports) > MAX_TCP_DISCOVERY_PORTS:
         raise ConfigError("invalid immutable TCP discovery ports")
     if type(network.endpoint_ports) is not tuple:
         raise ConfigError("invalid immutable endpoint ports")
-    _network(_name(network.name), {"cidr": network.cidr,
+    _network(_name(network.name), {"cidr": network.cidr, "allow_public": network.allow_public,
         "endpoints": {"enabled": bool(network.endpoint_ports), "tcp_ports": list(network.endpoint_ports)},
         "discovery": {
         "passive": network.passive, "ping": network.ping, "icmp_echo": network.icmp_echo,
         "tcp_ports": list(network.tcp_ports)}})
+    if active and not active_scope_allowed(network):
+        raise ActiveScopeError(
+            f"networks.{network.name}.allow_public: active collection outside RFC1918/private or "
+            "IPv4 link-local scopes requires explicit true for this network; "
+            "check its cidr before opting in (IPv6 remains passive-only)")
 
 
 def _ssh(raw: object) -> tuple[bool, tuple[SSHHost, ...]]:

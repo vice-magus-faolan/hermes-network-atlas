@@ -25,12 +25,15 @@ The receipt's `stage` and flags retain the actual committed progress on failure.
 Endpoint checking has its own opt-in grant on each named IPv4 network. Existing
 `discovery.ping`, `discovery.tcp_ports`, ICMP and SSH permissions do not enable it.
 No policy means no endpoint traffic.
+The selected scope must also satisfy the default private/link-local admission or
+have explicit `networks.NAME.allow_public: true`; see
+[collection grants](operator-guide.md#collection-grants-and-limits).
 
 ```yaml
 version: 1
 networks:
   home:
-    cidr: 192.0.2.8/31
+    cidr: 192.168.1.8/31
     discovery:
       ping: false
     endpoints:
@@ -200,7 +203,7 @@ grid, check that setting against the grid before retrying within the hard ceilin
 
 ```sh
 hermes network-atlas query --query-json '{"view":"endpoints","limit":20}'
-hermes network-atlas query --query-json '{"view":"endpoints","address":"192.0.2.8","limit":20}'
+hermes network-atlas query --query-json '{"view":"endpoints","address":"192.168.1.8","limit":20}'
 hermes network-atlas query --query-json '{"view":"endpoints","batch_id":"<returned-id>","limit":20}'
 hermes network-atlas status
 ```

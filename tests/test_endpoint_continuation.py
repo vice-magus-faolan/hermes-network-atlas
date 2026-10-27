@@ -29,7 +29,7 @@ class ContinuationTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/27',
+            'networks': {'lab': {'cidr': '192.0.2.0/27', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}},
             'limits': {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}}, self.home)
 
@@ -309,7 +309,7 @@ class ContinuationTests(unittest.TestCase):
 
     def test_long_progressing_chain_exhausts_without_repeated_contacts_or_history_changes(self):
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/24',
+            'networks': {'lab': {'cidr': '192.0.2.0/24', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
             'limits': {'operation_timeout_seconds': 10, 'host_timeout_seconds': 1,
                        'concurrent_probes': 1}}, self.home)
@@ -406,7 +406,7 @@ class ContinuationTests(unittest.TestCase):
         # Setup uses virtual sockets; the timed action charges real validation,
         # SQL and transport to the SAME unpatched operation clock.
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/24',
+            'networks': {'lab': {'cidr': '192.0.2.0/24', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
             'limits': {'operation_timeout_seconds': 5, 'host_timeout_seconds': 10,
                        'concurrent_probes': 1}}, self.home)
@@ -449,7 +449,7 @@ class ContinuationTests(unittest.TestCase):
 
     def test_real_deadline_large_zero_progress_history_is_saved_or_refused_before_effects(self):
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/24',
+            'networks': {'lab': {'cidr': '192.0.2.0/24', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
             'limits': {'operation_timeout_seconds': 5, 'host_timeout_seconds': 10,
                        'concurrent_probes': 1}}, self.home)

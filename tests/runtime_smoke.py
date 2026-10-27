@@ -373,6 +373,9 @@ def main() -> int:
         raise RuntimeError("real Hermes plugin runtime required")
     sys.path.insert(0, str(root))
     sys.addaudithook(_deny_network)
+    if mode == "active_scopes":
+        from native_active_scopes import run
+        return run(home, root)
     # This uses installed native plugin APIs directly; not hermes_bootstrap/PM,
     # so it cannot activate/repair/install a dependency generation as a side effect.
     from hermes_constants import get_hermes_home

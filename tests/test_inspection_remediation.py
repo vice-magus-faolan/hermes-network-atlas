@@ -138,7 +138,8 @@ class InspectionReachabilityTests(AtlasFixture):
     def test_exact_address_ping_positive_control_does_not_promote_sibling_addresses(self):
         self.inspected_host()
         raw = json.loads(json.dumps(self.raw))
-        raw["networks"] = {"one": {"cidr": "198.51.100.1/32", "discovery": {"passive": False, "ping": True}}}
+        raw["networks"] = {"one": {"cidr": "198.51.100.1/32", "allow_public": True,
+                                  "discovery": {"passive": False, "ping": True}}}
         policy = config.validate_policy(raw, self.home)
         with patch.object(discovery, "run", return_value=runner.CommandResult(
                 "success", xml("198.51.100.1", MAC))) as transport:

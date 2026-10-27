@@ -22,7 +22,8 @@ class CumulativeAcceptanceTests(unittest.TestCase):
             atlas = home / "network-atlas"
             atlas.mkdir()
             policy = {"version": 1,
-                      "networks": {"lab": {"cidr": "192.0.2.0/29", "discovery": {"passive": True, "ping": True}}},
+                      "networks": {"lab": {"cidr": "192.0.2.0/29", "allow_public": True,
+                                           "discovery": {"passive": True, "ping": True}}},
                       "ssh": {"enabled": True, "hosts": {alias: {"alias": alias, "inspect": True}
                                                         for alias in ("lab-a", "lab-b", "lab-c")}},
                       "limits": {"result_count": 100}, "retention": {"stale_after_days": 14}}

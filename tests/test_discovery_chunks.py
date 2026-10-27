@@ -115,7 +115,8 @@ class ChunkDiscoveryTests(fixture.AtlasFixture):
         self.assertEqual(sum(p["observation_count"] for p in receipt["probes"]), 1)
 
     def test_last_completed_chunk_at_boundary_keeps_complete_coverage(self):
-        raw = {**self.raw, "networks": {"lab": {"cidr": "192.0.2.0/27", "discovery": {"passive": True, "ping": True}}}}
+        raw = {**self.raw, "networks": {"lab": {"cidr": "192.0.2.0/27", "allow_public": True,
+                                             "discovery": {"passive": True, "ping": True}}}}
         policy = fixture.config.validate_policy(raw, self.home)
         clock = [0.0]
         calls = []

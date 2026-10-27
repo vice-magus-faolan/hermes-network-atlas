@@ -37,7 +37,8 @@ def collect_methods(atlas, home: Path, root: Path) -> None:
     try:
         for methods, kind, error in scenarios:
             raw = json.loads(json.dumps(original))
-            raw['networks']['methodlab'] = {'cidr': '192.0.2.8/31', 'discovery': {'ping': True, **methods}}
+            raw['networks']['methodlab'] = {'cidr': '192.0.2.8/31', 'allow_public': True,
+                                           'discovery': {'ping': True, **methods}}
             atlas.ctx.set_config('policy', raw)
             records.extend(_scenario(atlas, methods, kind, error))
         (root / 'host-methods.json').write_text(json.dumps(records, sort_keys=True))

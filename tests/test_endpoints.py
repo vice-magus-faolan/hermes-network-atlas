@@ -27,7 +27,8 @@ class EndpointTests(unittest.TestCase):
         self.home = Path(self.temp.name)
 
     def policy(self, *, ports=None, cidr='192.0.2.8/31', limits=None):
-        raw = {'networks': {'lab': {'cidr': cidr, 'endpoints': {'enabled': True, 'tcp_ports': ports or [22, 2222]}}}}
+        raw = {'networks': {'lab': {'cidr': cidr, 'allow_public': True,
+                                  'endpoints': {'enabled': True, 'tcp_ports': ports or [22, 2222]}}}}
         if limits:
             raw['limits'] = limits
         path = self.home / 'network-atlas' / 'config.yaml'

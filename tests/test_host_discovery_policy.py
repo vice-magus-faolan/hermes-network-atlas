@@ -26,7 +26,7 @@ runner = importlib.import_module("atlas_test_plugin.probes")
 
 
 def raw_policy(**methods) -> dict:
-    return {"networks": {"lab": {"cidr": "192.0.2.0/29",
+    return {"networks": {"lab": {"cidr": "192.0.2.0/29", "allow_public": True,
                                "discovery": {"passive": True, "ping": True, **methods}}}}
 
 
@@ -87,7 +87,7 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
     def test_network_local_immutable_snapshots_and_shared_data_do_not_grant_methods(self):
         ports = [22000, 2222]
         raw = raw_policy(icmp_echo=True, tcp_ports=ports)
-        raw["networks"]["other"] = {"cidr": "198.51.100.0/29", "discovery": {"ping": True}}
+        raw["networks"]["other"] = {"cidr": "198.51.100.0/29", "allow_public": True, "discovery": {"ping": True}}
         raw["store"] = {"shared_sqlite_path": str(self.home / "shared.sqlite3")}
         policy = config.validate_policy(raw, self.home / "one")
         ports.append(4403)
@@ -109,7 +109,7 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
         directory = self.home / "network-atlas"
         directory.mkdir()
         path = directory / "config.yaml"
-        prefix = 'networks:\n  lab:\n    cidr: 192.0.2.0/29\n    discovery:\n      ping: true\n'
+        prefix = 'networks:\n  lab:\n    cidr: 192.0.2.0/29\n    allow_public: true\n    discovery:\n      ping: true\n'
         for suffix in ('      icmp_echo: true\n      icmp_echo: false\n',
                        '      tcp_ports: [80]\n      tcp_ports: [443]\n',
                        '      icmp_echo: yes\n', '      tcp_ports: null\n', '      helper: ping\n'):

@@ -26,7 +26,8 @@ schemas = importlib.import_module("atlas_test_plugin.schemas")
 
 
 def synthetic_policy():
-    return {"version": 1, "networks": {"lab": {"cidr": "192.0.2.0/24", "discovery": {"passive": True, "ping": True}}},
+    return {"version": 1, "networks": {"lab": {"cidr": "192.0.2.0/24", "allow_public": True,
+            "discovery": {"passive": True, "ping": True}}},
             "ssh": {"enabled": True, "hosts": {"lab-router": {"alias": "lab-router", "inspect": True}}}}
 
 

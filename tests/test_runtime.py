@@ -115,6 +115,9 @@ class NativeRuntimeTests(unittest.TestCase):
     def test_real_native_local_discovery_reconcile_and_fresh_process(self):
         self.assertTrue(self.run_smoke("local_discovery")["persistent_batches"])
 
+    def test_native_active_scope_admission_and_saved_work_revocation(self):
+        self.assertTrue(self.run_smoke("active_scopes")["native_scope_admission"])
+
     def test_real_native_ssh_inspect_alias_device_slash_cli_failure_and_restart(self):
         self.assertTrue(self.run_smoke("ssh_inspection")["persistent_ssh_batches"])
 
@@ -176,6 +179,7 @@ class NativeRuntimeTests(unittest.TestCase):
                 raw: dict = {} if mode == 'isolated' else {'store': {'shared_sqlite_path': str(shared)}}
                 if mode == 'collect':
                     raw['networks'] = {'lab': {'cidr': '192.0.2.0/27' if continuation else '192.0.2.8/31',
+                                              'allow_public': True,
                                               'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
                     if continuation:
                         raw['limits'] = {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}

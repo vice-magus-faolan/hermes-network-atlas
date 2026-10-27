@@ -27,7 +27,7 @@ class HostTransportTests(unittest.TestCase):
         self.home = Path(self.temp.name)
 
     def policy(self, *, cidr='192.0.2.0/29', icmp_echo=True, tcp_ports=None, limits=None):
-        raw = {'networks': {'lab': {'cidr': cidr, 'discovery': {'ping': True, 'passive': True,
+        raw = {'networks': {'lab': {'cidr': cidr, 'allow_public': True, 'discovery': {'ping': True, 'passive': True,
                'icmp_echo': icmp_echo, 'tcp_ports': [80, 443, 2222, 22000] if tcp_ports is None else tcp_ports}}}}
         if limits:
             raw['limits'] = limits

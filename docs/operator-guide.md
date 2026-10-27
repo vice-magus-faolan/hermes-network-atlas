@@ -121,6 +121,12 @@ render:
 
 - `networks.NAME.discovery.passive` and `ping` default false. IPv4 scopes have at
   most 256 addresses; IPv6 is passive-only. Routes never add scan scopes.
+- Active discovery and endpoint checks default to RFC1918 (`10.0.0.0/8`,
+  `172.16.0.0/12`, `192.168.0.0/16`) and IPv4 link-local (`169.254.0.0/16`) scopes.
+  Other ranges, including documentation ranges, require the strict boolean
+  `networks.NAME.allow_public: true` for that exact network, in addition to its
+  enabled collection method. The default is false. This is not an exemption from
+  IPv4/size, sensitive-destination, port or resource limits.
 - `discovery.icmp_echo` defaults false and requires `ping: true`. TCP ports default
   to `[80, 443]`; choose at most four distinct ports in 1..65535, excluding 4403.
   ICMP-only uses `tcp_ports: []`. See [host-discovery policy](host-discovery-policy.md).
@@ -136,6 +142,17 @@ render:
   four concurrent probes, 1 MiB output, 4096 observations, 4096 input characters,
   100 results, offset 10000, and 5000ms SQLite busy wait. Budgets can leave work
   unstarted; a permitted /24 does not guarantee completion on a real network.
+
+A refusal names `networks.NAME.allow_public`. First check the CIDR for typos such
+as `192.186.1.0/24`; do not opt in merely to silence an error. Use the native policy
+setting described above to add `allow_public: true` only for a deliberately
+authorized non-private network. `status` lists the boolean in `configured_scopes`
+for each named network. It does not automatically grant or start collection.
+Public passive collection and stored query/map reads need no public opt-in,
+even when active methods are configured. Revoking the opt-in preserves history
+but refuses saved active-batch reconciliation and endpoint resume/preview/continue;
+automatic batch selection and status guidance omit those ineligible actions.
+Restore that network's grant only if still intended; old evidence is not authority.
 
 Limit keys are `command_timeout_seconds`, `host_timeout_seconds`,
 `operation_timeout_seconds`, `concurrent_probes`, `output_bytes`, `observations`,

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from ipaddress import ip_address
 import re
 
-from .config import NAME_PATTERN, Policy
+from .config import NAME_PATTERN, Policy, active_scope_allowed
 from .errors import RequestError
 from .facts import RELATION_TYPES, evidence, freshness, selected_facts, selection_cte
 from .storage import Store, timestamp, utc_now
@@ -407,7 +407,8 @@ def inventory_guidance(policy: Policy, store: Store | None, known_devices: int, 
                    if store is None or not alias_is_ambiguous(store, alias)]
     discoveries = [{"tool": "network_discover", "parameters": {"network": network.name, "mode": mode}}
                    for network in policy.networks
-                   for mode, enabled in (("passive", network.passive), ("ping", network.ping)) if enabled]
+                   for mode, enabled in (("passive", network.passive),
+                       ("ping", network.ping and active_scope_allowed(network))) if enabled]
     state = _guidance_state(store, limit, now)
     return {**state, "inventory_state": "empty" if not known_devices else "recorded",
             "inspection_targets": _guidance_page(inspections, limit),
