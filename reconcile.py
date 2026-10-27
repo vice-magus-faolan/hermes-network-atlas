@@ -16,7 +16,7 @@ import re
 import sqlite3
 import time
 
-from .batches import _scope
+from .batches import _scope, reconciliation_scopes
 from .config import NAME_PATTERN, Policy
 from .errors import RequestError
 from .core import _positive
@@ -56,15 +56,9 @@ def _rows(store: Store, sql: str, args: tuple = ()) -> list:
     return rows
 
 
-def _eligible_scopes(store: Store) -> list[tuple[str, str, str]]:
-    allowed = [(collector, network.name, network.cidr) for network in store.policy.networks
-               for collector, enabled in (("local_passive", network.passive), ("ping", network.ping)) if enabled]
-    return allowed + [("ssh", alias, alias) for alias in store.policy.authorized_aliases]
-
-
 def _select(store: Store, batch_id: str | None):
     if batch_id is None:
-        allowed = _eligible_scopes(store)
+        allowed = reconciliation_scopes(store.policy)
         scope_sql = " OR ".join("(b.collector=? AND b.scope_name=? AND b.scope_value=?)" for _ in allowed) or "0"
         bindings = tuple(value for scope in allowed for value in scope)
         row = store.connection.execute("""SELECT b.* FROM batches b WHERE b.policy_context=?

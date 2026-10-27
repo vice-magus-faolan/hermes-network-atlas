@@ -12,7 +12,8 @@ from .facts import RELATION_TYPES, evidence, freshness, selected_facts, selectio
 from .storage import Store, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
 from .inspection_evidence import latest_inspection, most_recent_inspection
-from .batches import OUTCOMES
+from .batches import OUTCOMES, reconciliation_scopes
+from .ssh_identity import alias_candidates
 from .unresolved import query_evidence
 from .endpoints import endpoint_counts, query_endpoints
 
@@ -320,6 +321,94 @@ def _last_collection(store: Store, *, discovery_only: bool = False) -> dict | No
             "scope_absence_eligible": row["completion"] == "complete" and totals["absence_eligible_count"] > 0}
 
 
+def _guidance_page(items: list, limit: int) -> dict:
+    """Give exact omission counts for a deliberately small set of next actions."""
+    return {"items": items[:limit], "total_count": len(items), "omitted_count": max(0, len(items) - limit)}
+
+
+def _pending_guidance(store: Store, limit: int) -> tuple[int, dict]:
+    """Suggest only unapplied LAN/SSH batches matching current local grants."""
+    pending = (" FROM batches b WHERE b.policy_context=? AND b.collector IN ('local_passive','ping','ssh') "
+               "AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.batch_id=b.id)")
+    context = str(store.policy.home)
+    total = store.connection.execute("SELECT COUNT(*)" + pending, (context,)).fetchone()[0]
+    scopes = reconciliation_scopes(store.policy)
+    match = " OR ".join("(b.collector=? AND b.scope_name=? AND b.scope_value=?)" for _ in scopes) or "0"
+    eligible = pending + " AND (" + match + ")"
+    bindings = (context, *(value for scope in scopes for value in scope))
+    count = store.connection.execute("SELECT COUNT(*)" + eligible, bindings).fetchone()[0]
+    rows = store.connection.execute("SELECT b.id" + eligible + " ORDER BY b.ended_at DESC,b.id DESC LIMIT ?",
+                                    (*bindings, limit)).fetchall()
+    return total, {"items": [{"tool": "network_reconcile", "parameters": {"batch_id": row["id"]}} for row in rows],
+                   "total_count": count, "omitted_count": count - len(rows)}
+
+
+def _guidance_state(store: Store | None, limit: int) -> dict:
+    """Read summary counters from the caller's snapshot, never initialize a store."""
+    if store is None:
+        return {"local_collection_state": "none", "unapplied_local_batches": 0,
+                "reconcilable_batches": _guidance_page([], limit),
+                "historical_unresolved_applications": 0, "devices_without_relationships": 0}
+    pending, batches = _pending_guidance(store, limit)
+    unresolved = store.connection.execute(
+        "SELECT COUNT(*) FROM applications WHERE json_array_length(result_json,'$.unresolved')>0").fetchone()[0]
+    isolated = store.connection.execute(
+        "SELECT COUNT(*) FROM devices d WHERE NOT EXISTS "
+        "(SELECT 1 FROM relations r WHERE r.source_device=d.id OR r.target_device=d.id)").fetchone()[0]
+    collected = bool(store.connection.execute(
+        "SELECT 1 FROM batches WHERE policy_context=? LIMIT 1", (str(store.policy.home),)).fetchone())
+    return {"local_collection_state": "recorded" if collected else "none",
+            "unapplied_local_batches": pending, "reconcilable_batches": batches,
+            "historical_unresolved_applications": unresolved, "devices_without_relationships": isolated}
+
+
+def _guidance_notes(state: dict, known_devices: int, inspections: list) -> list[str]:
+    """Explain inventory gaps without turning missing evidence into conclusions."""
+    notes = []
+    if not known_devices:
+        notes.append("Canonical inventory is empty, not proof of an empty network. IP-only and TCP endpoint "
+                     "responses do not establish device identity.")
+    if state["local_collection_state"] == "none":
+        notes.append("No collection is recorded for this profile. Reads do not collect evidence.")
+    if state["unapplied_local_batches"]:
+        notes.append("Stored LAN/SSH batches await application; only currently eligible local batches are suggested.")
+    if state["historical_unresolved_applications"]:
+        notes.append("Historical applications recorded unresolved identity. Query the unresolved view for reasons "
+                     "and subsequent lineage; do not assign IP evidence to a device by address alone.")
+    if not inspections:
+        notes.append("No unambiguous currently authorized SSH inspection target is available; "
+                     "stored queries remain usable.")
+    if state["devices_without_relationships"]:
+        notes.append("Devices without supported relationships remain isolated on maps, not disconnected. "
+                     "SSH route/neighbor probes do not create topology; do not invent links.")
+    return notes
+
+
+def inventory_guidance(policy: Policy, store: Store | None, known_devices: int) -> dict:
+    """Project state and authorized choices; saved unresolved results are historical.
+
+    The unresolved view remains authoritative for subsequent identity lineage.
+    No collectors, policy writes or reconciliation are invoked here.
+    """
+    limit = min(5, policy.limits.result_count)
+    inspections = [{"tool": "network_inspect", "parameters": {"target": alias}}
+                   for alias in policy.authorized_aliases
+                   if store is None or len(alias_candidates(store, alias)) <= 1]
+    discoveries = [{"tool": "network_discover", "parameters": {"network": network.name, "mode": mode}}
+                   for network in policy.networks
+                   for mode, enabled in (("passive", network.passive), ("ping", network.ping)) if enabled]
+    state = _guidance_state(store, limit)
+    return {**state, "inventory_state": "empty" if not known_devices else "recorded",
+            "inspection_targets": _guidance_page(inspections, limit),
+            "discovery_options": _guidance_page(discoveries, limit),
+            "notes": _guidance_notes(state, known_devices, inspections),
+            "inventory_workflow": "When an inspection target is listed, inspect that authorized alias even "
+                                  "without a device ID; reconcile its returned "
+                                  "batch_id, then query the returned device ID and render a stored map. "
+                                  "Actions are suggestions only and remain subject to current policy and limits.",
+            "evidence_query": {"tool": "network_query", "parameters": {"view": "unresolved"}}}
+
+
 def summary(store: Store, now: datetime) -> dict:
     sql, cutoff = _status_sql(now, store.policy.stale_after_days)
     counts = {row[0]: row[1] for row in store.connection.execute(
@@ -336,7 +425,8 @@ def summary(store: Store, now: datetime) -> dict:
             "observed_devices": counts.get("observed", 0), "stale_devices": counts.get("stale", 0),
             "authorized_devices_for_atlas_ssh_inspection": accessible,
             "last_collection": _last_collection(store), "last_discovery": _last_collection(store, discovery_only=True),
-            "last_inspection": most_recent_inspection(attempt, inspection)}
+            "last_inspection": most_recent_inspection(attempt, inspection),
+            "guidance": inventory_guidance(store.policy, store, sum(counts.values()))}
 
 
 def _history(store: Store, params: dict) -> dict:
@@ -367,7 +457,8 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
                 "endpoint_count": 0,
                 "responding_endpoint_count": 0,
                 "endpoint_observation_count": 0, "endpoint_evidence_batches": 0, "unprojected_endpoint_batches": 0,
-                "last_collection": None, "last_discovery": None, "last_inspection": None}
+                "last_collection": None, "last_discovery": None, "last_inspection": None,
+                **({"guidance": inventory_guidance(policy, None, 0)} if args.get("view") == "status" else {})}
     with Store(policy) as store, store.snapshot():
         if args.get("view") == "status":
             return summary(store, clock)

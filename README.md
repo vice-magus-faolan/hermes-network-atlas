@@ -60,6 +60,10 @@ In that profile's Hermes session, `/network status` and `/network map markdown`
 read the same knowledge. Model-tool examples are listed below.
 Query and map do not collect, schedule, initialize, or migrate the atlas. Map export
 is a separate opt-in write. Empty inventory is not proof that no devices exist.
+Status includes bounded `guidance`: eligible unapplied batches, currently authorized
+inspection/discovery choices, historical unresolved identity and missing relationships.
+These are suggestions, never automatic collection or permission changes. See the
+[status guidance fields](docs/operator-guide.md#status-guidance).
 
 Read provenance and timestamps before interpreting results: operator assertions,
 direct observations, and explained inference remain distinct. Stale is age-based;
@@ -89,12 +93,30 @@ Replace BATCH_ID with the returned `batch_id`. Discovery stores evidence;
 reconciliation applies it to inventory. Neighbor caches can be empty or partial,
 not a complete LAN census.
 
+## Machine inventory from an authorized SSH alias
+
+If the selected profile already authorizes an existing OpenSSH alias, inspection
+can bootstrap inventory without a pre-existing device ID:
+
+```sh
+hermes -p PROFILE network-atlas inspect --target lab-a
+hermes -p PROFILE network-atlas reconcile --batch-id BATCH_ID
+hermes -p PROFILE network-atlas query --query-json '{"device_id":"DEVICE_ID"}'
+hermes -p PROFILE network-atlas map --format markdown
+```
+
+Use inspection's returned BATCH_ID and reconciliation's returned DEVICE_ID.
+Successful fixed Linux probes supply hostname, OS, owned interfaces and addresses;
+partial/failed probes retain their actual outcomes. Endpoint responses and IP-only
+discovery are not substitutes for device identity. SSH route/neighbor probes do
+not create topology. See [SSH authorization and inspection](docs/authorized-ssh-inspection.md).
+
 ## Model tools
 
 Replace DEVICE_ID and BATCH_ID with returned IDs; collection examples require
 matching local policy (the quick start enables only passive discovery).
 
-- `network_query` — read stored inventory, status or history; never discover.
+- `network_query` — read stored inventory, status/guidance or history; never discover.
   Example: `{"limit":10,"offset":0}`.
 - `network_map` — render stored relations; export is an optional file write.
   Example: `{"format":"markdown","export":false}`.
@@ -102,8 +124,9 @@ matching local policy (the quick start enables only passive discovery).
   Example: `{"network":"home","mode":"passive"}`.
 - `network_reconcile` — apply an eligible local LAN or SSH batch, with safe retries.
   Example: `{"batch_id":"BATCH_ID"}`.
-- `network_inspect` — collect fixed Linux inventory from a configured SSH alias.
-  Example: `{"target":"lab-a"}`.
+- `network_inspect` — collect hostname/OS/interface/address inventory from an
+  authorized SSH alias, even without an existing device. Reconcile its returned
+  batch, then query/map the device. Example: `{"target":"lab-a"}`.
 - `network_check_endpoints` — collect and persist separately enabled TCP evidence.
   Example: `{"network":"home"}`; no device or service identity is created.
   For unfinished work, preview with `{"preview_batch_id":"BATCH_ID"}`, then

@@ -91,6 +91,14 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.assertFalse(result["discovery_performed"])
         self.assertEqual(query.query(self.policy, {}, now=NOW)["devices"], [])
         self.assertEqual({r["identity_state"] for r in result["evidence"]}, {"reconciled_unresolved"})
+        with patch("subprocess.Popen", side_effect=AssertionError("status attempted collection")) as transport:
+            status = json.loads(tools.Handlers(lambda: self.policy).query({"view": "status"}))
+            self.assertEqual(status["guidance"]["inventory_state"], "empty")
+            self.assertEqual(status["guidance"]["historical_unresolved_applications"], 1)
+            self.assertEqual(status["guidance"]["reconcilable_batches"]["total_count"], 0)
+            self.assertEqual(status["guidance"]["evidence_query"],
+                             {"tool": "network_query", "parameters": {"view": "unresolved"}})
+            transport.assert_not_called()
         for row in result["evidence"]:
             self.assertEqual(row["identity_reason"], "no_unique_stable_interface")
             self.assertEqual(row["candidate_device_ids"], [])
@@ -105,6 +113,37 @@ class UnresolvedEvidenceTests(unittest.TestCase):
             self.assertTrue(row["batch"]["local_policy_context"])
             self.assertEqual(row["application"]["applied_at"], applied["applied_at"])
         self.assertEqual(self.snapshot(), before)
+
+    def test_guidance_only_recommends_current_local_matching_unapplied_batches(self):
+        ids = {self.batch([self.observation()]) for _ in range(7)}
+        policy = self.policy
+        handlers = tools.Handlers(lambda: policy)
+        before = self.snapshot()
+        with patch("subprocess.Popen", side_effect=AssertionError("guidance attempted transport")) as transport:
+            guidance = json.loads(handlers.query({"view": "status"}))["guidance"]
+            self.assertEqual(guidance["unapplied_local_batches"], 7)
+            page = guidance["reconcilable_batches"]
+            self.assertEqual((len(page["items"]), page["total_count"], page["omitted_count"]), (5, 7, 2))
+            self.assertTrue({item["parameters"]["batch_id"] for item in page["items"]} <= ids)
+            self.assertTrue(all(item["tool"] == "network_reconcile" for item in page["items"]))
+            for raw in ({}, {"networks": {"lab": {"cidr": "198.51.100.0/24", "discovery": {"ping": True}}}}):
+                policy = config.validate_policy(raw, self.home)
+                denied = json.loads(handlers.query({"view": "status"}))["guidance"]
+                self.assertEqual(denied["unapplied_local_batches"], 7)
+                self.assertEqual(denied["reconcilable_batches"]["total_count"], 0)
+                self.assertEqual(denied["inspection_targets"]["items"], [])
+            raw = synthetic_policy()
+            raw["store"] = {"shared_sqlite_path": str(self.policy.database)}
+            policy = config.validate_policy(raw, self.home / "reader")
+            foreign = json.loads(handlers.query({"view": "status"}))["guidance"]
+            self.assertEqual(foreign["unapplied_local_batches"], 0)
+            self.assertEqual(foreign["reconcilable_batches"]["items"], [])
+            transport.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        self.apply(next(iter(ids)))
+        policy = self.policy
+        self.assertEqual(json.loads(handlers.query({"view": "status"}))["guidance"][
+            "reconcilable_batches"]["total_count"], 6)
 
     def test_exact_address_batch_validation_and_empty_unknown(self):
         first = self.batch([self.observation(), self.observation("192.0.2.11")])
