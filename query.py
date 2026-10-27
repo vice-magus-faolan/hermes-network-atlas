@@ -16,6 +16,7 @@ from .batches import OUTCOMES, reconciliation_scopes
 from .ssh_identity import alias_is_ambiguous
 from .unresolved import query_evidence
 from .endpoints import endpoint_counts, query_endpoints
+from .topology import TopologySnapshot, query_topology, relation_condition
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
               "relationship", "related_to", "text", "limit", "offset", "batch_id"}
@@ -30,7 +31,7 @@ def validate_query(params: object, policy: Policy) -> dict:
     for key, value in result.items():
         if key not in {"limit", "offset"}:
             _text(value, policy.limits.input_chars, key)
-    _enum(result, "view", ("devices", "status", "history", "unresolved", "endpoints"))
+    _enum(result, "view", ("devices", "status", "history", "unresolved", "endpoints", "topology"))
     _enum(result, "device_type", DEVICE_TYPES)
     _enum(result, "status", STATUSES)
     _enum(result, "access_method", ("ssh",))
@@ -55,6 +56,7 @@ def _validate_view(params: dict) -> None:
     allowed = {"status": {"view"}, "history": {"view", "device_id", "limit", "offset"},
                "unresolved": {"view", "address", "batch_id", "limit", "offset"},
                "endpoints": {"view", "address", "batch_id", "limit", "offset"},
+               "topology": {"view", "address", "batch_id", "limit", "offset"},
                "devices": QUERY_KEYS - {"batch_id"}}
     if not set(params) <= allowed[view]:
         raise RequestError("view: use only filters supported by the selected query view")
@@ -131,7 +133,7 @@ def _filters(params: dict, policy: Policy, now: datetime) -> tuple[list[str], li
     return clauses, values
 
 
-def _additional_filters(params: dict) -> tuple[list[str], list]:
+def _additional_filters(params: dict, topology: TopologySnapshot) -> tuple[list[str], list]:
     clauses, values = [], []
     if "text" in params:
         clauses.append("EXISTS (SELECT 1 FROM canonical c WHERE c.subject_kind='device' AND c.entity_id=d.id "
@@ -139,6 +141,9 @@ def _additional_filters(params: dict) -> tuple[list[str], list]:
         values.append(_like(params["text"]))
     if "relationship" in params or "related_to" in params:
         sql = "EXISTS (SELECT 1 FROM relations r WHERE (r.source_device=d.id OR r.target_device=d.id)"
+        supported, bindings = relation_condition(topology)
+        sql += " AND " + supported
+        values.extend(bindings)
         if "relationship" in params:
             sql += " AND r.relationship_type=?"
             values.append(params["relationship"])
@@ -179,7 +184,7 @@ def access_answers(store: Store, device: str) -> list[dict]:
     return answers
 
 
-def device_detail(store: Store, row, now: datetime) -> dict:
+def device_detail(store: Store, row, now: datetime, topology: TopologySnapshot | None = None) -> dict:
     """Return independent IDs, selected values, actual provenance and explicit collisions."""
     result = dict(row)
     result["status"] = freshness(row, now, store.policy.stale_after_days)
@@ -196,7 +201,7 @@ def device_detail(store: Store, row, now: datetime) -> dict:
             "SELECT COUNT(*) FROM interfaces WHERE mac_address=?", (interface["mac_address"],)).fetchone()[0]
         item["identity_uncertain"] = not interface["stable_mac"] or count > 1
         result["interfaces"].append(item)
-    result["relationships"] = relationships(store, row["id"], now)
+    result["relationships"] = relationships(store, row["id"], now, topology or TopologySnapshot(store, now))
     return result
 
 
@@ -225,9 +230,10 @@ def _addresses(store: Store, interface: str) -> list[dict]:
     return result
 
 
-def relationships(store: Store, device: str, now: datetime) -> list[dict]:
-    rows = bounded_rows(
-        store, "SELECT * FROM relations WHERE source_device=? OR target_device=? ORDER BY id", (device, device))
+def relationships(store: Store, device: str, now: datetime, topology: TopologySnapshot) -> list[dict]:
+    supported, bindings = relation_condition(topology, device)
+    rows = bounded_rows(store, "SELECT r.* FROM relations r WHERE (r.source_device=? OR r.target_device=?) AND "
+                        + supported + " ORDER BY r.id", (device, device, *bindings))
     result = []
     for row in rows:
         item = dict(row)
@@ -238,14 +244,15 @@ def relationships(store: Store, device: str, now: datetime) -> list[dict]:
 
 
 def _inventory(store: Store, params: dict, now: datetime) -> dict:
+    topology = TopologySnapshot(store, now)
     cte, bindings = selection_cte(now, store.policy.stale_after_days)
     first, values = _filters(params, store.policy, now)
-    second, extra = _additional_filters(params)
+    second, extra = _additional_filters(params, topology)
     clauses = first + second
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     rows = store.connection.execute(cte + "SELECT d.* FROM devices d" + where + " ORDER BY d.id LIMIT ? OFFSET ?",
       (*bindings, *values, *extra, params["limit"] + 1, params["offset"])).fetchall()
-    return {"devices": [device_detail(store, row, now) for row in rows[:params["limit"]]],
+    return {"devices": [device_detail(store, row, now, topology) for row in rows[:params["limit"]]],
             "limit": params["limit"], "offset": params["offset"], "has_more": len(rows) > params["limit"],
             "discovery_performed": False}
 
@@ -343,7 +350,7 @@ def _pending_guidance(store: Store, limit: int) -> tuple[int, dict]:
                    "total_count": count, "omitted_count": count - len(rows)}
 
 
-def _guidance_state(store: Store | None, limit: int) -> dict:
+def _guidance_state(store: Store | None, limit: int, now: datetime) -> dict:
     """Read summary counters from the caller's snapshot, never initialize a store."""
     if store is None:
         return {"local_collection_state": "none", "unapplied_local_batches": 0,
@@ -352,9 +359,11 @@ def _guidance_state(store: Store | None, limit: int) -> dict:
     pending, batches = _pending_guidance(store, limit)
     unresolved = store.connection.execute(
         "SELECT COUNT(*) FROM applications WHERE json_array_length(result_json,'$.unresolved')>0").fetchone()[0]
+    supported, bindings = relation_condition(TopologySnapshot(store, now))
     isolated = store.connection.execute(
         "SELECT COUNT(*) FROM devices d WHERE NOT EXISTS "
-        "(SELECT 1 FROM relations r WHERE r.source_device=d.id OR r.target_device=d.id)").fetchone()[0]
+        "(SELECT 1 FROM relations r WHERE (r.source_device=d.id OR r.target_device=d.id) AND " +
+        supported + ")", bindings).fetchone()[0]
     collected = bool(store.connection.execute(
         "SELECT 1 FROM batches WHERE policy_context=? LIMIT 1", (str(store.policy.home),)).fetchone())
     return {"local_collection_state": "recorded" if collected else "none",
@@ -373,18 +382,20 @@ def _guidance_notes(state: dict, known_devices: int, inspections: list) -> list[
     if state["unapplied_local_batches"]:
         notes.append("Stored LAN/SSH batches await application; only currently eligible local batches are suggested.")
     if state["historical_unresolved_applications"]:
-        notes.append("Historical applications recorded unresolved identity. Query the unresolved view for reasons "
-                     "and subsequent lineage; do not assign IP evidence to a device by address alone.")
+        notes.append("Historical applications recorded unresolved identity/topology. Query view=unresolved for "
+                     "address lineage or view=topology for next-hop reasons; "
+                     "do not assign IP evidence to a device by address alone.")
     if not inspections:
         notes.append("No unambiguous currently authorized SSH inspection target is available; "
                      "stored queries remain usable.")
     if state["devices_without_relationships"]:
         notes.append("Devices without supported relationships remain isolated on maps, not disconnected. "
-                     "SSH route/neighbor probes do not create topology; do not invent links.")
+                     "SSH topology requires unambiguous supported next-hop evidence; "
+                     "query view=topology for unresolved configuration. Do not invent physical links.")
     return notes
 
 
-def inventory_guidance(policy: Policy, store: Store | None, known_devices: int) -> dict:
+def inventory_guidance(policy: Policy, store: Store | None, known_devices: int, now: datetime) -> dict:
     """Project state and authorized choices; saved unresolved results are historical.
 
     The unresolved view remains authoritative for subsequent identity lineage.
@@ -397,7 +408,7 @@ def inventory_guidance(policy: Policy, store: Store | None, known_devices: int) 
     discoveries = [{"tool": "network_discover", "parameters": {"network": network.name, "mode": mode}}
                    for network in policy.networks
                    for mode, enabled in (("passive", network.passive), ("ping", network.ping)) if enabled]
-    state = _guidance_state(store, limit)
+    state = _guidance_state(store, limit, now)
     return {**state, "inventory_state": "empty" if not known_devices else "recorded",
             "inspection_targets": _guidance_page(inspections, limit),
             "discovery_options": _guidance_page(discoveries, limit),
@@ -426,7 +437,7 @@ def summary(store: Store, now: datetime) -> dict:
             "authorized_devices_for_atlas_ssh_inspection": accessible,
             "last_collection": _last_collection(store), "last_discovery": _last_collection(store, discovery_only=True),
             "last_inspection": most_recent_inspection(attempt, inspection),
-            "guidance": inventory_guidance(store.policy, store, sum(counts.values()))}
+            "guidance": inventory_guidance(store.policy, store, sum(counts.values()), now)}
 
 
 def _history(store: Store, params: dict) -> dict:
@@ -448,6 +459,8 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
         return query_evidence(policy, args, clock)
     if args.get("view") == "endpoints":
         return query_endpoints(policy, args)
+    if args.get("view") == "topology":
+        return query_topology(policy, args, clock)
     if not policy.database.exists():
         if args.get("view") == "history":
             raise RequestError("device_id: select an existing atlas entity")
@@ -458,7 +471,7 @@ def query(policy: Policy, params: object, *, now: datetime | None = None) -> dic
                 "responding_endpoint_count": 0,
                 "endpoint_observation_count": 0, "endpoint_evidence_batches": 0, "unprojected_endpoint_batches": 0,
                 "last_collection": None, "last_discovery": None, "last_inspection": None,
-                **({"guidance": inventory_guidance(policy, None, 0)} if args.get("view") == "status" else {})}
+                **({"guidance": inventory_guidance(policy, None, 0, clock)} if args.get("view") == "status" else {})}
     with Store(policy) as store, store.snapshot():
         if args.get("view") == "status":
             return summary(store, clock)

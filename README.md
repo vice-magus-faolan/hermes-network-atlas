@@ -108,8 +108,10 @@ hermes -p PROFILE network-atlas map --format markdown
 Use inspection's returned BATCH_ID and reconciliation's returned DEVICE_ID.
 Successful fixed Linux probes supply hostname, OS, owned interfaces and addresses;
 partial/failed probes retain their actual outcomes. Endpoint responses and IP-only
-discovery are not substitutes for device identity. SSH route/neighbor probes do
-not create topology. See [SSH authorization and inspection](docs/authorized-ssh-inspection.md).
+discovery are not substitutes for device identity. Retained SSH routes/neighbors
+can support inferred configured-next-hop relationships to already identified peers,
+not physical links or current reachability. Query `{"view":"topology"}` for evidence
+and unresolved reasons. See [logical topology](docs/authorized-ssh-inspection.md#logical-topology).
 
 ## Model tools
 

@@ -12,6 +12,7 @@ from .config import Policy
 from .errors import RequestError, StoreError
 from .query import device_detail
 from .storage import Store, identifier, private_directory, timestamp, utc_now
+from .topology import TopologySnapshot
 
 
 def markdown(value: object) -> str:
@@ -106,7 +107,11 @@ def _edge_label(edge: dict) -> str:
     confidences = sorted({entry["confidence"] for entry in fact["evidence"]})
     endpoints = ":" + edge["source_interface"] if edge["source_interface"] else ""
     endpoints += " -> :" + edge["target_interface"] if edge["target_interface"] else ""
-    return edge["relationship_type"] + " [" + ",".join(confidences) + "]" + endpoints
+    label = edge["relationship_type"] + " [" + ",".join(confidences) + "]" + endpoints
+    if any(entry["evidence_kind"] == "configured_route" for entry in fact["evidence"]):
+        sources = sorted({entry["source"] + " @ " + entry["observed_at"] for entry in fact["evidence"]})
+        label += " configured next hop; " + ", ".join(sources)
+    return label
 
 
 def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
@@ -176,7 +181,8 @@ def render_map(policy: Policy, *, now: datetime | None = None) -> dict[str, str]
                 "SELECT * FROM devices ORDER BY id LIMIT ?", (policy.limits.observations + 1,)).fetchall()
             if len(rows) > policy.limits.observations:
                 raise ValueError("map device bound exceeded")
-            devices = [device_detail(store, row, clock) for row in rows]
+            topology = TopologySnapshot(store, clock)
+            devices = [device_detail(store, row, clock, topology) for row in rows]
     outputs = _render(devices, policy)
     if any(len(content.encode("utf-8")) > policy.limits.output_bytes for content in outputs.values()):
         raise ValueError("map output exceeds configured byte bound")

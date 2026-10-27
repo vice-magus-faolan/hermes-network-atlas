@@ -40,8 +40,8 @@ lint configuration does not affect Hermes plugin dependency resolution.
 This is a lint check, not a required formatter pass.
 
 The Docker entrypoint also enforces C901 at 15 for native settings, CLI,
-handlers, converter and endpoint collection/storage. CI also reports soft-10
-findings; diagnostics are not exact scores.
+handlers, converter, endpoint collection/storage, topology, queries and
+reconciliation. CI also reports soft-10 findings; diagnostics are not exact scores.
 
 Prefer simple standard-library Python, small typed boundaries, and focused
 Conventional Commits. Explain non-obvious intent and failure behavior. Avoid

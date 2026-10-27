@@ -163,10 +163,13 @@ def _observation(obs: Observation, probe: Probe, store: Store, kind: str, scope:
         raise ValueError("alias evidence outside exact inspected target")
     _times(obs.observed_at, obs.observed_at, probe.started_at, probe.ended_at)
     fields = {"device": DEVICE_FIELDS, "interface": INTERFACE_FIELDS,
-              "address": ("assignment",), "relationship": ("relationship",)}
+              "address": ("assignment",), "relationship": ("relationship",),
+              "route": ("configuration",), "neighbor": ("cache",)}
     if obs.subject_kind not in fields or obs.field not in fields[obs.subject_kind]:
         raise ValueError("invalid observation field")
-    if obs.subject_kind == "address":
+    if obs.subject_kind in {"route", "neighbor"}:
+        _topology_value(obs, probe, store, kind)
+    elif obs.subject_kind == "address":
         _address_value(obs.value, kind, scope)
     elif obs.subject_kind == "relationship":
         raise ValueError("collector relationship parsing is deferred; use validated operator relations")
@@ -176,6 +179,17 @@ def _observation(obs: Observation, probe: Probe, store: Store, kind: str, scope:
         if probe.evidence_kind != "cached_neighbor" or obs.neighbor_state not in {
                 "REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT", "NOARP", "INCOMPLETE", "FAILED", "NONE"}:
             raise ValueError("invalid neighbor evidence state")
+
+
+def _topology_value(obs: Observation, probe: Probe, store: Store, kind: str) -> None:
+    from .topology import validate_record
+    expected = "ssh_route" if obs.subject_kind == "route" else "ssh_neigh"
+    if (kind != "ssh_alias" or obs.subject_anchor.kind != "alias" or probe.probe_name != expected
+            or probe.evidence_kind != "ssh_response" or obs.neighbor_state is not None):
+        raise ValueError("topology requires its exact native SSH probe and origin")
+    if not isinstance(obs.value, tuple) or len(dict(obs.value)) != len(obs.value):
+        raise ValueError("typed topology required")
+    validate_record(obs.subject_kind, dict(obs.value), store.policy.limits.input_chars)
 
 
 def _scalar_value(obs: Observation, store: Store) -> None:
@@ -269,7 +283,8 @@ def _insert_probe(store: Store, batch: str, probe: Probe, collector: str, source
        probe.coverage_kind, probe.coverage_value, probe.evidence_kind, int(absence), probe.diagnostic_code))
     for observation in probe.observations:
         value = dict(observation.value) if isinstance(observation.value, tuple) else observation.value
-        qualified = probe.evidence_kind in {"local_interface", "ping_response", "ssh_response"}
+        qualified = (probe.evidence_kind in {"local_interface", "ping_response", "ssh_response"}
+                     and observation.subject_kind not in {"route", "neighbor"})
         store.connection.execute("""INSERT INTO observations
           (id,batch_id,probe_id,subject_kind,subject_anchor,field,value_json,source,confidence,
            observed_at,evidence_kind,neighbor_state,qualified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",

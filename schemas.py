@@ -8,16 +8,17 @@ TOOL_UPDATE_FIELDS = tuple(field for field in UPDATE_FIELDS if field != "retired
 QUERY_SCHEMA = {
     "name": "network_query",
     "description": ("Read stored device inventory (hostname, OS, interfaces, addresses and provenance), endpoints, "
-                    "relations or history. Use view=status for bounded currently authorized next actions when "
+                    "relations or history. Use view=topology for retained SSH routes/neighbors and unresolved "
+                    "next-hop reasons. Use view=status for bounded currently authorized next actions when "
                     "inventory is empty; view=unresolved explains original evidence and identity lineage. "
                     "After inspect/discover, reconcile the returned batch_id before querying device IDs. "
                     "Historical evidence establishes neither current reachability nor access. Never collects."),
     "parameters": {
         "type": "object", "additionalProperties": False,
         "properties": {
-            "view": {"type": "string", "enum": ["devices", "status", "history", "unresolved", "endpoints"]},
+            "view": {"type": "string", "enum": ["devices", "status", "history", "unresolved", "endpoints", "topology"]},
             "batch_id": {"type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
-                         "description": ("Optional exact stored batch filter for unresolved/endpoints views; "
+                         "description": ("Optional exact stored batch filter for unresolved/endpoints/topology views; "
                                          "foreign origin remains read-only knowledge.")},
             **{key: {"type": "string", "maxLength": 4096} for key in
                ("device_id", "name", "address", "device_type", "status", "access_method",
@@ -93,7 +94,8 @@ INSPECT_SCHEMA = {
                     "from one currently authorized configured SSH alias, even with no existing device ID, "
                     "or a uniquely mapped device. Uses fixed read-only probes and stores an immutable attempt. "
                     "Does not apply inventory: pass returned batch_id to network_reconcile, then query its "
-                    "device IDs and render network_map. Does not create topology or grant access."),
+                    "device IDs and render network_map. Retains route/neighbor configuration for conservative "
+                    "logical next-hop inference, not physical links or new access grants."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 64,
                                               "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}},
