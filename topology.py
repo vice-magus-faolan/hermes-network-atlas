@@ -161,6 +161,8 @@ def resolve_route(store: Store, row, now: datetime) -> dict:
     source = _source_interface(store, row, device, route["dev"])
     if source is None:
         return {"reason": "unresolved_source_interface", "source_device": device}
+    if not route["gateway"]:
+        return {"reason": "no_next_hop", "source_device": device, "source_interface": source}
     peer = _peer(store, route, _batch_records(store, batch["id"], "neighbor"), now)
     if peer["reason"] != "supported":
         return {**peer, "source_device": device}
@@ -172,9 +174,9 @@ def resolve_route(store: Store, row, now: datetime) -> dict:
 
 
 def _route_reason(route: dict, rows: list) -> str | None:
-    if (not route["gateway"] or not route["dev"] or route["type"] != "unicast"
+    if (not route["dev"] or route["type"] != "unicast"
             or route["table"] not in {"main", "254"} or route["unsupported"]
-            or ip_address(route["gateway"]).version != 4
+            or (route["gateway"] and ip_address(route["gateway"]).version != 4)
             or (route["dst"] != "default" and ip_network(route["dst"]).version != 4)):
         return "unsupported_route"
     candidates = [json.loads(row["value_json"]) for row in rows]
@@ -195,6 +197,8 @@ def retain_and_derive(app, observations: list) -> None:
         if row["subject_kind"] != "route":
             continue
         resolution = resolve_route(app.store, row, app.now)
+        if resolution["reason"] == "no_next_hop":
+            continue  # Retained connected configuration has no peer identity to resolve.
         if resolution["reason"] != "supported":
             app.result["unresolved"].append({"evidence_id": row["id"], **resolution})
             continue

@@ -123,7 +123,11 @@ def routes(data: bytes, alias: str, at: str, policy: Policy) -> tuple[Observatio
         if not isinstance(table, str) and type(table) is not int:
             raise ValueError("invalid route table")
         table = "main" if str(table) == "254" else str(table)
-        value = {"dst": row.get("dst", "default"), "gateway": row.get("gateway", ""),
+        dst = _text(row.get("dst", "default"), policy.limits.input_chars)
+        if dst != "default" and "/" not in dst:
+            # iproute2 omits the prefix only for host-length destinations.
+            dst += "/" + str(local._ip(dst).max_prefixlen)
+        value = {"dst": dst, "gateway": row.get("gateway", ""),
                  "dev": row.get("dev", ""), "type": row.get("type", "unicast"), "table": table,
                  "metric": row.get("metric", 0),
                  "unsupported": int(bool(flags) or any(key in row for key in ("nexthops", "nhid", "via", "encap")))}

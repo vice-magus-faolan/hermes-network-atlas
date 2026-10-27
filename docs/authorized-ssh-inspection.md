@@ -251,8 +251,11 @@ All of the following must hold:
 Missing, stale, conflicting or ambiguous support remains unresolved. Multiple
 next hops for the same destination/table are conservatively conflicting; non-main,
 IPv6, multipath, flagged, nexthop-ID and encapsulated routes remain unsupported.
-Connected/no-gateway routes are retained but create no next-hop edge. Passive LAN
-route metadata still does not infer an inspected-host relationship.
+Eligible connected/no-gateway routes resolve as `no_next_hop`: they remain
+queryable without a next-hop edge or an unresolved application warning. Missing
+origin/interface identity, conflicts and unsupported features still retain their
+own reasons even without a gateway. Passive LAN route metadata still does not
+infer an inspected-host relationship.
 
 Edges retain inferred provenance and support observation IDs; maps label them
 as configured next hops and draw them dashed. Device relationship details, filters,

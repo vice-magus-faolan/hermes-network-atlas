@@ -26,6 +26,7 @@ runner = importlib.import_module("atlas_test_plugin.probes")
 tools = importlib.import_module("atlas_test_plugin.tools")
 schemas = importlib.import_module("atlas_test_plugin.schemas")
 render = importlib.import_module("atlas_test_plugin.render")
+batches = importlib.import_module("atlas_test_plugin.batches")
 
 MAC = "00:11:22:33:44:77"
 MAC2 = "00:11:22:33:44:88"
@@ -326,16 +327,25 @@ class TopologyInspectionTests(AtlasFixture):
         # Preserve every existing logical row, not SQLite page/journal bytes.
         retained = {name: self.store.connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
                     for name in self.counts()}
-        receipt = self.public_collect(self.payloads())
+        payloads = self.payloads()
+        payloads["ip -j route"] = json.dumps([
+            {"dst": "default", "gateway": "198.51.100.254", "dev": "fixture0"},
+            {"dst": "198.51.100.254", "dev": "fixture0", "scope": "link"}]).encode()
+        receipt = self.public_collect(payloads)
+        probe = next(p for p in receipt["probes"] if p["name"] == "ssh_route")
+        self.assertEqual((probe["outcome"], probe["observation_count"]), ("success", 3))
         raw = self.topology(receipt)
         self.assertEqual({row["kind"] for row in raw}, {"route", "neighbor"})
+        self.assertEqual({row["value"]["dst"] for row in raw if row["kind"] == "route"},
+                         {"default", "198.51.100.254/32"})
         self.assertTrue(all(row["source"] == "ssh:" + ALIAS and row["confidence"] == "observed"
                             and not row["qualified"] and row["policy_context"] == str(self.home) for row in raw))
-        route = next(row for row in raw if row["kind"] == "route")
+        route = next(row for row in raw if row["kind"] == "route" and row["value"]["dst"] == "default")
         self.assertEqual(route["resolution"]["reason"], "unapplied_or_ambiguous_origin")
         applied = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
         self.assertNotIn("error", applied)
         self.assertEqual(len(applied["relationships"]), 1)
+        self.assertEqual(applied["unresolved"], [])
         source = applied["new"][0]
         detail = json.loads(self.handlers.query({"device_id": source}))["devices"][0]
         self.assertEqual({i["mac_address"] for i in detail["interfaces"]}, {MAC, MAC2})
@@ -348,9 +358,12 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual(fact["value"]["route_evidence_id"], route["id"])
         self.assertTrue(fact["explanation"])
         self.assertEqual(fact["observed_at"], route["observed_at"])
-        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        routes = [row for row in self.topology(receipt) if row["kind"] == "route"]
+        route = next(row for row in routes if row["value"]["dst"] == "default")
         self.assertEqual(route["origin_device"], source)
         self.assertEqual(route["resolution"]["relationship_id"], edge["id"])
+        connected = next(row for row in routes if row["value"]["dst"] == "198.51.100.254/32")
+        self.assertEqual(connected["resolution"]["reason"], "no_next_hop")
         self.assertEqual({d["id"] for d in json.loads(self.handlers.query(
             {"relationship": "routes_via"}))["devices"]}, {source, peer})
         related = json.loads(self.handlers.query({"relationship": "routes_via", "related_to": peer}))
@@ -384,6 +397,7 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertFalse(applied.get("relationships"))
         route = next(row for row in self.topology(receipt) if row["kind"] == "route")
         self.assertEqual(route["resolution"]["reason"], "no_unique_stable_peer")
+        self.assertEqual([item["reason"] for item in applied["unresolved"]], ["no_unique_stable_peer"])
         self.assert_no_edges()
         self.known_peer()
         route = next(row for row in self.topology(receipt) if row["kind"] == "route")
@@ -392,6 +406,39 @@ class TopologyInspectionTests(AtlasFixture):
         self.assert_no_edges()
         _, successor = self.apply()
         self.assertEqual(len(successor["relationships"]), 1)
+
+    def test_connected_only_retains_evidence_without_unresolved_receipt_or_status_warning(self):
+        payloads = self.payloads()
+        connected = {"dst": "198.51.100.0/24", "dev": "fixture0", "protocol": "kernel", "scope": "link"}
+        payloads["ip -j route"] = json.dumps([connected, {**connected, "dst": "198.51.100.254"}]).encode()
+        payloads["ip -j neigh"] = b'[]'
+        receipt, applied = self.apply(payloads)
+        self.assertEqual(applied["unresolved"], [])
+        self.assertFalse(applied.get("relationships"))
+        routes = self.topology(receipt)
+        self.assertEqual({row["value"]["dst"] for row in routes}, {"198.51.100.0/24", "198.51.100.254/32"})
+        self.assertTrue(all(row["resolution"]["reason"] == "no_next_hop" for row in routes))
+        guidance = json.loads(self.handlers.query({"view": "status"}))["guidance"]
+        self.assertEqual(guidance["historical_unresolved_applications"], 0)
+        self.assertFalse(any("Historical applications recorded unresolved" in note for note in guidance["notes"]))
+        self.assert_no_edges()
+        snapshot = list(self.store.connection.iterdump())
+        self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+        for changes, reason in (({"dev": "unknown0"}, "unresolved_source_interface"),
+                                ({"dev": ""}, "unsupported_route")):
+            payloads["ip -j route"] = json.dumps([{**connected, **changes}]).encode()
+            batch, result = self.apply(payloads)
+            self.assertEqual([item["reason"] for item in result["unresolved"]], [reason])
+            self.assertEqual(self.topology(batch)[0]["resolution"]["reason"], reason)
+            self.assert_no_edges()
+        payloads["ip -j route"] = json.dumps([connected, {**connected, "dev": "fixture1"}]).encode()
+        batch, result = self.apply(payloads)
+        self.assertEqual([item["reason"] for item in result["unresolved"]], ["conflicting_routes"] * 2)
+        self.assertTrue(all(row["resolution"]["reason"] == "conflicting_routes" for row in self.topology(batch)))
+        guidance = json.loads(self.handlers.query({"view": "status"}))["guidance"]
+        self.assertGreater(guidance["historical_unresolved_applications"], 0)
+        self.assert_no_edges()
 
     def test_stale_neighbor_and_conflicting_routes_or_neighbors_remain_unresolved(self):
         self.known_peer()
@@ -497,7 +544,12 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual(len(matching["observations"]), 2)
         for extra in ({"device_id": self.device}, {"relationship": "routes_via"}, {"limit": 0}):
             self.assertIn("error", json.loads(self.handlers.query({"view": "topology", **extra})))
-        for changes in ({"nexthops": []}, {"flags": ["linkdown"]}, {"table": 100}, {"type": "blackhole"}):
+        for changes in ({"nexthops": []}, {"flags": ["linkdown"]}, {"table": 100}, {"type": "blackhole"},
+                        {"gateway": "", "nexthops": []}, {"gateway": "", "nhid": 1},
+                        {"gateway": "", "via": {"family": "inet", "host": "198.51.100.254"}},
+                        {"gateway": "", "encap": {}}, {"gateway": "", "flags": ["linkdown"]},
+                        {"gateway": "", "table": 100}, {"gateway": "", "type": "blackhole"},
+                        {"gateway": "", "dst": "2001:db8::1"}):
             payloads = self.payloads()
             routes = json.loads(payloads["ip -j route"])
             routes[0].update(changes)
@@ -506,15 +558,38 @@ class TopologyInspectionTests(AtlasFixture):
             self.assertFalse(result.get("relationships"))
             route = next(row for row in self.topology(batch) if row["kind"] == "route")
             self.assertEqual(route["resolution"]["reason"], "unsupported_route")
+            self.assertEqual([item["reason"] for item in result["unresolved"]], ["unsupported_route"])
+            if changes.get("dst") == "2001:db8::1":
+                self.assertEqual(route["value"]["dst"], "2001:db8::1/128")
             self.assert_no_edges()
-        for command, invalid in (("ip -j route", b'[{"gateway":"bad"}]'),
-                                 ("ip -j neigh", b'[{"dst":"198.51.100.254","state":["BAD"]}]')):
+        invalid_probes = [("ip -j route", b'[{"gateway":"bad"}]'),
+                          ("ip -j neigh", b'[{"dst":"198.51.100.254","state":["BAD"]}]')]
+        for dst in ("203.0.113.7/24", "203.0.113.0/024", "not-an-address", "2001:db8::1%fixture0"):
+            invalid_probes.append(("ip -j route", json.dumps([
+                {"dst": "default", "gateway": "198.51.100.254", "dev": "fixture0"},
+                {"dst": dst, "dev": "fixture0"}]).encode()))
+        for command, invalid in invalid_probes:
             payloads = self.payloads()
             payloads[command] = invalid
             batch = self.public_collect(payloads)
             probe = "ssh_route" if command.endswith("route") else "ssh_neigh"
             self.assertEqual(next(p for p in batch["probes"] if p["name"] == probe)["outcome"], "parse_failed")
+            if probe == "ssh_route":
+                self.assertFalse(any(row["kind"] == "route" for row in self.topology(batch)))
             self.assert_no_edges()
+        # Durable admission still rejects bare/noncanonical destinations; only
+        # the native parser may translate iproute2's missing-prefix spelling.
+        at = storage.timestamp(self.clock)
+        canonical = parse.routes(outputs()["ip -j route"], ALIAS, at, self.policy)[0]
+        snapshot = list(self.store.connection.iterdump())
+        for dst in ("198.51.100.254", "2001:db8::1", "203.0.113.7/24", "203.0.113.0/024"):
+            value = {**dict(canonical.value), "dst": dst}
+            observation = replace(canonical, value=tuple(value.items()))
+            probe = batches.Probe("ssh_route", "success", at, at, "exact_target", ALIAS, "ssh_response",
+                                   observations=(observation,))
+            with self.subTest(dst=dst), self.assertRaises(ValueError):
+                batches.store_batch(self.store, "ssh", ALIAS, at, at, "complete", (probe,))
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
 
     def test_topology_transaction_rollback_retry_and_probe_overflow(self):
         self.known_peer()
