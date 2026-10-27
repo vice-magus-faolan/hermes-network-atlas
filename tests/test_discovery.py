@@ -50,15 +50,22 @@ def assert_stopped(test: unittest.TestCase, descendant: int) -> None:
         time.sleep(0.01)
 
 
-def xml(target="192.0.2.10", mac=MAC, up=True, responder=None):
+def exclusions(argv):
+    return tuple(argv[argv.index("--exclude") + 1].split(",")) if "--exclude" in argv else ()
+
+
+def xml(target="192.0.2.10", mac=MAC, up=True, responder=None, *, excluded=()):
     network = ip_network(target)
-    address = responder or str(network.network_address)
+    targets = [str(ip) for ip in network if str(ip) not in excluded]
+    address = responder or targets[0]
     host = ('<host><status state="up"/><address addr="' + address + '" addrtype="ipv4"/>' +
             (('<address addr="' + mac + '" addrtype="mac"/>') if mac else '') + '</host>') if up else ''
+    host += ''.join('<host><status state="down" reason="no-response"/><address addr="' + ip +
+                    '" addrtype="ipv4"/></host>' for ip in targets if not up or ip != address)
     return ('<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun>' + host +
             '<runstats><finished exit="success"/><hosts up="' + str(int(up)) + '" down="' +
-            str(network.num_addresses - int(up)) +
-            '" total="' + str(network.num_addresses) + '"/></runstats></nmaprun>').encode()
+            str(len(targets) - int(up)) +
+            '" total="' + str(len(targets)) + '"/></runstats></nmaprun>').encode()
 
 
 def observation(mac=MAC, address="192.0.2.10", at=NOW, state=None, prefix=32):
@@ -159,7 +166,8 @@ class DiscoveryTests(AtlasFixture):
             nonlocal active, maximum
             self.assertEqual(argv[:4], ("nmap", "-sn", "-n", "-PS80,443"))
             self.assertEqual(
-                argv[4:-1], ("--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-"))
+                argv[4:-1], ("-v", "--host-timeout", "10s", "--max-parallelism", "4", "--max-rate", "32", "-oX", "-",
+                             "--exclude", "192.0.2.8,192.0.2.11"))
             self.assertTrue(kwargs["host"])
             target = argv[-1]
             self.assertEqual(target, "192.0.2.8/30")
@@ -170,15 +178,15 @@ class DiscoveryTests(AtlasFixture):
             time.sleep(0.02)
             with lock:
                 active -= 1
-            return runner.CommandResult("success", xml(target, responder="192.0.2.10"))
+            return runner.CommandResult("success", xml(target, responder="192.0.2.10", excluded=exclusions(argv)))
         with patch.object(discovery, "run", fake):
             receipt = discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
         self.assertEqual(len(seen), 1)
         self.assertEqual(len(receipt["probes"]), 5)
         self.assertLessEqual(maximum, self.policy.limits.concurrent_probes)
-        self.assertEqual(receipt["completion"], "complete")
+        self.assertEqual(receipt["completion"], "partial")
         self.assertEqual(self.store.connection.execute(
-            "SELECT COUNT(*) FROM probes WHERE absence_eligible=1").fetchone()[0], 1)
+            "SELECT COUNT(*) FROM probes WHERE absence_eligible=1").fetchone()[0], 0)
         result = reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
         self.assertEqual(len(result["new"]), 1)
 
@@ -383,9 +391,10 @@ class ReconciliationTests(AtlasFixture):
         handlers = fixture_handlers(self.home)
         for mode in ("passive", "ping"):
             with patch.object(discovery, "run", side_effect=lambda argv, *args, **kwargs:
-                              runner.CommandResult("success", xml(argv[-1], up=False) if argv[0] == "nmap" else b"[]")):
+                              runner.CommandResult("success", xml(argv[-1], up=False, excluded=exclusions(argv))
+                                                   if argv[0] == "nmap" else b"[]")):
                 receipt = discovery.collect(self.policy, {"network": "lab", "mode": mode})
-            self.assertEqual(receipt["completion"], "complete")
+            self.assertEqual(receipt["completion"], "partial" if mode == "ping" else "complete")
             batch = receipt["batch_id"]
             disabled = json.loads(json.dumps(self.raw))
             disabled["networks"]["lab"]["discovery"][mode] = False

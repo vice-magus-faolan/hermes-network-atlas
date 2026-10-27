@@ -159,7 +159,9 @@ class CumulativeHostTests(unittest.TestCase):
     def test_legacy_and_new_exact_lineage_shared_read_without_apply_authority(self):
         legacy = self.policy(cidr='192.0.2.8/31', icmp_echo=False, tcp_ports=[80, 443])
         xml = (b'<nmaprun><host><status state="up"/><address addr="192.0.2.8" addrtype="ipv4"/>'
-               b'</host><runstats><finished exit="success"/><hosts up="1" down="1" total="2"/></runstats></nmaprun>')
+               b'</host><host><status state="down" reason="no-response"/>'
+               b'<address addr="192.0.2.9" addrtype="ipv4"/></host>'
+               b'<runstats><finished exit="success"/><hosts up="1" down="1" total="2"/></runstats></nmaprun>')
         runner = importlib.import_module('atlas_test_plugin.probes')
         with patch.object(discovery, 'run', return_value=runner.CommandResult('success', xml)), \
                 patch('socket.socket', side_effect=AssertionError('legacy must not open socket')):

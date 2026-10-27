@@ -112,14 +112,14 @@ def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:
-    """Two scope-complete synthetic scans; exactly three authorized SSH aliases."""
+    """Two synthetic scans with excluded scope edges; three authorized SSH aliases."""
     status = atlas.slash("status")
     assert status["known_devices"] == 0 and status["last_discovery"] is None, status
     passive = atlas.slash("discover lab passive")
     assert passive["completion"] == "complete" and not passive["applied"], passive
     assert not atlas.tool("network_reconcile", {"batch_id": passive["batch_id"]})["new"]
     first = atlas.tool("network_discover", {"network": "lab", "mode": "ping"})
-    assert first["completion"] == "complete" and not first["applied"], first
+    assert first["completion"] == "partial" and not first["applied"], first
     assert not atlas.tool("network_query", {})["devices"]
     original = atlas.tool("network_query", {"view": "unresolved", "batch_id": first["batch_id"]})
     assert len(original["evidence"]) == 5 and not original["has_more"], original
@@ -151,8 +151,9 @@ def collect(atlas: NativeAtlas, root: Path) -> dict:
     change = atlas.tool("network_reconcile", {"batch_id": second["batch_id"]})
     assert (change["new"] and ids["lab-a"] in change["changed"]
             and change["conflicting"] and change["unresolved"]), change
-    assert {row["meaning"] for row in change["missing"]} == {"not_observed_in_this_run"}, change
-    assert ids["lab-c"] in {row["device_id"] for row in change["missing"]}, change
+    # Completed eligible hosts cannot turn excluded scope edges into exact
+    # coverage. The /31-/32 producer controls separately exercise true absence.
+    assert second["completion"] == "partial" and not change["missing"], change
     return {"ids": ids, "initial": initial, "change": change}
 
 

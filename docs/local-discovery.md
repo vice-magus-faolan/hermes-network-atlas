@@ -89,16 +89,21 @@ local/neighbor addresses are ignored, not imported or probed. Malformed formats,
 duplicate JSON keys, excessive records, invalid prefixes/states/MACs or scalar
 values fail that probe, not every other successful positive probe.
 
-Legacy active discovery (ICMP disabled and TCP exactly [80,443]) enumerates every address in the exact configured IPv4 CIDR,
-including network/broadcast addresses. It splits the scope in ascending order
+Legacy active discovery (ICMP disabled and TCP exactly [80,443]) accounts for every
+address in the exact configured IPv4 CIDR. Like socket discovery, it excludes
+network/broadcast destinations for prefixes below /31 and other special
+destinations refused by host transport. /31-/32 addresses remain eligible.
+Exclusions use the configured scope, not artificial chunk boundaries: an interior
+/28 boundary can be an ordinary host in a /24. It splits the scope in ascending order
 into fixed /28 chunks (16 addresses); scopes smaller than /28 are one chunk.
 Exactly one owned child runs at a time, with internal Nmap outstanding probes
 capped at C=limits.concurrent_probes (1..4):
 
-    nmap -sn -n -PS80,443 --host-timeout <configured-seconds>s --max-parallelism <C> --max-rate <8*C> -oX - <code-derived-chunk-CIDR>
+    nmap -sn -n -PS80,443 -v --host-timeout <configured-seconds>s --max-parallelism <C> --max-rate <8*C> -oX - [--exclude <code-derived-exclusions>] <code-derived-chunk-CIDR>
 
-Targets are derived only from the validated selected CIDR, never caller strings
-or routes. Aggregate process concurrency is 1; aggregate internal outstanding
+Targets and optional comma-separated exclusions are derived only from the validated
+selected CIDR, never caller strings or routes. All-excluded chunks launch no child.
+Aggregate process concurrency is 1; aggregate internal outstanding
 probe concurrency is 1*C<=4, not four children each running four probes. The
 additional code-owned rate cap is 8*C<=32 packets/second per Nmap invocation;
 serial execution prevents rate multiplication across simultaneous children.
@@ -124,8 +129,16 @@ the plugin. Installed executables and PATH are trusted local inputs, not a
 sandbox. Reference: https://nmap.org/book/host-discovery-controls.html.
 
 Each chunk must have a successful complete XML summary with total equal to its
-exact address count, up+down=total, and up equal to the number of positive host
-records. Down hosts may be omitted; explicit down records are validated too.
+non-excluded address count, up+down=total, and up equal to the number of positive host
+records. [Verbosity (`-v`)](https://nmap.org/book/output-formats-commandline-flags.html)
+requests explicit down-host records and native reasons;
+every non-excluded address must appear exactly once. Omitted down hosts do not
+establish coverage. A down host with `no-response` is a completed check, not an
+offline assertion. Native route errors (`net-unreach`, `no-route`, `reject-route`)
+produce `unavailable/nmap_route_unavailable`; other unavailable or unknown down-host
+reasons produce `unavailable/nmap_discovery_unavailable`. Skipped targets or omitted
+host records produce `unavailable/nmap_incomplete_coverage`. This uses native XML,
+not raw stderr matching or a separate route probe. Raw diagnostics remain discarded.
 Every host must have exactly one numeric IPv4 address inside the requested chunk,
 one valid status, no timeout marker and at most one MAC. Duplicate host/IP/status/
 runstats records, other address families, inconsistent/truncated output and
@@ -147,9 +160,12 @@ Collection reserves a bounded slice for SQLite finalization, lowers busy waits
 to the remaining budget, and checks the deadline before commit. Parsing and
 aggregate observation overflow fail probes; overflow disqualifies exact coverage.
 Every active address gets an outcome, and a separate ping_coverage probe succeeds
-only when every chunk command/parse succeeded. Per-address ping_0..ping_N records
+only when every address check succeeded. Per-address ping_0..ping_N records
 retain their legacy shape; a successful chunk derives checked-not-observed outcomes
-for omitted addresses, not fake host observations. All addresses of a failed chunk
+only for explicit completed no-response records, not fake host observations.
+Excluded addresses retain `unavailable/destination_excluded`, never success. As on
+the socket path, they make /24 (and other prefixes below /31) scope coverage partial
+even when all eligible checks completed. All non-excluded addresses of a failed chunk
 remain unknown with that failure's outcome: a chunk timeout does not attest that
 each individual address received a packet before cancellation. Earlier completed chunks retain their
 positive evidence even if a later chunk times out or produces invalid/output-limit
@@ -161,9 +177,11 @@ Deadline accounting distinguishes not_started/operation_deadline_exceeded (no
 child launched for this work), timeout/deadline_exceeded (a launched child killed
 at its effective deadline), and success/completed_at_boundary (complete transport
 and valid parse retained even if cleanup/postprocessing crossed the transport
-boundary). Successful empty XML is a completed check, not proof of a responding
-host. No later chunk starts after the shared transport deadline; the runner also
-rechecks immediately before spawning. Persistence still must fit the whole-operation
+boundary). Valid all-no-response XML can establish completed checks without any
+positive observation; an empty host list or zero scanned targets cannot. Zero
+observations alone is never the failure criterion. No later chunk starts after the
+shared transport deadline; the runner also rechecks immediately before spawning.
+Persistence still must fit the whole-operation
 budget and is atomic: receipt/output/SQL/operation failure rolls back without
 claiming a persisted batch or changing prior history. Bounds are cooperative,
 not a guarantee against OS descheduling between the last check and a syscall.

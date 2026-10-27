@@ -52,7 +52,8 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         fixture.core.add_address(self.store, iface, "192.0.2.9", 32, now=fixture.NOW)
         def fake(argv, *args, **kwargs):
             if argv[-1] == "192.0.2.0/28":
-                return fixture.runner.CommandResult("success", fixture.xml(argv[-1], responder="192.0.2.10"))
+                return fixture.runner.CommandResult("success", fixture.xml(
+                    argv[-1], responder="192.0.2.10", excluded=fixture.exclusions(argv)))
             return fixture.runner.CommandResult("timeout", diagnostic_code="deadline_exceeded")
         with patch.object(fixture.discovery, "run", fake):
             receipt = fixture.discovery.collect(policy, {"network": "lab", "mode": "ping"})
@@ -86,8 +87,10 @@ class AdditionalDiscoveryTests(fixture.AtlasFixture):
         self.assertEqual(receipt["completion"], "failed")
         self.assertEqual(len(children), 1)
         self.assertIsNotNone(children[0].poll())
-        self.assertEqual({p["outcome"] for p in receipt["probes"][:16]}, {"timeout"})
-        self.assertEqual({p["outcome"] for p in receipt["probes"][16:-1]}, {"not_started"})
+        self.assertEqual({p["outcome"] for p in receipt["probes"][1:16]}, {"timeout"})
+        self.assertEqual({p["outcome"] for p in receipt["probes"][16:-2]}, {"not_started"})
+        self.assertEqual(receipt["probes"][0]["diagnostic_code"], "destination_excluded")
+        self.assertEqual(receipt["probes"][-2]["diagnostic_code"], "destination_excluded")
         self.assertEqual(self.store.connection.execute("SELECT SUM(absence_eligible) FROM probes").fetchone()[0], 0)
 
     def test_aggregate_observation_overflow_disqualifies_coverage(self):

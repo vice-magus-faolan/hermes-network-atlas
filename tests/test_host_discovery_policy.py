@@ -39,13 +39,12 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
     def policy(self, **methods):
         return config.validate_policy(raw_policy(**methods), self.home)
 
-    def test_legacy_defaults_and_explicit_defaults_preserve_exact_transport(self):
+    def test_legacy_defaults_and_explicit_defaults_preserve_same_bounded_transport(self):
         calls = []
-        xml = (b'<nmaprun><runstats><finished exit="success"/>'
-               b'<hosts up="0" down="8" total="8"/></runstats></nmaprun>')
+        from test_discovery import xml, exclusions
         def transport(argv, *args, **kwargs):
             calls.append(argv)
-            return runner.CommandResult("success", xml)
+            return runner.CommandResult("success", xml(argv[-1], up=False, excluded=exclusions(argv)))
         for methods in ({}, {"icmp_echo": False, "tcp_ports": [443, 80]}):
             policy = self.policy(**methods)
             self.assertFalse(policy.networks[0].icmp_echo)
@@ -53,10 +52,11 @@ class HostDiscoveryPolicyTests(unittest.TestCase):
             with (patch.object(discovery, "run", transport),
                   patch("socket.socket", side_effect=AssertionError("no implicit ICMP"))):
                 result = discovery.collect(policy, {"network": "lab", "mode": "ping"})
-            self.assertEqual(result["completion"], "complete")
+            self.assertEqual(result["completion"], "partial")
             self.assertEqual(len(result["probes"]), 9)
-        self.assertEqual(calls, [("nmap", "-sn", "-n", "-PS80,443", "--host-timeout", "10s",
-                                  "--max-parallelism", "4", "--max-rate", "32", "-oX", "-", "192.0.2.0/29")] * 2)
+        self.assertEqual(calls, [("nmap", "-sn", "-n", "-PS80,443", "-v", "--host-timeout", "10s",
+                                  "--max-parallelism", "4", "--max-rate", "32", "-oX", "-",
+                                  "--exclude", "192.0.2.0,192.0.2.7", "192.0.2.0/29")] * 2)
 
     def test_strict_enablement_port_types_bounds_duplicates_cap_and_exclusion(self):
         invalid_ports = [None, "80,443", "1-4", {}, {80}, (80,), [True], [False], [1.0], ["80"],
