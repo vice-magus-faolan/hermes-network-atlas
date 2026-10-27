@@ -71,7 +71,7 @@ def _tcp_result(code: int) -> tuple[str, str, bool]:
 def begin_endpoint(network: Network, address: str, port: int | None,
                    deadline: float) -> tuple[Attempt | None, Outcome | None]:
     """Separate endpoint grant, checked at the actual socket-effect boundary."""
-    validate_network(network)
+    validate_network(network, active=True)
     if (excluded(network, address) or type(port) is not int
             or port not in network.endpoint_ports or port in EXCLUDED_TCP_PORTS):
         raise ValueError('endpoint destination/port not authorized')
@@ -89,7 +89,7 @@ def begin(network: Network, address: str, port: int | None, deadline: float) -> 
     recheck the shared effective deadline immediately before network effects.
     Linux assigns the echo identifier to the bound datagram socket's local port.
     """
-    validate_network(network)
+    validate_network(network, active=True)
     if not network.ping or excluded(network, address):
         raise ValueError('excluded or unauthorized destination')
     if port is None:

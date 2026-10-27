@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
-from .config import Policy
+from .config import Policy, active_scope_allowed, validate_network
 from .errors import RequestError
 from .identity import mac_address
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
@@ -71,7 +71,8 @@ def _code(value: str) -> str:
 def reconciliation_scopes(policy: Policy) -> list[tuple[str, str, str]]:
     """Current local LAN/SSH grants shared by application selection and guidance."""
     allowed = [(collector, network.name, network.cidr) for network in policy.networks
-               for collector, enabled in (("local_passive", network.passive), ("ping", network.ping)) if enabled]
+               for collector, enabled in (("local_passive", network.passive),
+                   ("ping", network.ping and active_scope_allowed(network))) if enabled]
     return allowed + [("ssh", alias, alias) for alias in policy.authorized_aliases]
 
 
@@ -93,6 +94,7 @@ def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str
         raise RequestError(
             f"{setting}: stored scope requires a configured network and enabled collection mode; "
             "restore intended policy or select an eligible batch")
+    validate_network(network, active=collector != "local_passive")
     return "network", network.cidr, collector
 
 

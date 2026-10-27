@@ -29,7 +29,7 @@ class ContinuationTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/27',
+            'networks': {'lab': {'cidr': '192.0.2.0/27', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}},
             'limits': {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}}, self.home)
 
@@ -82,6 +82,58 @@ class ContinuationTests(unittest.TestCase):
 
     def preview(self, batch):
         return json.loads(self.handler().check_endpoints({'preview_batch_id': batch}))
+
+    def test_named_scope_recovery_budget_before_reservation_and_no_contact_retry(self):
+        name = 'n' * 64
+        self.policy = replace(self.policy,
+                              networks=(replace(self.policy.networks[0], name=name),),
+                              limits=replace(self.policy.limits, result_count=1))
+        first, prior_calls = self.invoke({'network': name}, response=lambda address, port:
+                                        'closed' if address == '192.0.2.1' else 'filtered')
+        self.assertTrue(first['queryable'], first)
+        self.assertEqual(first['completion'], 'partial')
+        batch = first['batch_id']
+        history = self.history()
+        original = self.history(batch)
+        revoked = replace(self.policy.networks[0], allow_public=False)
+        with self.assertRaises(config.ActiveScopeError) as denied:
+            config.validate_network(revoked, active=True)
+        envelope = {'batch_id': '0' * 36, 'parent_batch_id': batch, 'persisted': True,
+                    'applied': False, 'projected': False, 'queryable': False,
+                    'stage': 'projection', 'collection_performed': False, 'completion': 'complete'}
+        minimum = max(len(storage.response_json({**envelope, 'error': error},
+                                                config.Limits().output_bytes).encode())
+                      for error in (*endpoints.RECOVERY_ERRORS.values(), continuation.UNCERTAIN_ERROR,
+                                    str(denied.exception)))
+        tight = replace(self.policy, limits=replace(self.policy.limits, output_bytes=minimum - 1))
+        with patch.object(continuation.Scheduler, 'run') as collect, \
+                patch.object(continuation, 'Store', wraps=storage.Store) as opened, \
+                patch.object(transport.socket, 'socket') as socket:
+            refused = json.loads(self.handler(tight).check_endpoints({'continue_batch_id': batch}))
+        self.assertTrue(refused['error'].startswith('atlas state or bounds:'), refused)
+        self.assertFalse(refused['persisted'])
+        collect.assert_not_called()
+        socket.assert_not_called()
+        self.assertFalse(any(call.kwargs.get('writable') for call in opened.call_args_list))
+        self.assertEqual(self.history(), history)
+        sufficient = replace(self.policy, limits=replace(self.policy.limits, output_bytes=minimum))
+        second, calls = self.invoke({'continue_batch_id': batch}, policy=sufficient)
+        self.assertTrue(second['persisted'], second)
+        self.assertEqual(second['parent_batch_id'], batch)
+        self.assertNotEqual(second['batch_id'], batch)
+        self.assertTrue(calls)
+        self.assertFalse(calls & prior_calls)
+        self.assertLessEqual(len(storage.response_json(second, minimum).encode()), minimum)
+        self.assertEqual(self.history(batch), original)
+        history = self.history()
+        with patch.object(transport.socket, 'socket') as socket:
+            repeated = json.loads(self.handler(sufficient).check_endpoints({'continue_batch_id': batch}))
+        self.assertTrue(repeated['persisted'], repeated)
+        self.assertEqual(repeated['batch_id'], second['batch_id'])
+        self.assertEqual(repeated['parent_batch_id'], batch)
+        self.assertFalse(repeated['collection_performed'])
+        socket.assert_not_called()
+        self.assertEqual(self.history(), history)
 
     def test_timed_out_producer_preview_targeted_successor_and_immutable_history(self):
         first, prior_calls = self.partial()
@@ -309,7 +361,7 @@ class ContinuationTests(unittest.TestCase):
 
     def test_long_progressing_chain_exhausts_without_repeated_contacts_or_history_changes(self):
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/24',
+            'networks': {'lab': {'cidr': '192.0.2.0/24', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
             'limits': {'operation_timeout_seconds': 10, 'host_timeout_seconds': 1,
                        'concurrent_probes': 1}}, self.home)
@@ -406,7 +458,7 @@ class ContinuationTests(unittest.TestCase):
         # Setup uses virtual sockets; the timed action charges real validation,
         # SQL and transport to the SAME unpatched operation clock.
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/24',
+            'networks': {'lab': {'cidr': '192.0.2.0/24', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
             'limits': {'operation_timeout_seconds': 5, 'host_timeout_seconds': 10,
                        'concurrent_probes': 1}}, self.home)
@@ -449,7 +501,7 @@ class ContinuationTests(unittest.TestCase):
 
     def test_real_deadline_large_zero_progress_history_is_saved_or_refused_before_effects(self):
         self.policy = config.validate_policy({
-            'networks': {'lab': {'cidr': '192.0.2.0/24',
+            'networks': {'lab': {'cidr': '192.0.2.0/24', 'allow_public': True,
                                  'endpoints': {'enabled': True, 'tcp_ports': [22, 443, 2222, 22000]}}},
             'limits': {'operation_timeout_seconds': 5, 'host_timeout_seconds': 10,
                        'concurrent_probes': 1}}, self.home)

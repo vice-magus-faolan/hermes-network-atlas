@@ -8,8 +8,13 @@ explicitly enabled ICMP/TCP socket methods.
 
 Configuration version 1 supports these network-local keys:
 
+    networks.<name>.allow_public: false
     networks.<name>.discovery.icmp_echo: false
     networks.<name>.discovery.tcp_ports: [80, 443]
+
+Active collection requires a private/link-local scope or deliberate per-network
+public opt-in; see [collection grants](operator-guide.md#collection-grants-and-limits)
+for the exact ranges, refusal/status fields and saved-work revocation behavior.
 
 `ping` is the explicit active-discovery setting; passive permission does not
 imply active permission. `icmp_echo` is a strict boolean, default false.
@@ -29,13 +34,15 @@ No other port is inferred from discoveries, stored facts, aliases, services or
 previous success.
 
 For example, synthetic `192.0.2.0/29` policy may select `ping: true`,
-`icmp_echo: true`, `tcp_ports: [80, 443, 2222, 22000]`. 2222 and optional 22000
+`icmp_echo: true`, `tcp_ports: [80, 443, 2222, 22000]` with `allow_public: true`
+on that network (documentation ranges are not private LANs). 2222 and optional 22000
 are examples, not global defaults, live policy changes or evidence of services.
 All original scope, timeout, concurrency, output, observation and rate ceilings
 remain. A range is still at most 256 IPv4 addresses; lists are per named network,
 never global. Every invocation reloads local policy; shared evidence cannot
-transfer permission. Legacy files omit the new keys and retain exactly the
-existing Nmap TCP 80/443 request with no implicit ICMP or extra ports. Old
+transfer permission. Legacy private/link-local scopes retain exactly the existing
+Nmap TCP 80/443 request with no implicit ICMP or extra ports; other legacy scopes
+now require explicit public opt-in before active collection. Old
 binaries reject these additive config keys; deliberately update readers first.
 
 ## ICMP datagram sockets and capability diagnostics

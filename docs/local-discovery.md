@@ -13,6 +13,9 @@ above 256 addresses fail closed. Every invocation validates the current native
 `policy` value returned by `ctx.get_config`, using Hermes's settings lifecycle;
 see [configuration](operator-guide.md#profile-local-configuration).
 Empty allowlists are deny-all. No tool may modify policy or raise its bounds.
+Ping also requires a private/link-local scope unless the named network has explicit
+public opt-in. Passive mode remains permitted without that opt-in. See
+[collection grants](operator-guide.md#collection-grants-and-limits).
 
 Collection finishes before opening a writable store. It atomically inserts an
 immutable batch, ordered probe outcomes, parsed observations and batch_stored
@@ -183,8 +186,9 @@ usefully without launching a child. No subprocess runs under a DB write lock.
 ## Opt-in ICMP/TCP host discovery
 
 Network-local policy selects direct socket collection whenever
-icmp_echo is true or tcp_ports differs from [80,443]. It does not change old policy
-traffic or reinterpret old Nmap evidence. See [host-discovery-policy.md](host-discovery-policy.md)
+icmp_echo is true or tcp_ports differs from [80,443]. Both socket and legacy Nmap
+paths require current scope admission; old Nmap evidence is never reinterpreted.
+See [host-discovery-policy.md](host-discovery-policy.md)
 for the controlling datagram-only permission, strict four-port cap/4403 exclusion,
 shared deadline/rate/concurrency/receive/result budgets and fair scheduling.
 2222 and optional 22000 are operator examples, not global defaults or services.

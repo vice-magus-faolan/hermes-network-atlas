@@ -145,6 +145,8 @@ matching local policy (the quick start enables only passive discovery).
 - SSH uses existing keys and strict host-key checks, BatchMode, no PTY, forwarding,
   LocalCommand or multiplex reuse. Local cleanup cannot guarantee remote cleanup.
 - Configured IPv4 scopes have at most 256 addresses; budgets are code-enforced.
+  Active collection defaults to RFC1918/private and IPv4 link-local ranges;
+  other scopes need [per-network public opt-in](docs/operator-guide.md#collection-grants-and-limits).
   No raw-socket fallback, service enumeration or absence-based deletion.
 - TCP connects can consume slots and generate logs without application payloads;
   port 4403 is refused. Same-UID code, executables and SSH config are trusted.

@@ -268,7 +268,7 @@ def _continue(reader: Store, version: int, lineage: Lineage, deadline: float) ->
     # Preflight the complete bounded recovery envelope before reserving or traffic.
     response_json({**endpoints._receipt('0' * 36), 'parent_batch_id': batch_id,
                    'stage': 'projection', 'completion': 'complete',
-                   'error': max((*endpoints.RECOVERY_ERRORS.values(), UNCERTAIN_ERROR), key=len)},
+                   'error': endpoints.longest_recovery_error(policy, UNCERTAIN_ERROR)},
                   policy.limits.output_bytes)
     with Store(policy, writable=True, deadline=deadline) as store:
         with store.transaction():

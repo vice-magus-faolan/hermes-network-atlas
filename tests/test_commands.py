@@ -63,7 +63,7 @@ class OperatorStatusTests(unittest.TestCase):
         self.assertIsNone(result["last_discovery"])
         self.assertEqual(result["configured_scopes"], [{"name": "lab", "cidr": "192.0.2.0/24", "passive": True,
                                                        "ping": True, "icmp_echo": False, "tcp_ports": [80, 443],
-                                                       "endpoint_ports": []}])
+                                                       "endpoint_ports": [], "allow_public": True}])
         self.assertEqual(set(self.home.rglob("*")), before)
 
     def test_cli_invalid_policy_refusal_has_explicit_no_effects_receipt(self):

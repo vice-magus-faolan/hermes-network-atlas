@@ -39,7 +39,7 @@ def validate_request(params: object, policy: Policy) -> tuple[Network, str]:
         raise RequestError("mode: choose passive or ping")
     network = next((item for item in policy.networks if item.name == name), None)
     if network is not None:
-        validate_network(network)
+        validate_network(network, active=mode == "ping")
     if network is None or not getattr(network, mode):
         raise RequestError("network/mode: select a configured network and an enabled discovery mode")
     _validate_scope(network.cidr, mode, policy)

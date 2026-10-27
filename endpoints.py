@@ -15,7 +15,7 @@ import time
 from typing import TYPE_CHECKING
 
 from .batches import Probe, _scope, _validate_probes, store_batch
-from .config import ConfigError, Limits, NAME_PATTERN, Network, Policy, validate_network
+from .config import ActiveScopeError, ConfigError, Limits, NAME_PATTERN, Network, Policy, validate_network
 from .errors import RequestError, StoreError
 from .host_schedule import Scheduler
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
@@ -55,7 +55,7 @@ def _authorized_network(policy: Policy, name: str) -> Network:
     network = next((item for item in policy.networks if item.name == name), None)
     if network is None:
         raise RequestError('network: select a configured endpoint network')
-    validate_network(network)
+    validate_network(network, active=True)
     if not network.endpoint_ports:
         raise RequestError('network.endpoints: explicit enablement and nonempty tcp_ports required')
     return network
@@ -154,6 +154,16 @@ def _receipt(batch: str | None = None) -> dict:
             'queryable': False, 'stage': 'collection', 'collection_performed': False}
 
 
+def longest_recovery_error(policy: Policy, *additional: str) -> str:
+    """Reserve named-scope diagnostics as well as static post-persistence errors.
+
+    Include granted scopes too: the same envelope must fit no-contact recovery
+    after their grants are withdrawn. Names and diagnostics are validated ASCII.
+    """
+    return max((*RECOVERY_ERRORS.values(), *additional,
+                *(str(ActiveScopeError(network.name)) for network in policy.networks)), key=len)
+
+
 def collection_completion(probes: tuple[Probe, ...]) -> str:
     """Exclude ineligible destinations, not genuine failed or unstarted work."""
     eligible = [probe for probe in probes if probe.diagnostic_code != 'destination_excluded']
@@ -177,7 +187,7 @@ def check(policy: Policy, params: object) -> dict:
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
     # Ensure even a post-commit failure receipt can be emitted before any effects.
     response_json({**_receipt('0' * 36), 'stage': 'projection', 'completion': 'complete',
-                   'error': max(RECOVERY_ERRORS.values(), key=len)},
+                   'error': longest_recovery_error(policy)},
                   policy.limits.output_bytes)
     receipt = _receipt()
     if key == 'network':
@@ -233,7 +243,7 @@ def _finish(policy: Policy, receipt: dict, deadline: float, *, reservation: Rese
                     'policy' if isinstance(exc, (ConfigError, RequestError)) else
                     'store' if isinstance(exc, (sqlite3.Error, StoreError)) else
                     'io' if isinstance(exc, OSError) else 'state')
-        receipt['error'] = RECOVERY_ERRORS[category]
+        receipt['error'] = str(exc) if isinstance(exc, ActiveScopeError) else RECOVERY_ERRORS[category]
         # Keep this recovery receipt small even when final result exceeded output.
         receipt.pop('state_counts', None)
         receipt.pop('observation_count', None)

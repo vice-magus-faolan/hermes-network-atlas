@@ -15,6 +15,12 @@ successes and shared evidence cannot grant or expand access. Query and map only
 read stored knowledge; map export is a separate explicit local write.
 
 Configured IPv4 scopes contain at most 256 addresses; IPv6 is passive/storage-only.
+Active discovery and TCP endpoints require RFC1918/private or IPv4 link-local
+scopes unless that exact network has `allow_public: true` in operator policy.
+The opt-in never overrides sensitive-destination/port or resource exclusions.
+Passive collection and historical reads do not require it; saved active-work
+recovery/application rechecks current authority. See
+[collection grants](docs/operator-guide.md#collection-grants-and-limits).
 Routes never authorize additional ranges. Passive collection reads local `ip`
 JSON. Legacy active discovery uses bounded Nmap host discovery, not service/OS,
 script or UDP scanning. Opt-in sockets use numeric authorized destinations,
