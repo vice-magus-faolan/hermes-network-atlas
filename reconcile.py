@@ -23,6 +23,7 @@ from .core import _positive
 from .facts import freshness, selected_facts
 from .identity import mac_address
 from .ssh_identity import alias_candidates
+from .topology import retain_and_derive
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
 
 
@@ -121,6 +122,7 @@ def _apply(store: Store, batch, now: datetime) -> dict:
     _scalar_changes(app)
     if batch["collector"] == "ssh":
         _ssh_access(app)
+        retain_and_derive(app, observations)
     _absence(app, observations)
     _statuses(app)
     result["changed"] = sorted(app.changed - set(result["new"]))
@@ -231,6 +233,10 @@ def _copy_fact(app: Application, row, entity: str) -> str:
 
 
 def _apply_observation(app: Application, row) -> None:
+    if row["subject_kind"] in {"route", "neighbor"}:
+        # Topology binds the origin separately; neighbors must not create owned
+        # interfaces, addresses, devices, or positive peer sighting clocks.
+        return
     resolved, candidates = _resolve(app, row)
     if resolved is None:
         conflict = {"evidence_id": row["id"], "candidate_device_ids": sorted(set(candidates)),

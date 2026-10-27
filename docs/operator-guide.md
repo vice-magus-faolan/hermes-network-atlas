@@ -296,8 +296,9 @@ object based on the same stored snapshot and current profile policy:
   with exact `total_count` and `omitted_count`. The complete status still obeys
   `output_bytes`; insufficient space refuses instead of silently hiding detail.
 - `historical_unresolved_applications` counts saved applications reporting
-  unresolved identity, not currently unresolved devices. Follow `evidence_query`
-  to the existing unresolved view for reasons and subsequent resolution lineage.
+  unresolved identity/topology, not currently unresolved devices. Follow
+  `evidence_query` for address identity lineage; use `view=topology` for SSH routes
+  and next-hop reasons.
 - `devices_without_relationships` counts devices with no supported relationships.
   Maps retain those nodes; missing links mean unknown topology, not disconnection.
 
@@ -344,6 +345,25 @@ Filter endpoints with exact `address` or `batch_id` as needed. `open` means a
 historical TCP connect; `closed` means refusal. Neither identifies a service.
 `no_response`, `unavailable` and `not_started` are not offline verdicts. Rows carry
 no device identity or SSH access; see [endpoint history](endpoint-checks.md#read-historical-evidence).
+
+### Explain logical next hops
+
+After authorized SSH inspection and reconciliation, use:
+
+```sh
+hermes -p PROFILE network-atlas query --query-json '{"view":"topology","batch_id":"BATCH_ID","limit":10,"offset":0}'
+hermes -p PROFILE network-atlas query --query-json '{"relationship":"routes_via"}'
+hermes -p PROFILE network-atlas map --format markdown
+```
+
+The first command also works before application or without an identified peer.
+Check origin/profile, timestamp, confidence, `resolution.reason` and pagination.
+Inferred configured next hops require same-host route/cache evidence and an
+already unambiguously identified peer; unknown/stale/conflicting support stays
+queryable without an edge. Maps and relationship queries use the same current
+support, not an old application's successful receipt. These are logical routing
+claims, not cabling or live reachability. See the complete
+[eligibility and retention rules](authorized-ssh-inspection.md#logical-topology).
 
 ### Interpret results before acting
 

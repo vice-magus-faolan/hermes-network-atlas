@@ -195,12 +195,10 @@ set that flag; SSH success/failure remains alias-scoped access evidence.
 Direct owned observations can refresh sighting clocks monotonically; failures
 cannot. Retirement stays sticky.
 
-Route and neighbor JSON is validated as capability metadata and discarded, apart
-from the probe outcome and successful exact-target alias marker. Remote neighbor
-entries are NOT interfaces/addresses owned by the inspected host, new reachable
-hosts, routes_via/physical relationships, a complete inventory, or collection
-permission. Detailed route/neighbor topology interpretation is deferred; this
-V1 collector deliberately favors no topology over fabricated topology.
+Remote neighbor entries are NOT interfaces/addresses owned by the inspected host,
+new device identities, live reachable hosts, a complete inventory or collection
+permission. Bounded route/cache observations are retained separately from owned
+inventory; the logical-topology rules below may infer a configured next hop.
 
 Reconciliation uses one atomic deadline-bound transaction for canonical copies,
 alias mapping, interfaces/addresses, clocks, access_evidence, application result
@@ -208,7 +206,8 @@ and events. Ambiguous aliases remain explicit conflicts; failures never assert
 absence. Access records are appended only when a device can be resolved. The raw
 attempt remains queryable even when no device exists. Exact batch-ID replay adds
 no rows/events and returns the original result. Deadline/audit/SQL/receipt failure
-leaves the immutable batch retryable. Existing schema version 1 is retained.
+leaves the immutable batch retryable. Batch/application schema 1 and the existing
+database layout are retained; no topology migration or history rewrite is needed.
 
 Query `access_method=ssh` means authorized for Network Atlas inspection, NOT
 administration/development access or currently connected. Device details expose
@@ -216,6 +215,67 @@ local association ambiguity, current policy authorization, and last inspection
 success/failure/time/completion/probes separately. Foreign associations remain
 knowledge without foreign access history being represented as local access.
 Maps still use only stored supported relationships; no edges are fabricated.
+
+## Logical topology
+
+After inspecting and reconciling authorized hosts, read the original evidence:
+
+    hermes -p PROFILE network-atlas query --query-json '{"view":"topology","batch_id":"BATCH_ID","limit":10,"offset":0}'
+    hermes -p PROFILE network-atlas query --query-json '{"relationship":"routes_via"}'
+    hermes -p PROFILE network-atlas map --format markdown
+
+Replace PROFILE and BATCH_ID with your selected profile and returned batch ID.
+The model tool `network_query` accepts the same JSON. The topology view supports
+only `batch_id`, exact gateway/neighbor `address`, `limit` and `offset` filters;
+follow `has_more` with the next offset. It includes originals before application
+and after supersession, with source/confidence/time, batch/probe IDs, originating
+alias/profile context, resolved `origin_device` when unambiguous, age-based `stale`,
+and `resolution.reason`. Neighbor evidence is support-only, never owned inventory.
+
+An inferred `routes_via` edge means the inspected host recorded an IPv4 unicast,
+single-next-hop main-table route through the target's identified interface.
+It proves neither selected traffic flow, physical cabling, nor live reachability.
+All of the following must hold:
+
+- The latest persisted inspection of that alias in its originating profile has
+  been reconciled, with fresh route evidence and an unambiguous host mapping.
+- Its output interface name resolves through that same batch to one stable MAC
+  and an existing interface owned by the inspected host.
+- The same batch has one nonconflicting gateway cache entry on that exact output
+  interface, state REACHABLE or PERMANENT, with a unique stable global unicast MAC.
+- That MAC identifies one existing peer interface. The gateway has no competing
+  current assignment, and a fresh direct owned observation or operator assignment
+  corroborates it. Neither endpoint is retired. IP/name/cache presence alone
+  cannot create or merge a peer.
+
+Missing, stale, conflicting or ambiguous support remains unresolved. Multiple
+next hops for the same destination/table are conservatively conflicting; non-main,
+IPv6, multipath, flagged, nexthop-ID and encapsulated routes remain unsupported.
+Connected/no-gateway routes are retained but create no next-hop edge. Passive LAN
+route metadata still does not infer an inspected-host relationship.
+
+Edges retain inferred provenance and support observation IDs; maps label them
+as configured next hops and draw them dashed. Device relationship details, filters,
+status isolation counts and maps share current eligibility. A newer persisted
+attempt (even failed, partial or empty), age, retirement or newly conflicting
+identity can withdraw an inferred edge without erasing history. Explicit operator
+or model relationship assertions remain separate from collector certainty.
+An immutable application/replay result describes what was derived then, not a
+promise that its edges are supported now. If identity becomes sufficient only
+later, `not_derived_at_application` means collect a fresh authorized inspection
+and reconcile it; exact replay does not append a new edge.
+
+Retention stores only bounded normalized route attributes (destination, gateway,
+interface, type, table, metric and an unsupported-feature marker) and neighbor
+address/MAC/interface/state, not raw JSON or complete kernel routing semantics.
+These records consume the existing aggregate observation, byte and transaction
+budgets; overflow retains the probe's failure, not truncated positives. No new
+probes, traffic, targets, grants or background tasks are introduced. Immutable
+evidence and superseded relations grow with inspections; stale_after_days marks
+age, not eviction. History/topology pages remain available; excessive current
+relationship detail refuses explicitly under existing bounds. Keep SQLite/WAL,
+backups and exports private: retained routes/caches reveal additional topology.
+Foreign profile evidence remains read-only knowledge, never local collection authority.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for isolated behavioral tests and
 [SECURITY.md](../SECURITY.md) for the trust model and verification limits.

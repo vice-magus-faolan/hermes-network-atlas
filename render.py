@@ -106,7 +106,11 @@ def _edge_label(edge: dict) -> str:
     confidences = sorted({entry["confidence"] for entry in fact["evidence"]})
     endpoints = ":" + edge["source_interface"] if edge["source_interface"] else ""
     endpoints += " -> :" + edge["target_interface"] if edge["target_interface"] else ""
-    return edge["relationship_type"] + " [" + ",".join(confidences) + "]" + endpoints
+    label = edge["relationship_type"] + " [" + ",".join(confidences) + "]" + endpoints
+    if any(entry["evidence_kind"] == "configured_route" for entry in fact["evidence"]):
+        sources = sorted({entry["source"] + " @ " + entry["observed_at"] for entry in fact["evidence"]})
+        label += " configured next hop; " + ", ".join(sources)
+    return label
 
 
 def _render(devices: list[dict], policy: Policy) -> dict[str, str]:

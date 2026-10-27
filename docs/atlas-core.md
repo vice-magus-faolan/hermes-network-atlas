@@ -140,7 +140,7 @@ read-only from UTC time and stale_after_days (default 14 days); retirement is st
 
 ## Read-only query and maps
 
-`network_query` defaults to a device page. It supports view=devices/status/history/unresolved,
+`network_query` defaults to a device page. It supports view=devices/status/history/unresolved/endpoints/topology,
 device_id, name (friendly name or hostname), address (current assignments),
 device_type, status, access_method=ssh, relationship, related_to, text, limit and
 offset. Filters intersect; relationship queries match either endpoint. Inferred
@@ -149,6 +149,15 @@ literally, not SQL or an embedded query language. Conflicting fields have no
 canonical value and do not match a text/value filter. History requires device_id
 and returns immutable observation pages including losing operator assertions and
 inference explanations. Scalar selection provenance is in fields.evidence.
+
+`view=topology` pages retained SSH route/cache originals, including unknown peers
+and superseded or unapplied evidence, with originating profile/host and explained
+resolution. Native configured-next-hop edges are visibly inferred and require
+current unambiguous support; device relationships, filters and maps share that
+rule without erasing old application results. See
+[logical topology](authorized-ssh-inspection.md#logical-topology) for filters,
+eligibility and retention implications. Operator/model relationship assertions
+keep their separate provenance and semantics.
 
 `view=unresolved` is a separate original-evidence page, accepting only exact
 address, optional batch_id and pagination. It does not require a canonical ID.

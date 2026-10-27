@@ -8,6 +8,7 @@ from .batches import Anchor, Observation
 from .config import Policy
 from . import discovery_parse as local
 from .updates import _text
+from .topology import validate_record
 
 
 def _text_data(data: bytes, policy: Policy) -> str:
@@ -110,24 +111,41 @@ def links(data: bytes, alias: str, at: str, policy: Policy) -> tuple[Observation
 
 
 def routes(data: bytes, alias: str, at: str, policy: Policy) -> tuple[Observation, ...]:
-    """Validate route metadata only; no fabricated relationships or range expansion."""
+    """Retain bounded configured routing evidence, never new collection targets."""
     if len(data) > policy.limits.output_bytes:
         raise ValueError("output bound exceeded")
-    return local.routes(data, alias, at, policy)
+    observations = []
+    for row in local._records(data, policy):
+        flags = row.get("flags", [])
+        if not isinstance(flags, list) or any(not isinstance(flag, str) for flag in flags):
+            raise ValueError("invalid route flags")
+        table = row.get("table", "main")
+        if not isinstance(table, str) and type(table) is not int:
+            raise ValueError("invalid route table")
+        table = "main" if str(table) == "254" else str(table)
+        value = {"dst": row.get("dst", "default"), "gateway": row.get("gateway", ""),
+                 "dev": row.get("dev", ""), "type": row.get("type", "unicast"), "table": table,
+                 "metric": row.get("metric", 0),
+                 "unsupported": int(bool(flags) or any(key in row for key in ("nexthops", "nhid", "via", "encap")))}
+        validate_record("route", value, policy.limits.input_chars)
+        observations.append(Observation("route", Anchor("alias", alias, str(policy.home)),
+                                        "configuration", tuple(value.items()), at))
+    return local._bounded(observations, policy)
 
 
 def neighbors(data: bytes, alias: str, at: str, policy: Policy) -> tuple[Observation, ...]:
-    """Validate cached remote neighbors but do not import them as host-owned interfaces."""
-    del alias, at
+    """Retain remote caches separately from owned interfaces and reachability."""
     if len(data) > policy.limits.output_bytes:
         raise ValueError("output bound exceeded")
+    observations = []
     for row in local._records(data, policy):
-        local._ip(row.get("dst"))
-        if "lladdr" in row:
-            local._anchor(row["lladdr"], "neighbor")
         states = row.get("state", ["NONE"])
         if not isinstance(states, list) or len(states) != 1 or states[0] not in local.NEIGHBOR_STATES:
             raise ValueError("invalid neighbor state")
-        if "dev" in row:
-            _text(row["dev"], policy.limits.input_chars)
-    return ()
+        value = {"dst": str(local._ip(row.get("dst"))), "dev": row.get("dev", ""),
+                 "lladdr": local._anchor(row["lladdr"], "neighbor").value if row.get("lladdr") is not None else "",
+                 "state": states[0]}
+        validate_record("neighbor", value, policy.limits.input_chars)
+        observations.append(Observation("neighbor", Anchor("alias", alias, str(policy.home)),
+                                        "cache", tuple(value.items()), at))
+    return local._bounded(observations, policy)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 import importlib
 import json
 from pathlib import Path
@@ -24,6 +25,7 @@ storage = importlib.import_module("atlas_test_plugin.storage")
 runner = importlib.import_module("atlas_test_plugin.probes")
 tools = importlib.import_module("atlas_test_plugin.tools")
 schemas = importlib.import_module("atlas_test_plugin.schemas")
+render = importlib.import_module("atlas_test_plugin.render")
 
 MAC = "00:11:22:33:44:77"
 MAC2 = "00:11:22:33:44:88"
@@ -247,6 +249,315 @@ class InventoryGuidanceTests(unittest.TestCase):
             self.assertEqual(guidance["inspection_targets"]["items"], [])
             self.assertEqual(guidance["discovery_options"]["items"], [])
         self.assertFalse(policy.database.exists())
+
+
+class TopologyInspectionTests(AtlasFixture):
+    """Drive the real public producers, not a seeded finished relationship."""
+
+    def setUp(self):
+        super().setUp()
+        self.clock = NOW + timedelta(hours=1)
+        for module in (inspection, reconcile, query, render):
+            clock = patch.object(module, "utc_now", lambda: self.clock)
+            clock.start()
+            self.addCleanup(clock.stop)
+        self.handlers = tools.Handlers(lambda: self.policy)
+        self.peer_mac = "00:11:22:33:44:99"
+
+    def payloads(self):
+        payloads = outputs()
+        payloads["ip -j neigh"] = json.dumps([{"dst": "198.51.100.254", "dev": "fixture0",
+                                             "lladdr": self.peer_mac, "state": ["REACHABLE"]}]).encode()
+        return payloads
+
+    def public_collect(self, payloads, policy=None):
+        calls = []
+        def fake(argv, *args, **kwargs):
+            self.assertEqual(argv[-2], ALIAS)
+            self.assertIn(argv[-1], outputs())
+            calls.append(argv[-1])
+            value = payloads.get(argv[-1], runner.CommandResult("unavailable", diagnostic_code="nonzero_exit"))
+            return value if isinstance(value, runner.CommandResult) else runner.CommandResult("success", value)
+        handlers = tools.Handlers(lambda: policy or self.policy)
+        with patch.object(inspection, "run", fake):
+            receipt = json.loads(handlers.inspect({"target": ALIAS}))
+        self.assertNotIn("error", receipt)
+        self.assertEqual(calls, [" ".join(command) for _, command, _ in inspection.PROBES])
+        return receipt
+
+    def apply(self, payloads=None):
+        receipt = self.public_collect(self.payloads() if payloads is None else payloads)
+        result = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", result)
+        return receipt, result
+
+    def known_peer(self, context="foreign", mac=None):
+        policy = replace(self.policy, home=self.home / context)
+        payloads = outputs()
+        address = [{"ifname": "gateway0", "address": mac or self.peer_mac,
+                    "addr_info": [{"local": "198.51.100.254", "prefixlen": 24}]}]
+        payloads["ip -j address"] = json.dumps(address).encode()
+        payloads["ip -j link"] = json.dumps([{"ifname": "gateway0", "address": mac or self.peer_mac}]).encode()
+        payloads["ip -j route"] = payloads["ip -j neigh"] = b'[]'
+        receipt = self.public_collect(payloads, policy)
+        applied = json.loads(tools.Handlers(lambda: policy).reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", applied)
+        device = query.query(policy, {"access_method": "ssh"}, now=self.clock)["devices"][0]["id"]
+        return policy, device
+
+    def topology(self, receipt, policy=None):
+        result = json.loads(tools.Handlers(lambda: policy or self.policy).query(
+            {"view": "topology", "batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", result)
+        self.assertFalse(result["has_more"])
+        return result["observations"]
+
+    def assert_no_edges(self):
+        result = json.loads(self.handlers.query({"relationship": "routes_via"}))
+        self.assertNotIn("error", result)
+        self.assertEqual(result["devices"], [])
+        for format_name in ("text", "markdown", "mermaid"):
+            rendered = json.loads(self.handlers.map({"format": format_name}))
+            self.assertNotIn("error", rendered)
+            self.assertNotIn("configured next hop", rendered["content"])
+
+    def test_public_next_hop_retains_provenance_query_map_replay_and_foreign_history(self):
+        foreign, peer = self.known_peer()
+        # Preserve every existing logical row, not SQLite page/journal bytes.
+        retained = {name: self.store.connection.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                    for name in self.counts()}
+        receipt = self.public_collect(self.payloads())
+        raw = self.topology(receipt)
+        self.assertEqual({row["kind"] for row in raw}, {"route", "neighbor"})
+        self.assertTrue(all(row["source"] == "ssh:" + ALIAS and row["confidence"] == "observed"
+                            and not row["qualified"] and row["policy_context"] == str(self.home) for row in raw))
+        route = next(row for row in raw if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "unapplied_or_ambiguous_origin")
+        applied = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", applied)
+        self.assertEqual(len(applied["relationships"]), 1)
+        source = applied["new"][0]
+        detail = json.loads(self.handlers.query({"device_id": source}))["devices"][0]
+        self.assertEqual({i["mac_address"] for i in detail["interfaces"]}, {MAC, MAC2})
+        self.assertNotIn("198.51.100.254", {a["address"] for i in detail["interfaces"] for a in i["addresses"]})
+        edge = detail["relationships"][0]
+        self.assertEqual(edge["target_device"], peer)
+        self.assertEqual(edge["id"], applied["relationships"][0])
+        fact = edge["facts"]["relationship"]["evidence"][0]
+        self.assertEqual(fact["confidence"], "inferred")
+        self.assertEqual(fact["value"]["route_evidence_id"], route["id"])
+        self.assertTrue(fact["explanation"])
+        self.assertEqual(fact["observed_at"], route["observed_at"])
+        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        self.assertEqual(route["origin_device"], source)
+        self.assertEqual(route["resolution"]["relationship_id"], edge["id"])
+        self.assertEqual({d["id"] for d in json.loads(self.handlers.query(
+            {"relationship": "routes_via"}))["devices"]}, {source, peer})
+        related = json.loads(self.handlers.query({"relationship": "routes_via", "related_to": peer}))
+        self.assertEqual([d["id"] for d in related["devices"]], [source])
+        for format_name in ("text", "markdown", "mermaid"):
+            content = json.loads(self.handlers.map({"format": format_name}))["content"]
+            self.assertIn("configured next hop", content)
+            self.assertIn("inferred", content)
+            if format_name == "mermaid":
+                self.assertIn("n" + source.replace("-", "") + " -.->", content)
+        for name, rows in retained.items():
+            for row in rows:
+                current = self.store.connection.execute(f"SELECT * FROM {name} WHERE id=?", (row["id"],)).fetchone()
+                self.assertEqual(tuple(current), tuple(row))
+        snapshot = list(self.store.connection.iterdump())
+        self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+        shared = replace(foreign, ssh_enabled=False)
+        self.assertTrue(all(not row["local_context"] for row in self.topology(receipt, shared)))
+        shared_handlers = tools.Handlers(lambda: shared)
+        self.assertEqual(json.loads(shared_handlers.query({"device_id": source}))["devices"][0][
+            "relationships"][0]["id"], edge["id"])
+        with patch.object(inspection, "run", side_effect=AssertionError("knowledge is not collection authority")):
+            self.assertIn("error", json.loads(shared_handlers.inspect({"target": ALIAS})))
+            self.assertIn("error", json.loads(shared_handlers.reconcile({"batch_id": receipt["batch_id"]})))
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+
+    def test_unknown_peer_never_created_and_later_identity_requires_new_collection(self):
+        receipt, applied = self.apply()
+        self.assertEqual(len(applied["new"]), 1)
+        self.assertFalse(applied.get("relationships"))
+        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "no_unique_stable_peer")
+        self.assert_no_edges()
+        self.known_peer()
+        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "not_derived_at_application")
+        self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
+        self.assert_no_edges()
+        _, successor = self.apply()
+        self.assertEqual(len(successor["relationships"]), 1)
+
+    def test_stale_neighbor_and_conflicting_routes_or_neighbors_remain_unresolved(self):
+        self.known_peer()
+        cases = []
+        for state in ("STALE", "FAILED", "INCOMPLETE", "DELAY", "PROBE", "NONE", "NOARP"):
+            payloads = self.payloads()
+            neighbors = json.loads(payloads["ip -j neigh"])
+            neighbors[0]["state"] = [state]
+            payloads["ip -j neigh"] = json.dumps(neighbors).encode()
+            cases.append((payloads, "unusable_neighbor_state"))
+        for changes, reason in (({"lladdr": "02:11:22:33:44:99"}, "no_unique_stable_peer"),
+                                ({"lladdr": "00:11:22:33:44:aa"}, "no_unique_stable_peer"),
+                                ({"dev": "other0"}, "missing_neighbor")):
+            payloads = self.payloads()
+            neighbors = json.loads(payloads["ip -j neigh"])
+            neighbors[0].update(changes)
+            payloads["ip -j neigh"] = json.dumps(neighbors).encode()
+            cases.append((payloads, reason))
+        payloads = self.payloads()
+        neighbors = json.loads(payloads["ip -j neigh"])
+        neighbors.append({**neighbors[0], "lladdr": "00:11:22:33:44:aa"})
+        payloads["ip -j neigh"] = json.dumps(neighbors).encode()
+        cases.append((payloads, "conflicting_neighbors"))
+        payloads = self.payloads()
+        routes = json.loads(payloads["ip -j route"])
+        routes.append({**routes[0], "gateway": "198.51.100.253"})
+        payloads["ip -j route"] = json.dumps(routes).encode()
+        cases.append((payloads, "conflicting_routes"))
+        for payloads, reason in cases:
+            with self.subTest(reason=reason, payloads=payloads):
+                _, positive = self.apply()
+                self.assertTrue(positive["relationships"])
+                receipt, applied = self.apply(payloads)
+                self.assertFalse(applied.get("relationships"))
+                routes = [row for row in self.topology(receipt) if row["kind"] == "route"]
+                self.assertTrue(all(row["resolution"]["reason"] == reason for row in routes))
+                self.assert_no_edges()
+
+    def test_stale_assignment_failed_or_empty_latest_and_age_never_leave_current_edges(self):
+        self.known_peer()
+        receipt, applied = self.apply()
+        original_batch = receipt["batch_id"]
+        original = self.store.connection.execute("SELECT result_json FROM applications WHERE batch_id=?",
+                                                 (receipt["batch_id"],)).fetchone()[0]
+        for payloads in ({}, {"ip -j route": b'[]', "ip -j neigh": b'[]'}):
+            self.public_collect(payloads)
+            self.assert_no_edges()
+            route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+            self.assertEqual(route["resolution"]["reason"], "superseded_inspection")
+            receipt, applied = self.apply()
+            self.assertTrue(applied["relationships"])
+        snapshot = list(self.store.connection.iterdump())
+        self.clock += timedelta(days=self.policy.stale_after_days + 1)
+        self.assert_no_edges()
+        self.assertTrue(all(row["stale"] for row in self.topology(receipt)))
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+        fresh, result = self.apply()
+        self.assertFalse(result.get("relationships"))
+        route = next(row for row in self.topology(fresh) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "unqualified_or_stale_gateway_assignment")
+        self.known_peer()
+        _, result = self.apply()
+        self.assertTrue(result["relationships"])
+        self.assertEqual(self.store.connection.execute("SELECT result_json FROM applications WHERE batch_id=?",
+                         (original_batch,)).fetchone()[0], original)
+
+    def test_current_ip_or_stable_mac_ambiguity_withdraws_only_inference(self):
+        _, peer = self.known_peer()
+        receipt, applied = self.apply()
+        self.assertTrue(applied["relationships"])
+        self.known_peer(context="other-peer", mac="00:11:22:33:44:aa")
+        self.assert_no_edges()
+        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "ambiguous_or_missing_gateway_assignment")
+        # An operator assertion remains explicitly distinct from the withdrawn inference.
+        source = applied["new"][0]
+        edge = self.store.connection.execute("SELECT * FROM relations WHERE id=?",
+                                            (applied["relationships"][0],)).fetchone()
+        self.update("relationship", {"target_device": peer, "relationship_type": "routes_via",
+                    "source_interface": edge["source_interface"], "target_interface": edge["target_interface"]},
+                    device=source, now=self.clock)
+        self.assertTrue(json.loads(self.handlers.query({"relationship": "routes_via"}))["devices"])
+        selected = json.loads(self.handlers.query({"device_id": source}))["devices"][0]["relationships"][0]
+        self.assertEqual(selected["facts"]["relationship"]["evidence"][0]["confidence"], "user_supplied")
+        other = core.create_device(self.store, "Colliding peer", now=self.clock)["device_id"]
+        core.add_interface(self.store, other, "collision0", self.peer_mac, now=self.clock)
+        fresh, result = self.apply()
+        self.assertFalse(result.get("relationships"))
+        route = next(row for row in self.topology(fresh) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "no_unique_stable_peer")
+
+    def test_topology_page_bounds_filters_and_malformed_or_unsupported_probes(self):
+        self.known_peer()
+        receipt, _ = self.apply()
+        page = json.loads(self.handlers.query({"view": "topology", "batch_id": receipt["batch_id"], "limit": 1}))
+        self.assertTrue(page["has_more"])
+        second = json.loads(self.handlers.query({"view": "topology", "batch_id": receipt["batch_id"],
+                                                "limit": 1, "offset": 1}))
+        self.assertFalse(second["has_more"])
+        self.assertNotEqual(page["observations"][0]["id"], second["observations"][0]["id"])
+        matching = json.loads(self.handlers.query({"view": "topology", "batch_id": receipt["batch_id"],
+                                                  "address": "198.51.100.254"}))
+        self.assertEqual(len(matching["observations"]), 2)
+        for extra in ({"device_id": self.device}, {"relationship": "routes_via"}, {"limit": 0}):
+            self.assertIn("error", json.loads(self.handlers.query({"view": "topology", **extra})))
+        for changes in ({"nexthops": []}, {"flags": ["linkdown"]}, {"table": 100}, {"type": "blackhole"}):
+            payloads = self.payloads()
+            routes = json.loads(payloads["ip -j route"])
+            routes[0].update(changes)
+            payloads["ip -j route"] = json.dumps(routes).encode()
+            batch, result = self.apply(payloads)
+            self.assertFalse(result.get("relationships"))
+            route = next(row for row in self.topology(batch) if row["kind"] == "route")
+            self.assertEqual(route["resolution"]["reason"], "unsupported_route")
+            self.assert_no_edges()
+        for command, invalid in (("ip -j route", b'[{"gateway":"bad"}]'),
+                                 ("ip -j neigh", b'[{"dst":"198.51.100.254","state":["BAD"]}]')):
+            payloads = self.payloads()
+            payloads[command] = invalid
+            batch = self.public_collect(payloads)
+            probe = "ssh_route" if command.endswith("route") else "ssh_neigh"
+            self.assertEqual(next(p for p in batch["probes"] if p["name"] == probe)["outcome"], "parse_failed")
+            self.assert_no_edges()
+
+    def test_topology_transaction_rollback_retry_and_probe_overflow(self):
+        self.known_peer()
+        receipt = self.public_collect(self.payloads())
+        snapshot = list(self.store.connection.iterdump())
+        audit = storage.Store.audit
+        def interrupted(store, operation, action, actor, at, **kwargs):
+            if action == "logical_relationship_inferred":
+                raise RuntimeError("synthetic topology audit failure")
+            return audit(store, operation, action, actor, at, **kwargs)
+        with patch.object(storage.Store, "audit", interrupted), self.assertRaises(RuntimeError):
+            self.handlers.reconcile({"batch_id": receipt["batch_id"]})
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+        result = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", result)
+        self.assertTrue(result["relationships"])
+        policy = replace(self.policy, limits=replace(self.policy.limits, observations=32))
+        payloads = self.payloads()
+        payloads["ip -j route"] = json.dumps(json.loads(payloads["ip -j route"]) * 32).encode()
+        # 32 routes plus the code-owned alias exceed the per-probe budget;
+        # never keep a deceptively successful prefix of routing evidence.
+        overflow = self.public_collect(payloads, policy)
+        route = next(probe for probe in overflow["probes"] if probe["name"] == "ssh_route")
+        self.assertEqual(route["outcome"], "parse_failed")
+        self.assertEqual(route["observation_count"], 0)
+        self.assertFalse(any(row["kind"] == "route" for row in self.topology(overflow)))
+        self.assert_no_edges()
+
+    def test_origin_ambiguity_and_retirement_do_not_relabel_inference_as_fact(self):
+        self.known_peer()
+        receipt, applied = self.apply()
+        source = applied["new"][0]
+        self.update("retired", True, device=source, now=self.clock)
+        self.assert_no_edges()
+        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "retired_endpoint")
+        self.update("retired", False, device=source, now=self.clock)
+        self.assertTrue(json.loads(self.handlers.query({"relationship": "routes_via"}))["devices"])
+        self.update("ssh_alias", ALIAS, device=self.device, now=self.clock)
+        self.assert_no_edges()
+        route = next(row for row in self.topology(receipt) if row["kind"] == "route")
+        self.assertEqual(route["resolution"]["reason"], "unapplied_or_ambiguous_origin")
+        self.assertIsNone(route["origin_device"])
 
 
 class InspectionParserTests(unittest.TestCase):
