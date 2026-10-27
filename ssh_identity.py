@@ -9,15 +9,26 @@ from .errors import RequestError
 from .storage import Store
 
 
-def alias_candidates(store: Store, alias: str) -> list[str]:
+def _alias_candidates(store: Store, alias: str, limit: int) -> list[str]:
     """Only this context's operator/qualified direct alias mappings anchor a device."""
     rows = store.connection.execute("""SELECT DISTINCT a.device_id FROM aliases a JOIN observations o
       ON o.id=a.observation_id WHERE a.policy_context=? AND a.alias=?
       AND (o.confidence='user_supplied' OR (o.confidence='observed' AND o.qualified=1))
-      ORDER BY a.device_id LIMIT ?""", (str(store.policy.home), alias, store.policy.limits.result_count + 1)).fetchall()
-    if len(rows) > store.policy.limits.result_count:
-        raise ValueError("alias candidates exceed bound")
+      ORDER BY a.device_id LIMIT ?""", (str(store.policy.home), alias, limit)).fetchall()
     return [row[0] for row in rows]
+
+
+def alias_candidates(store: Store, alias: str) -> list[str]:
+    """Enumerate complete candidate identities or refuse an oversized result."""
+    candidates = _alias_candidates(store, alias, store.policy.limits.result_count + 1)
+    if len(candidates) > store.policy.limits.result_count:
+        raise ValueError("alias candidates exceed bound")
+    return candidates
+
+
+def alias_is_ambiguous(store: Store, alias: str) -> bool:
+    """Two distinct candidates prove ambiguity regardless of response pagination."""
+    return len(_alias_candidates(store, alias, 2)) > 1
 
 
 def _mapped_alias(store: Store, device: str) -> str:

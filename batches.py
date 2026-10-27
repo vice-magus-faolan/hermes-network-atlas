@@ -15,6 +15,7 @@ import time
 from typing import TYPE_CHECKING
 
 from .facts import DEVICE_FIELDS, INTERFACE_FIELDS
+from .config import Policy
 from .errors import RequestError
 from .identity import mac_address
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
@@ -65,6 +66,13 @@ def _code(value: str) -> str:
     if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", value) is None:
         raise ValueError("bounded native diagnostic/probe code required")
     return value
+
+
+def reconciliation_scopes(policy: Policy) -> list[tuple[str, str, str]]:
+    """Current local LAN/SSH grants shared by application selection and guidance."""
+    allowed = [(collector, network.name, network.cidr) for network in policy.networks
+               for collector, enabled in (("local_passive", network.passive), ("ping", network.ping)) if enabled]
+    return allowed + [("ssh", alias, alias) for alias in policy.authorized_aliases]
 
 
 def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str]:

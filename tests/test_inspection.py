@@ -164,10 +164,20 @@ class InspectionTests(AtlasFixture):
         self.assertEqual(self.counts(), before)
         other = core.create_device(self.store, "Other fixture", now=NOW)["device_id"]
         self.associate(other)
-        with patch.object(inspection, "run", side_effect=AssertionError("ambiguous transport")):
-            for target in (ALIAS, self.device, other):
-                with self.assertRaises(ValueError):
-                    inspection.collect(self.policy, {"target": target})
+        snapshot = list(self.store.connection.iterdump())
+        tiny = replace(self.policy, limits=replace(self.policy.limits, result_count=1))
+        with (patch("subprocess.Popen", side_effect=AssertionError("ambiguous transport")) as transport,
+              patch.object(inspection, "run", side_effect=AssertionError("ambiguous transport"))):
+            for policy in (self.policy, tiny):
+                status = json.loads(tools.Handlers(lambda policy=policy: policy).query({"view": "status"}))
+                self.assertNotIn("error", status)
+                self.assertEqual(status["guidance"]["inspection_targets"],
+                                 {"items": [], "total_count": 0, "omitted_count": 0})
+                for target in (ALIAS, self.device, other):
+                    with self.assertRaises(ValueError):
+                        inspection.collect(policy, {"target": target})
+            transport.assert_not_called()
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
 
     def test_deadline_output_and_receipt_bounds_preserve_canonical_state(self):
         self.associate()
@@ -188,6 +198,55 @@ class InspectionTests(AtlasFixture):
         self.assertTrue(all(p["outcome"] == "timeout" for p in receipt["probes"]))
         reconcile.reconcile(self.policy, {"batch_id": receipt["batch_id"]})
         self.assertIsNone(self.detail()["last_seen"])
+
+
+class InventoryGuidanceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = scratch_home()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+
+    def test_no_authorization_suggests_no_collection_and_reads_create_no_store(self):
+        policy = config.validate_policy({}, self.home)
+        handlers = tools.Handlers(lambda: policy)
+        with patch("subprocess.Popen", side_effect=AssertionError("read attempted transport")) as transport:
+            status = json.loads(handlers.query({"view": "status"}))
+            guidance = status["guidance"]
+            self.assertEqual(guidance["inventory_state"], "empty")
+            self.assertEqual(guidance["local_collection_state"], "none")
+            self.assertEqual(guidance["inspection_targets"]["items"], [])
+            self.assertEqual(guidance["discovery_options"]["items"], [])
+            self.assertEqual(guidance["reconcilable_batches"]["items"], [])
+            self.assertEqual(json.loads(handlers.query({}))["devices"], [])
+            self.assertNotIn("error", json.loads(handlers.map({})))
+            self.assertIn("error", json.loads(handlers.inspect({"target": ALIAS})))
+            transport.assert_not_called()
+        self.assertFalse(policy.database.exists())
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_authorized_options_are_capped_with_exact_omissions_and_revocation(self):
+        raw = {"ssh": {"enabled": True, "hosts": {
+            "host" + str(n): {"alias": "host" + str(n), "inspect": n < 7} for n in range(8)}},
+            "networks": {"scope" + str(n): {"cidr": "192.0.2.0/24", "discovery": {"passive": n < 7}}
+                         for n in range(8)}}
+        policy = config.validate_policy(raw, self.home)
+        handlers = tools.Handlers(lambda: policy)
+        with patch("subprocess.Popen", side_effect=AssertionError("guidance attempted transport")):
+            guidance = json.loads(handlers.query({"view": "status"}))["guidance"]
+            for key in ("inspection_targets", "discovery_options"):
+                self.assertEqual(len(guidance[key]["items"]), 5)
+                self.assertEqual(guidance[key]["total_count"], 7)
+                self.assertEqual(guidance[key]["omitted_count"], 2)
+            policy = replace(policy, limits=replace(policy.limits, result_count=2))
+            guidance = json.loads(handlers.query({"view": "status"}))["guidance"]
+            for key in ("inspection_targets", "discovery_options"):
+                self.assertEqual(len(guidance[key]["items"]), 2)
+                self.assertEqual(guidance[key]["omitted_count"], 5)
+            policy = config.validate_policy({}, self.home)
+            guidance = json.loads(handlers.query({"view": "status"}))["guidance"]
+            self.assertEqual(guidance["inspection_targets"]["items"], [])
+            self.assertEqual(guidance["discovery_options"]["items"], [])
+        self.assertFalse(policy.database.exists())
 
 
 class InspectionParserTests(unittest.TestCase):

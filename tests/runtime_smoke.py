@@ -62,6 +62,9 @@ def _profile_switch_smoke(home, ctx, dispatch, command, batch_id=None):
             status = json.loads(command("status"))
             assert status["configured_networks"] == []
             assert status["authorized_for_atlas_ssh_inspection"] == []
+            assert status["guidance"]["inspection_targets"]["items"] == []
+            assert status["guidance"]["discovery_options"]["items"] == []
+            assert status["guidance"]["reconcilable_batches"]["items"] == []
             with patch("subprocess.Popen", side_effect=AssertionError("foreign authority")):
                 assert "error" in dispatch("network_inspect", {"target": "lab-router"})
                 assert "error" in dispatch("network_discover", {"network": "lab", "mode": "passive"})
@@ -229,6 +232,7 @@ def _policy_revocation_smoke(home, ctx, manager, dispatch, command):
 
 
 def _inspection_smoke(mode, home, manager, dispatch, command):
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
     entry = manager._cli_commands["network-atlas"]
     parser = argparse.ArgumentParser(allow_abbrev=False)
     entry["setup_fn"](parser)
@@ -239,12 +243,56 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
         return json.loads(output.getvalue())
     saved = home.parent / "phase3-receipt.json"
     if mode == "ssh_inspection":
+        policy_before = (home / "config.yaml").read_bytes()
+        with patch("subprocess.Popen", side_effect=AssertionError("read attempted collection")) as transport:
+            empty = dispatch("network_query", {"view": "status"})
+            assert empty["known_devices"] == 0 and empty["guidance"]["inventory_state"] == "empty"
+            assert empty["guidance"]["local_collection_state"] == "none"
+            assert empty["guidance"]["inspection_targets"]["items"] == [
+                {"tool": "network_inspect", "parameters": {"target": "lab-router"}}]
+            assert dispatch("network_query", {})["devices"] == []
+            assert "error" not in dispatch("network_map", {})
+            transport.assert_not_called()
+        assert not database.exists() and (home / "config.yaml").read_bytes() == policy_before
         receipt = dispatch("network_inspect", {"target": "lab-router"}, command="id", source="user")
         assert receipt["completion"] == "complete" and not receipt["applied"], receipt
-        assert dispatch("network_query", {})["devices"] == []
+        collected = _database_dump(database)
+        with patch("subprocess.Popen", side_effect=AssertionError("read attempted collection")) as transport:
+            pending = dispatch("network_query", {"view": "status"})["guidance"]
+            assert pending["local_collection_state"] == "recorded"
+            assert pending["unapplied_local_batches"] == 1
+            assert pending["reconcilable_batches"]["items"] == [
+                {"tool": "network_reconcile", "parameters": {"batch_id": receipt["batch_id"]}}]
+            assert dispatch("network_query", {})["devices"] == []
+            assert "error" not in dispatch("network_map", {})
+            transport.assert_not_called()
+        assert _database_dump(database) == collected
         result = dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})
         assert len(result["new"]) == 1 and not result["missing"], result
         device = result["new"][0]
+        applied = _database_dump(database)
+        with patch("subprocess.Popen", side_effect=AssertionError("read attempted collection")) as transport:
+            detail = dispatch("network_query", {"device_id": device})["devices"][0]
+            assert detail["fields"]["hostname"]["value"] == "fixture-ssh-host"
+            assert detail["fields"]["os"]["value"] == "Synthetic Fixture Linux"
+            interface = detail["interfaces"][0]
+            assert len(detail["interfaces"]) == 1
+            assert interface["fields"]["name"]["value"] == "ssh0"
+            assert interface["mac_address"] == "00:11:22:33:44:77"
+            assert {a["address"] for a in interface["addresses"]} == {"198.51.100.7"}
+            assert all(a["batch_id"] == receipt["batch_id"] for a in interface["addresses"])
+            assert detail["relationships"] == []
+            evidence = detail["fields"]["os"]["evidence"]
+            assert evidence and all(e["source"] == "ssh:lab-router" and e["confidence"] == "observed"
+                                    and e["evidence_kind"] == "ssh_response" and e["qualified"] for e in evidence)
+            guidance = dispatch("network_query", {"view": "status"})["guidance"]
+            assert guidance["inventory_state"] == "recorded" and guidance["devices_without_relationships"] == 1
+            assert guidance["reconcilable_batches"]["total_count"] == 0
+            topology = dispatch("network_map", {"format": "text"})
+            assert device in topology["content"] and "198.51.100.7" in topology["content"]
+            assert not topology["discovery_performed"] and not topology["exports"]
+            transport.assert_not_called()
+        assert _database_dump(database) == applied and (home / "config.yaml").read_bytes() == policy_before
         for receipt in (json.loads(command("inspect " + device)), cli(["inspect", "--target", "lab-router"])):
             assert receipt["completion"] == "complete", receipt
             assert not dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})["new"]
@@ -269,6 +317,7 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
     assert dispatch("network_reconcile", {"batch_id": data["result"]["batch_id"]}) == data["result"]
     detail = dispatch("network_query", {"device_id": data["device"]})["devices"][0]
     assert detail["fields"]["hostname"]["value"] == "fixture-ssh-host"
+    assert detail["fields"]["os"]["value"] == "Synthetic Fixture Linux"
     assert len(detail["interfaces"]) == 1
     assert detail["interfaces"][0]["addresses"][0]["address"] == "198.51.100.7"
     assert detail["access"][0]["authorized_for_atlas_ssh_inspection"]
@@ -280,6 +329,33 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
     loaded = next(item for item in manager._plugins.values() if item.manifest.name == "network-atlas")
     _profile_switch_smoke(home, PluginContext(loaded.manifest, manager), dispatch, command,
                           data["result"]["batch_id"])
+    if mode == "ssh_inspection_reopen":
+        # One qualified mapping remains usable at the minimum result limit;
+        # a second mapping must omit the suggestion, not break status.
+        ctx = PluginContext(loaded.manifest, manager)
+        policy = ctx.get_config("policy", {})
+        ctx.set_config("policy", {**policy, "limits": {**policy.get("limits", {}), "result_count": 1}})
+        policy_before = (home / "config.yaml").read_bytes()
+        snapshot = _database_dump(database)
+        with patch("subprocess.Popen", side_effect=AssertionError("status attempted transport")) as transport:
+            status = dispatch("network_query", {"view": "status"})
+            assert status["last_collection"]["probe_summary"]["detail_limit"] == 1
+            assert status["guidance"]["inspection_targets"] == {
+                "items": [{"tool": "network_inspect", "parameters": {"target": "lab-router"}}],
+                "total_count": 1, "omitted_count": 0}
+            transport.assert_not_called()
+        assert _database_dump(database) == snapshot
+        other = cli(["create", "--name", "Conflicting fixture"])["device_id"]
+        cli(["update", "--device-id", other, "--field", "ssh_alias", "--value-json", '"lab-router"'])
+        snapshot = _database_dump(database)
+        with patch("subprocess.Popen", side_effect=AssertionError("ambiguous transport")) as transport:
+            status = dispatch("network_query", {"view": "status"})
+            assert "error" not in status and status["known_devices"] == 2, status
+            assert status["guidance"]["inspection_targets"] == {"items": [], "total_count": 0, "omitted_count": 0}
+            for target in ("lab-router", data["device"], other):
+                assert "error" in dispatch("network_inspect", {"target": target})
+            transport.assert_not_called()
+        assert _database_dump(database) == snapshot and (home / "config.yaml").read_bytes() == policy_before
     manager.unload()
     print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
                       "persistent_ssh_batches": True, "fresh_native_process_persistence": True}))

@@ -275,6 +275,37 @@ SSH permission and last inspection success do not prove present reachability.
 `endpoint_count` counts recorded address and port pairs, not devices or services;
 `endpoint_observation_count` includes failed and unstarted history.
 
+### Status guidance
+
+`status` (or `network_query` with `{"view":"status"}`) adds a read-only `guidance`
+object based on the same stored snapshot and current profile policy:
+
+- `inventory_state` distinguishes empty canonical inventory from recorded devices;
+  `local_collection_state` says whether this profile has any saved collection.
+  Shared knowledge can exist without local collection.
+- `unapplied_local_batches` counts local LAN/SSH batches without applications,
+  including scopes no longer authorized. `reconcilable_batches` suggests exact
+  batch IDs only for current matching local grants. Endpoint batches are separate.
+- `inspection_targets` lists currently authorized, unambiguous configured aliases,
+  including aliases with no device yet. `discovery_options` lists only enabled
+  network/mode pairs. Neither promises executable availability or present access;
+  actions still validate policy, mappings and bounds at invocation.
+  Ambiguous aliases are omitted even when their mappings exceed `result_count`;
+  that ambiguity alone does not prevent reading status.
+- Each suggestion group returns at most five items (fewer under `result_count`),
+  with exact `total_count` and `omitted_count`. The complete status still obeys
+  `output_bytes`; insufficient space refuses instead of silently hiding detail.
+- `historical_unresolved_applications` counts saved applications reporting
+  unresolved identity, not currently unresolved devices. Follow `evidence_query`
+  to the existing unresolved view for reasons and subsequent resolution lineage.
+- `devices_without_relationships` counts devices with no supported relationships.
+  Maps retain those nodes; missing links mean unknown topology, not disconnection.
+
+No collection grants means no collection choices, not permission to invent an alias,
+change policy or run a custom scanner. An empty query/map does not trigger collection;
+use status to distinguish unapplied evidence from a genuinely empty store. IP-only
+responses and TCP endpoint evidence remain separate from canonical device identity.
+
 To filter devices and inspect their provenance, use returned stable IDs:
 
 ```sh
@@ -353,10 +384,15 @@ then collect and apply the returned batch:
 ```sh
 hermes -p PROFILE network-atlas inspect --target lab-a
 hermes -p PROFILE network-atlas reconcile --batch-id BATCH_ID
+hermes -p PROFILE network-atlas query --query-json '{"device_id":"DEVICE_ID"}'
+hermes -p PROFILE network-atlas map --format markdown
 ```
 
 Inspect accepts a configured alias or uniquely mapped stable device ID, never
-commands, SSH options or arbitrary destinations. Reconcile accepts eligible local
+commands, SSH options or arbitrary destinations. An authorized alias does not need
+a pre-existing device: reconciliation can create one from its successful inspection.
+Use inspection's BATCH_ID, then the returned DEVICE_ID to read hostname, OS,
+owned interfaces, addresses and provenance. Reconcile accepts eligible local
 LAN or SSH batches. Exact-ID retries return the saved result without duplicate
 events. Failed or partial batches contribute valid positives, not scope absence.
 Slash equivalents are `/network discover home passive`, `/network inspect lab-a`,

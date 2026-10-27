@@ -7,9 +7,11 @@ TOOL_UPDATE_FIELDS = tuple(field for field in UPDATE_FIELDS if field != "retired
 
 QUERY_SCHEMA = {
     "name": "network_query",
-    "description": ("Read stored devices, endpoints, relations, provenance, status or original unresolved evidence "
-                    "with identity lineage. Historical evidence does not establish current reachability or access. "
-                    "Never performs discovery."),
+    "description": ("Read stored device inventory (hostname, OS, interfaces, addresses and provenance), endpoints, "
+                    "relations or history. Use view=status for bounded currently authorized next actions when "
+                    "inventory is empty; view=unresolved explains original evidence and identity lineage. "
+                    "After inspect/discover, reconcile the returned batch_id before querying device IDs. "
+                    "Historical evidence establishes neither current reachability nor access. Never collects."),
     "parameters": {
         "type": "object", "additionalProperties": False,
         "properties": {
@@ -51,8 +53,10 @@ UPDATE_SCHEMA = {
 
 MAP_SCHEMA = {
     "name": "network_map",
-    "description": ("Render stored topology without invented links or live reachability claims. "
-                    "Optional fixed profile-local exports."),
+    "description": ("Render stored inventory and supported relationships after reconciliation; never collects. "
+                    "Isolated devices mean no supported links, not disconnection. For empty inventory use "
+                    "network_query view=status for guidance; no invented links or live reachability claims. "
+                    "Optional export explicitly writes fixed profile-local files."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"format": {"type": "string", "enum": ["text", "markdown", "mermaid"]},
                                   "export": {"type": "boolean"}}, "required": []},
@@ -60,8 +64,11 @@ MAP_SCHEMA = {
 
 DISCOVER_SCHEMA = {
     "name": "network_discover",
-    "description": ("Collect a bounded immutable LAN batch for a configured network/mode. "
-                    "Does not reconcile. Passive neighbors are cached, not reachability."),
+    "description": ("Collect bounded LAN host/interface/address evidence only for a currently enabled configured "
+                    "network/mode. Passive neighbors are cached, not reachability; IP-only responses cannot "
+                    "establish device identity. Does not apply inventory: pass returned batch_id to "
+                    "network_reconcile, then network_query/network_map. For hostname/OS inventory of an "
+                    "authorized SSH alias use network_inspect instead."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"network": {"type": "string", "maxLength": 64},
                                   "mode": {"type": "string", "enum": ["passive", "ping"]}},
@@ -70,16 +77,23 @@ DISCOVER_SCHEMA = {
 
 RECONCILE_SCHEMA = {
     "name": "network_reconcile",
-    "description": ("Apply a stored locally authorized LAN/SSH batch (or latest unapplied). "
-                    "Exact retries are idempotent. Missing means not observed, never offline/deleted."),
+    "description": ("Apply a stored currently authorized local LAN/SSH batch to canonical devices, interfaces "
+                    "and addresses; use the exact batch_id returned by network_inspect/network_discover "
+                    "(or omit for latest eligible unapplied). Query returned device IDs and render network_map "
+                    "afterward. IP-only/conflicting identity remains unresolved; endpoint batches use their "
+                    "own resume path, not reconciliation. Never collects. Exact retries are idempotent; "
+                    "missing means not observed, never offline/deleted."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"batch_id": {"type": "string", "maxLength": 64}}, "required": []},
 }
 
 INSPECT_SCHEMA = {
     "name": "network_inspect",
-    "description": ("Collect one currently authorized SSH alias or uniquely mapped device with fixed read-only "
-                    "Linux probes. Stores an immutable attempt, does not reconcile or grant access."),
+    "description": ("Obtain Linux machine inventory (hostname, OS, owned interfaces and IPv4/IPv6 addresses) "
+                    "from one currently authorized configured SSH alias, even with no existing device ID, "
+                    "or a uniquely mapped device. Uses fixed read-only probes and stores an immutable attempt. "
+                    "Does not apply inventory: pass returned batch_id to network_reconcile, then query its "
+                    "device IDs and render network_map. Does not create topology or grant access."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 64,
                                               "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}},
@@ -91,6 +105,8 @@ ENDPOINT_SCHEMA = {
     "description": ("Check separately enabled configured TCP endpoints, persist, project and read back historical "
                     "evidence. Select network, no-contact resume batch_id, read-only preview_batch_id, OR "
                     "explicit continue_batch_id to make NEW TCP checks of remaining unattempted work. "
+                    "Read stored results via network_query view=endpoints. TCP responses do not create device "
+                    "identity or machine inventory; use authorized network_inspect for that. "
                     "No service identity, greetings or SSH authority."),
     "parameters": {"type": "object", "additionalProperties": False,
                    "properties": {key: {"type": "string", "maxLength": 64,
