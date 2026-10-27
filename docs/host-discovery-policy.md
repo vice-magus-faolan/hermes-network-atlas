@@ -99,7 +99,12 @@ Opt-in socket collection also excludes loopback, unspecified and reserved
 destinations. Network/broadcast endpoints are excluded for prefixes below /31;
 /31 and /32 retain their ordinary host-address semantics. Those excluded method
 records make coverage partial/failed, including an otherwise responsive /24.
-Legacy Nmap accounting remains unchanged rather than rewriting its semantics.
+Legacy Nmap uses the same destination exclusions and /31-/32 eligibility. Its
+verbose XML must account for each eligible address; native unavailable reasons
+affect only that address, retaining other valid responses and completed no-response
+checks. Exclusions or unavailable checks prevent whole-scope absence reports;
+malformed/incomplete chunks remain unknown. See
+[legacy accounting](local-discovery.md#fixed-transports-and-enforced-bounds).
 
 All methods and ports consume ONE monotonic operation deadline (<=120s), ONE
 aggregate outstanding-probe ceiling (<=4), ONE aggregate initiation-rate cap

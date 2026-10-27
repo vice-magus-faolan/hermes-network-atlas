@@ -224,8 +224,8 @@ class ParserTests(unittest.TestCase):
         self.at = storage.timestamp(NOW)
 
     def test_nmap_golden_numeric_host_and_negative_xml(self):
-        self.assertEqual(parse.nmap(xml(), "192.0.2.10", self.at, self.policy)[0], observation())
-        self.assertEqual(parse.nmap(xml(up=False), "192.0.2.10", self.at, self.policy), ())
+        self.assertEqual(parse.nmap(xml(), "192.0.2.10", self.at, self.policy).observations[0], observation())
+        self.assertEqual(parse.nmap(xml(up=False), "192.0.2.10", self.at, self.policy), parse.NmapScan((), ()))
         bad = [b"<nmaprun/>", xml().replace(b'exit="success"', b'exit="error"'),
                xml().replace(b'total="1"', b'total="2"'),
                xml().replace(b'<host>', b'<host timedout="true">'), xml("198.51.100.10"),

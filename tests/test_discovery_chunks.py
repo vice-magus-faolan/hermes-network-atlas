@@ -92,6 +92,57 @@ class ChunkDiscoveryTests(fixture.AtlasFixture):
                 self.assertNotIn("private fixture", str(list(self.store.connection.iterdump())))
         self.assertIsNotNone(self.detail()["last_seen"])
 
+    def test_native_mixed_chunk_retains_only_valid_address_evidence(self):
+        self.raw["networks"]["lab"]["cidr"] = "192.0.2.0/28"
+        policy = fixture.config.validate_policy(self.raw, self.home)
+        interface = fixture.core.add_interface(self.store, self.device, "fixture", fixture.MAC, now=fixture.NOW)
+        fixture.core.add_address(self.store, interface, "192.0.2.1", 32, now=fixture.NOW)
+        for result in ("mixed", "mixed-duplicate", "mixed-out-of-target", "mixed-inconsistent"):
+            with self.subTest(result=result):
+                receipt, calls = self.native_ping(policy, result)
+                self.assertEqual(len(calls), 1)
+                batch = receipt["batch_id"]
+                addresses = receipt["probes"][:-1]
+                valid = result == "mixed"
+                self.assertEqual(receipt["completion"], "partial" if valid else "failed")
+                self.assertEqual(Counter(p["outcome"] for p in addresses),
+                                 {"success": 13, "unavailable": 3} if valid else
+                                 {"parse_failed": 14, "unavailable": 2})
+                if valid:
+                    self.assertEqual(addresses[3]["diagnostic_code"], "nmap_discovery_unavailable")
+                    self.assertEqual({p["outcome"] for p in addresses[4:15]}, {"success"})
+                    self.assertTrue(all(p["observation_count"] == 0 for p in addresses[3:]))
+                history = {table: [tuple(row) for row in self.store.connection.execute(
+                    f"SELECT * FROM {table} WHERE batch_id=?" +
+                    (" AND entity_id IS NULL" if table == "observations" else ""), (batch,))]
+                    for table in ("probes", "observations")}
+                with fixture.storage.Store(policy) as reader:
+                    self.assertEqual(reader.connection.execute(
+                        "SELECT completion FROM batches WHERE id=?", (batch,)).fetchone()[0], receipt["completion"])
+                applied = fixture.reconcile.reconcile(policy, {"batch_id": batch})
+                self.assertFalse(applied["missing"])
+                if valid:
+                    self.assertEqual(len(applied["new"]), 1)
+                    for address, mac in (("192.0.2.1", fixture.MAC), ("192.0.2.2", fixture.MAC2)):
+                        detail = fixture.query.query(policy, {"address": address})["devices"]
+                        self.assertEqual(len(detail), 1)
+                        self.assertIsNotNone(detail[0]["last_seen"])
+                        self.assertEqual(detail[0]["interfaces"][0]["mac_address"], mac)
+                    self.assertIn(self.device, applied["changed"])
+                else:
+                    self.assertFalse(applied["new"])
+                before = self.counts()
+                self.assertEqual(fixture.reconcile.reconcile(policy, {"batch_id": batch}), applied)
+                self.assertEqual(self.counts(), before)
+                for table, rows in history.items():
+                    self.assertEqual([tuple(row) for row in self.store.connection.execute(
+                        f"SELECT * FROM {table} WHERE batch_id=?" +
+                        (" AND entity_id IS NULL" if table == "observations" else ""), (batch,))], rows)
+                status = fixture.query.query(policy, {"view": "status"})["last_discovery"]
+                self.assertFalse(status["scope_absence_eligible"])
+                self.assertEqual(status["probe_summary"]["responding_address_count"], 2 if valid else 0)
+                self.assertNotIn("private fixture", str(list(self.store.connection.iterdump())))
+
     def test_native_exclusions_use_configured_scope_not_chunk_boundaries(self):
         for cidr in ("192.0.2.8/30", "192.0.2.10/31", "192.0.2.10/32", "192.0.2.0/27"):
             with self.subTest(cidr=cidr):
@@ -306,21 +357,21 @@ class ChunkParserTests(unittest.TestCase):
                              (b"host-unreach", "nmap_discovery_unavailable"),
                              (b"perm-denied", "nmap_discovery_unavailable"),
                              (b"unknown", "nmap_discovery_unavailable")):
-            with self.subTest(reason=reason), self.assertRaises(fixture.parse.NmapCoverageError) as error:
-                fixture.parse.nmap(good.replace(b"no-response", reason), "192.0.2.10/32", self.at, self.policy)
-            self.assertEqual(error.exception.diagnostic_code, code)
+            with self.subTest(reason=reason):
+                scan = fixture.parse.nmap(good.replace(b"no-response", reason), "192.0.2.10/32", self.at, self.policy)
+                self.assertEqual(scan, fixture.parse.NmapScan((), (("192.0.2.10", code),)))
         omitted = good[:good.index(b"<host>")] + good[good.index(b"</host>") + len(b"</host>"):]
         with self.assertRaisesRegex(fixture.parse.NmapCoverageError, "nmap_incomplete_coverage"):
             fixture.parse.nmap(omitted, "192.0.2.10/32", self.at, self.policy)
-        with self.assertRaises(fixture.parse.NmapCoverageError):
-            fixture.parse.nmap(good.replace(b' reason="no-response"', b''),
-                               "192.0.2.10/32", self.at, self.policy)
+        scan = fixture.parse.nmap(good.replace(b' reason="no-response"', b''), "192.0.2.10/32", self.at, self.policy)
+        self.assertEqual(scan, fixture.parse.NmapScan((), (("192.0.2.10", "nmap_discovery_unavailable"),)))
 
     def test_multi_host_accounting_down_records_and_boundaries(self):
         data = chunk_xml("192.0.2.0/28", ("192.0.2.0", "192.0.2.15"), down_records=("192.0.2.7",))
-        observations = fixture.parse.nmap(data, "192.0.2.0/28", self.at, self.policy)
+        observations = fixture.parse.nmap(data, "192.0.2.0/28", self.at, self.policy).observations
         self.assertEqual({dict(o.value)["address"] for o in observations}, {"192.0.2.0", "192.0.2.15"})
-        self.assertEqual(fixture.parse.nmap(chunk_xml("192.0.2.0/28"), "192.0.2.0/28", self.at, self.policy), ())
+        self.assertEqual(fixture.parse.nmap(chunk_xml("192.0.2.0/28"), "192.0.2.0/28", self.at, self.policy),
+                         fixture.parse.NmapScan((), ()))
 
     def test_hostile_duplicate_out_of_chunk_stats_and_output_bounds(self):
         good = chunk_xml("192.0.2.0/28", ("192.0.2.1", "192.0.2.15"))
@@ -347,7 +398,7 @@ class ChunkParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fixture.parse.nmap(element_flood, "192.0.2.0/28", self.at, tiny)
         exact = replace(self.policy, limits=replace(self.policy.limits, output_bytes=len(good)))
-        self.assertEqual(len(fixture.parse.nmap(good, "192.0.2.0/28", self.at, exact)), 2)
+        self.assertEqual(len(fixture.parse.nmap(good, "192.0.2.0/28", self.at, exact).observations), 2)
         with self.assertRaises(ValueError):
             fixture.parse.nmap(good, "192.0.2.0/28", self.at,
                                replace(exact, limits=replace(exact.limits, output_bytes=len(good) - 1)))

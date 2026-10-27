@@ -23,7 +23,9 @@ class CumulativeAcceptanceTests(unittest.TestCase):
             atlas.mkdir()
             policy = {"version": 1,
                       "networks": {"lab": {"cidr": "192.0.2.0/29", "allow_public": True,
-                                           "discovery": {"passive": True, "ping": True}}},
+                                           "discovery": {"passive": True, "ping": True}},
+                                   "pair": {"cidr": "192.0.2.2/31", "allow_public": True,
+                                            "discovery": {"ping": True}}},
                       "ssh": {"enabled": True, "hosts": {alias: {"alias": alias, "inspect": True}
                                                         for alias in ("lab-a", "lab-b", "lab-c")}},
                       "limits": {"result_count": 100}, "retention": {"stale_after_days": 14}}
@@ -51,7 +53,7 @@ class CumulativeAcceptanceTests(unittest.TestCase):
             calls = (fixture / "calls.jsonl").read_bytes()
             log = [json.loads(line) for line in calls.splitlines()]
             self.assertEqual({row["args"][-2] for row in log if row["binary"] == "ssh"}, {"lab-a", "lab-b", "lab-c"})
-            self.assertEqual(len([row for row in log if row["binary"] == "nmap"]), 2)
+            self.assertEqual(len([row for row in log if row["binary"] == "nmap"]), 3)
             for name in ("ip", "nmap", "ssh"):
                 (fixture / name).unlink()
             second = subprocess.run([*command, "reopen"], env=env, cwd=root, capture_output=True, text=True, timeout=60)

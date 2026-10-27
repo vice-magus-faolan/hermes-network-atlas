@@ -136,9 +136,12 @@ every non-excluded address must appear exactly once. Omitted down hosts do not
 establish coverage. A down host with `no-response` is a completed check, not an
 offline assertion. Native route errors (`net-unreach`, `no-route`, `reject-route`)
 produce `unavailable/nmap_route_unavailable`; other unavailable or unknown down-host
-reasons produce `unavailable/nmap_discovery_unavailable`. Skipped targets or omitted
+reasons produce `unavailable/nmap_discovery_unavailable`. These diagnostics apply
+only to the affected address: valid positives and completed no-response checks in
+the same fully validated chunk survive. Skipped targets or omitted
 host records produce `unavailable/nmap_incomplete_coverage`. This uses native XML,
 not raw stderr matching or a separate route probe. Raw diagnostics remain discarded.
+The whole chunk is validated before any address evidence is accepted.
 Every host must have exactly one numeric IPv4 address inside the requested chunk,
 one valid status, no timeout marker and at most one MAC. Duplicate host/IP/status/
 runstats records, other address families, inconsistent/truncated output and
@@ -165,7 +168,9 @@ retain their legacy shape; a successful chunk derives checked-not-observed outco
 only for explicit completed no-response records, not fake host observations.
 Excluded addresses retain `unavailable/destination_excluded`, never success. As on
 the socket path, they make /24 (and other prefixes below /31) scope coverage partial
-even when all eligible checks completed. All non-excluded addresses of a failed chunk
+even when all eligible checks completed, so these ordinary subnets cannot report
+whole-scope `missing` devices. Complete /31-/32 scopes can still report
+`not_observed_in_this_run`. All non-excluded addresses of a failed chunk
 remain unknown with that failure's outcome: a chunk timeout does not attest that
 each individual address received a packet before cancellation. Earlier completed chunks retain their
 positive evidence even if a later chunk times out or produces invalid/output-limit

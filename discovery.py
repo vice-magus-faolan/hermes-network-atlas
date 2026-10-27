@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from functools import partial
 from ipaddress import ip_network
 import time
 
@@ -63,25 +62,24 @@ def _validate_scope(cidr: str, mode: str, policy: Policy) -> None:
 
 
 def _probe(name: str, argv: tuple[str, ...], evidence: str, parser: Parser, scope: str,
-           policy: Policy, deadline: float, *, host: bool = False) -> Probe:
+           policy: Policy, deadline: float) -> Probe:
     start = timestamp(utc_now())
-    result = run(argv, policy.limits, deadline, host=host)
+    result = run(argv, policy.limits, deadline)
     at = timestamp(utc_now())
     observations = ()
     if result.outcome == "success":
         try:
             observations = parser(result.stdout, scope, at, policy)
-        except parse.NmapCoverageError as error:
-            result = replace(result, outcome="unavailable", diagnostic_code=error.diagnostic_code)
         except (ValueError, TypeError, KeyError, RecursionError, UnicodeError, parse.ElementTree.ParseError):
             result = replace(result, outcome="parse_failed", diagnostic_code="invalid_bounded_output")
     if result.outcome == "success" and time.monotonic() >= deadline:
         result = replace(result, diagnostic_code="completed_at_boundary")
-    return Probe(name, result.outcome, start, timestamp(utc_now()), "none" if host else "local_host",
-                 "" if host else scope, evidence, result.diagnostic_code, observations)
+    return Probe(name, result.outcome, start, timestamp(utc_now()), "local_host",
+                 scope, evidence, result.diagnostic_code, observations)
 
 
-def _ping(chunk: str, policy: Policy, deadline: float, blocked: tuple[str, ...]) -> Probe:
+def _ping(chunk: str, policy: Policy, deadline: float,
+          blocked: tuple[str, ...]) -> tuple[Probe, tuple[tuple[str, str], ...]]:
     # Explicit TCP SYN/connect discovery on fixed ports, not a port/service scan.
     # Nmap may substitute ARP on directly attached LANs when already privileged.
     # Verbosity makes Nmap emit down-host reasons, including local no-route
@@ -90,8 +88,21 @@ def _ping(chunk: str, policy: Policy, deadline: float, blocked: tuple[str, ...])
             "--max-parallelism", str(policy.limits.concurrent_probes),
             "--max-rate", str(PING_RATE_PER_SLOT * policy.limits.concurrent_probes), "-oX", "-")
     argv += (("--exclude", ",".join(blocked)) if blocked else ()) + (chunk,)
-    return _probe("ping_chunk", argv, "ping_response", partial(parse.nmap, excluded=blocked),
-                  chunk, policy, deadline, host=True)
+    start = timestamp(utc_now())
+    result = run(argv, policy.limits, deadline, host=True)
+    scan = parse.NmapScan((), ())
+    if result.outcome == "success":
+        try:
+            scan = parse.nmap(result.stdout, chunk, timestamp(utc_now()), policy, excluded=blocked)
+        except parse.NmapCoverageError as error:
+            result = replace(result, outcome="unavailable", diagnostic_code=error.diagnostic_code)
+        except (ValueError, TypeError, KeyError, RecursionError, UnicodeError, parse.ElementTree.ParseError):
+            result = replace(result, outcome="parse_failed", diagnostic_code="invalid_bounded_output")
+    if result.outcome == "success" and time.monotonic() >= deadline:
+        result = replace(result, diagnostic_code="completed_at_boundary")
+    probe = Probe("ping_chunk", result.outcome, start, timestamp(utc_now()), "none", "", "ping_response",
+                  result.diagnostic_code, scan.observations)
+    return probe, scan.unavailable
 
 
 def collect(policy: Policy, params: object) -> dict:
@@ -135,13 +146,17 @@ def _active(network: Network, policy: Policy, deadline: float) -> tuple[Probe, .
     for chunk in chunks:
         # Exclusions belong to the configured scope, not artificial /28 edges.
         blocked = tuple(str(address) for address in chunk if excluded(network, str(address)))
+        unavailable = ()
         if len(blocked) == chunk.num_addresses or time.monotonic() >= deadline:
+            # All-excluded chunks use only the timestamps below: _chunk_addresses
+            # replaces every placeholder outcome with destination_excluded.
+            # Otherwise this is genuine work not started before the deadline.
             at = timestamp(utc_now())
             probe = Probe(
                 "ping_chunk", "not_started", at, at, "none", "", "ping_response", "operation_deadline_exceeded")
         else:
-            probe = _ping(str(chunk), policy, deadline, blocked)
-        results.extend(_chunk_addresses(chunk, probe, len(results), blocked))
+            probe, unavailable = _ping(str(chunk), policy, deadline, blocked)
+        results.extend(_chunk_addresses(chunk, probe, len(results), blocked, unavailable))
     at = timestamp(utc_now())
     success = all(probe.outcome == "success" for probe in results)
     coverage = Probe("ping_coverage", "success" if success else "command_failed", at, at,
@@ -150,20 +165,25 @@ def _active(network: Network, policy: Policy, deadline: float) -> tuple[Probe, .
     return tuple(results) + (coverage,)
 
 
-def _chunk_addresses(chunk, probe: Probe, offset: int, blocked: tuple[str, ...]) -> tuple[Probe, ...]:
+def _chunk_addresses(chunk, probe: Probe, offset: int, blocked: tuple[str, ...],
+                     unavailable: tuple[tuple[str, str], ...]) -> tuple[Probe, ...]:
     """Derive address checks from complete chunk XML, never synthetic hosts.
 
     Only explicitly checked no-response addresses inherit success. Excluded
-    destinations were never checked; unsuccessful chunks remain unknown.
+    destinations were never checked. Valid XML can also identify individual
+    unavailable checks without invalidating other addresses; corrupt chunks
+    and unsuccessful commands remain unknown as a whole.
     """
     observations = {}
     for observation in probe.observations:
         if not isinstance(observation.value, tuple):
             raise ValueError("invalid parsed address observation")
         observations[dict(observation.value)["address"]] = observation
+    diagnostics = dict(unavailable)
+    diagnostics.update((address, "destination_excluded") for address in blocked)
     return tuple(replace(probe, probe_name="ping_" + str(offset + index),
-                         outcome="unavailable" if str(address) in blocked else probe.outcome,
-                         diagnostic_code="destination_excluded" if str(address) in blocked else probe.diagnostic_code,
+                         outcome="unavailable" if str(address) in diagnostics else probe.outcome,
+                         diagnostic_code=diagnostics.get(str(address), probe.diagnostic_code),
                          observations=(observations[str(address)],) if str(address) in observations else ())
                  for index, address in enumerate(chunk))
 

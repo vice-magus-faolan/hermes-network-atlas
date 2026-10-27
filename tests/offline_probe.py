@@ -49,22 +49,34 @@ elif mode and mode[0] == "nmap-fixture":
     if result == "no-targets":
         targets = []  # privileged route lookup can skip targets before discovery
     xml = ElementTree.Element("nmaprun")
-    positive = result == "positive"
+    positives = (set(targets) if result == "positive" else
+                 {"192.0.2.1", "192.0.2.2"} if result.startswith("mixed") else set())
     for address in targets:
+        positive = address in positives
         if positive or "-v" in mode:
             host = ElementTree.SubElement(xml, "host")
             ElementTree.SubElement(host, "status", state="up" if positive else "down",
                                    reason="syn-ack" if positive else
-                                   "net-unreach" if result == "no-route" else "no-response")
+                                   "net-unreach" if result == "no-route" else
+                                   "host-unreach" if result.startswith("mixed") and address == "192.0.2.3"
+                                   else "no-response")
             ElementTree.SubElement(host, "address", addr=address, addrtype="ipv4")
             if positive:
-                ElementTree.SubElement(host, "address", addr="00:11:22:33:44:55", addrtype="mac")
+                mac = ("00:11:22:33:44:66" if result.startswith("mixed") and address == "192.0.2.2"
+                       else "00:11:22:33:44:55")
+                ElementTree.SubElement(host, "address", addr=mac, addrtype="mac")
+    if result == "mixed-duplicate":
+        xml.findall("host/address")[0].set("addr", "192.0.2.3")
+    elif result == "mixed-out-of-target":
+        xml.findall("host/address")[0].set("addr", "198.51.100.1")
+    elif result == "mixed-inconsistent":
+        xml.findall("host/status")[0].set("state", "down")
     stats = ElementTree.SubElement(xml, "runstats")
     ElementTree.SubElement(stats, "finished", exit="success")
-    ElementTree.SubElement(stats, "hosts", up=str(len(targets) if positive else 0),
-                           down=str(0 if positive else len(targets)), total=str(len(targets)))
+    ElementTree.SubElement(stats, "hosts", up=str(len(positives)),
+                           down=str(len(targets) - len(positives)), total=str(len(targets)))
     os.write(1, ElementTree.tostring(xml))
-    if result in {"no-route", "no-targets"}:
+    if result in {"no-route", "no-targets"} or result.startswith("mixed"):
         os.write(2, b"private fixture route diagnostic; never retain raw stderr")
 else:
     raise RuntimeError("fixture does not execute unknown commands")

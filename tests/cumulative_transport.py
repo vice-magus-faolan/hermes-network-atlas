@@ -12,8 +12,16 @@ MACS = {"lab-a": "00:11:22:33:44:11", "lab-b": "00:11:22:33:44:22", "lab-c": "00
 
 
 def nmap(args: list[str], stage: str) -> str:
-    assert args[:-1] == ["-sn", "-n", "-PS80,443", "-v", "--host-timeout", "10s", "--max-parallelism", "4",
-                        "--max-rate", "32", "-oX", "-", "--exclude", "192.0.2.0,192.0.2.7"]
+    base = ["-sn", "-n", "-PS80,443", "-v", "--host-timeout", "10s", "--max-parallelism", "4",
+            "--max-rate", "32", "-oX", "-"]
+    if args[-1] == "192.0.2.2/31":
+        assert args[:-1] == base
+        return ('<nmaprun><host><status state="down" reason="no-response"/>'
+                '<address addr="192.0.2.2" addrtype="ipv4"/></host>'
+                '<host><status state="down" reason="no-response"/>'
+                '<address addr="192.0.2.3" addrtype="ipv4"/></host>'
+                '<runstats><finished exit="success"/><hosts up="0" down="2" total="2"/></runstats></nmaprun>')
+    assert args[:-1] == [*base, "--exclude", "192.0.2.0,192.0.2.7"]
     assert args[-1] == "192.0.2.0/29"
     records = {1: MACS["lab-a"], 2: MACS["lab-b"], 3: MACS["lab-c"], 4: None, 5: "00:11:22:33:44:55"}
     if stage == "changed":
