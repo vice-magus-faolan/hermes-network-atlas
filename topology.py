@@ -164,6 +164,7 @@ class TopologySnapshot:
         return self.answers[row["id"]]
 
     def relations(self) -> list:
+        """Index only eligible collector edges, not the operator's entire graph."""
         if self.current_relations is None:
             self.current_relations = [row for row in _candidate_relations(self)
                                       if relation_supported(self, row)]
@@ -370,9 +371,12 @@ def relation_supported(snapshot: TopologySnapshot, relation) -> bool:
     return False
 
 
-def relation_condition(snapshot: TopologySnapshot) -> tuple[str, list]:
-    """One eligibility rule for relationship filters and isolated-device guidance."""
-    accepted = [row["id"] for row in snapshot.relations()]
+def relation_condition(snapshot: TopologySnapshot, device: str | None = None) -> tuple[str, list]:
+    """Shared eligibility SQL; detail reuses the device's indexed collector IDs."""
+    rows = snapshot.relations()
+    if device is not None:
+        rows = snapshot.by_device.get(device, [])
+    accepted = [row["id"] for row in rows]
     marks = ",".join("?" for _ in accepted) or "NULL"
     return ("(r.observation_id NOT IN (SELECT id FROM observations WHERE evidence_kind='configured_route') "
             f"OR {ASSERTED_RELATION} OR r.id IN ({marks}))", accepted)
@@ -387,19 +391,12 @@ def _candidate_relations(snapshot: TopologySnapshot) -> list:
       b.id=(SELECT id FROM batches latest WHERE latest.collector='ssh'
             AND latest.policy_context=b.policy_context AND latest.scope_value=b.scope_value
             ORDER BY latest.ended_at DESC,latest.rowid DESC LIMIT 1)"""
-    where = "(o.evidence_kind!='configured_route' OR " + ASSERTED_RELATION + " OR (" + where + "))"
+    # Assertions bypass collector eligibility in relation_condition. They must
+    # not consume its route-evidence bound, even when attached to an old edge.
+    where = "o.evidence_kind='configured_route' AND NOT " + ASSERTED_RELATION + " AND (" + where + ")"
     return _rows(snapshot.store, "SELECT r.* FROM relations r JOIN observations o ON o.id=r.observation_id "
-                 "LEFT JOIN batches b ON b.id=o.batch_id WHERE " + where + " ORDER BY r.id",
+                 "JOIN batches b ON b.id=o.batch_id WHERE " + where + " ORDER BY r.id",
                  (snapshot.current, snapshot.cutoff))
-
-
-def supported_relationships(snapshot: TopologySnapshot, device: str) -> list:
-    snapshot.relations()
-    rows = snapshot.by_device.get(device, [])
-    store = snapshot.store
-    if len(rows) > store.policy.limits.result_count:
-        raise ValueError("relationship detail exceeds configured result bound; use history pagination")
-    return rows
 
 
 def _route_answer(snapshot: TopologySnapshot, row) -> dict:

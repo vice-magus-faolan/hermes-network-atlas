@@ -16,7 +16,7 @@ from .batches import OUTCOMES, reconciliation_scopes
 from .ssh_identity import alias_is_ambiguous
 from .unresolved import query_evidence
 from .endpoints import endpoint_counts, query_endpoints
-from .topology import TopologySnapshot, query_topology, relation_condition, supported_relationships
+from .topology import TopologySnapshot, query_topology, relation_condition
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
               "relationship", "related_to", "text", "limit", "offset", "batch_id"}
@@ -231,7 +231,9 @@ def _addresses(store: Store, interface: str) -> list[dict]:
 
 
 def relationships(store: Store, device: str, now: datetime, topology: TopologySnapshot) -> list[dict]:
-    rows = supported_relationships(topology, device)
+    supported, bindings = relation_condition(topology, device)
+    rows = bounded_rows(store, "SELECT r.* FROM relations r WHERE (r.source_device=? OR r.target_device=?) AND "
+                        + supported + " ORDER BY r.id", (device, device, *bindings))
     result = []
     for row in rows:
         item = dict(row)

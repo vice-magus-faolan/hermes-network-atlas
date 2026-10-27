@@ -324,6 +324,156 @@ class TopologyInspectionTests(AtlasFixture):
             self.assertNotIn("error", rendered)
             self.assertNotIn("configured next hop", rendered["content"])
 
+    def manual_graph(self):
+        """Native assertions exceed the collector bound, but not any device bound."""
+        devices = [core.create_device(self.store, f"M{n:03}", now=self.clock)["device_id"] for n in range(100)]
+        # 4,099 links among 100 devices, each incident to at most 82 links.
+        # Keep a separate degree-one pair and the fixture's isolated device.
+        for n in range(4099):
+            source = n // 41
+            target = (source + n % 41 + 1) % len(devices)
+            self.update("relationship", {"target_device": devices[target], "relationship_type": "physical"},
+                        device=devices[source], now=self.clock)
+        source, target = [core.create_device(self.store, name, now=self.clock)["device_id"]
+                          for name in ("Manual source", "Manual target")]
+        receipt = self.update("relationship", {"target_device": target, "relationship_type": "physical"},
+                              device=source, now=self.clock)
+        edge = self.store.connection.execute("SELECT entity_id FROM observations WHERE id=?",
+                                             (receipt["observation_id"],)).fetchone()[0]
+        ids = {row[0] for row in self.store.connection.execute(
+            "SELECT id FROM relations WHERE relationship_type='physical'")}
+        self.assertEqual(len(ids), 4100)
+        self.assertGreater(len(ids), self.policy.limits.observations)
+        return source, target, edge, ids, devices
+
+    def test_manual_graph_preserves_six_public_views_and_real_per_device_overflow(self):
+        source, target, edge_id, manual_ids, devices = self.manual_graph()
+        before = list(self.store.connection.iterdump())
+        with patch("subprocess.Popen", side_effect=AssertionError("reads never collect")):
+            isolated = json.loads(self.handlers.query({"device_id": self.device}))
+            self.assertNotIn("error", isolated)
+            self.assertEqual(isolated["devices"][0]["relationships"], [])
+            linked = json.loads(self.handlers.query({"device_id": source}))
+            self.assertNotIn("error", linked)
+            edge = linked["devices"][0]["relationships"][0]
+            self.assertEqual([r["id"] for r in linked["devices"][0]["relationships"]], [edge_id])
+            self.assertEqual((edge["source_device"], edge["target_device"]), (source, target))
+            fact = edge["facts"]["relationship"]["evidence"][0]
+            self.assertEqual((fact["source"], fact["confidence"], fact["observed_at"]),
+                             ("user", "user_supplied", storage.timestamp(self.clock)))
+            pages = [json.loads(self.handlers.query({"limit": 1, "offset": offset})) for offset in (0, 1)]
+            for page in pages:
+                self.assertNotIn("error", page)
+                self.assertEqual(len(page["devices"]), 1)
+                self.assertTrue(page["has_more"])
+            self.assertNotEqual(pages[0]["devices"][0]["id"], pages[1]["devices"][0]["id"])
+            status = json.loads(self.handlers.query({"view": "status"}))
+            self.assertNotIn("error", status)
+            self.assertEqual(status["known_devices"], 103)
+            self.assertEqual(status["guidance"]["devices_without_relationships"], 1)
+            filtered = json.loads(self.handlers.query({"relationship": "physical", "related_to": target}))
+            self.assertNotIn("error", filtered)
+            self.assertEqual([d["id"] for d in filtered["devices"]], [source])
+            self.assertEqual([r["id"] for r in filtered["devices"][0]["relationships"]], [edge_id])
+            physical_page = json.loads(self.handlers.query({"relationship": "physical", "limit": 1}))
+            self.assertNotIn("error", physical_page)
+            self.assertEqual(len(physical_page["devices"]), 1)
+            self.assertTrue(physical_page["has_more"])
+            self.assertTrue(physical_page["devices"][0]["relationships"])
+            with patch.object(render, "_render", wraps=render._render) as projection:
+                mapped = json.loads(self.handlers.map({"format": "text"}))
+            self.assertNotIn("error", mapped)
+            self.assertEqual(mapped["content"].count("physical [user_supplied]"), 4100)
+            projected = {r["id"]: r for d in projection.call_args.args[0] for r in d["relationships"]}
+            self.assertEqual(set(projected), manual_ids)
+            for edge in projected.values():
+                fact = edge["facts"]["relationship"]["evidence"][0]
+                self.assertEqual((fact["source"], fact["confidence"], fact["observed_at"]),
+                                 ("user", "user_supplied", storage.timestamp(self.clock)))
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+        # A truly high-degree device must still fail, without poisoning the pair.
+        hub = core.create_device(self.store, "Overflow hub", now=self.clock)["device_id"]
+        for device in [*devices, source]:
+            self.update("relationship", {"target_device": device, "relationship_type": "physical"},
+                        device=hub, now=self.clock)
+        with self.assertRaisesRegex(ValueError, "entity detail exceeds configured result bound"):
+            query.query(self.policy, {"device_id": hub}, now=self.clock)
+        refused = json.loads(self.handlers.query({"device_id": hub}))
+        self.assertIn("atlas state or bounds", refused["error"])
+        self.assertFalse(refused["applied"])
+        unaffected = json.loads(self.handlers.query({"device_id": target}))
+        self.assertNotIn("error", unaffected)
+        self.assertEqual([r["id"] for r in unaffected["devices"][0]["relationships"]], [edge_id])
+
+    def test_large_manual_graph_keeps_frozen_route_support_withdrawal_and_operator_override(self):
+        manual, _, manual_id, _, _ = self.manual_graph()
+        _, peer = self.known_peer()
+        payloads = self.payloads()
+        payloads["ip -j route"] = json.dumps([
+            {"dst": "default", "gateway": "198.51.100.254", "dev": "fixture0"},
+            {"dst": "203.0.113.0/24", "gateway": "198.51.100.254", "dev": "fixture0"},
+            {"dst": "198.18.0.0/24", "gateway": "198.51.100.253", "dev": "fixture0"}]).encode()
+        neighbors = json.loads(payloads["ip -j neigh"])
+        payloads["ip -j neigh"] = json.dumps([*neighbors, {**neighbors[0], "dst": "198.51.100.253"}]).encode()
+        receipt, applied = self.apply(payloads)
+        source = applied["new"][0]
+        edge_id = applied["relationships"][0]
+        relation = self.store.connection.execute("SELECT * FROM relations WHERE id=?", (edge_id,)).fetchone()
+        frozen = self.store.connection.execute("SELECT value_json FROM observations WHERE id=?",
+                                                (relation["observation_id"],)).fetchone()[0]
+        self.assertEqual(json.loads(frozen)["route_evidence_count"], 2)
+        def current_ids():
+            result = json.loads(self.handlers.query({"relationship": "routes_via"}))
+            self.assertNotIn("error", result)
+            return {r["id"] for d in result["devices"] for r in d["relationships"]}
+        self.assertEqual(current_ids(), {edge_id})
+        interface = relation["target_interface"]
+        core.add_address(self.store, interface, "198.51.100.253", 24, now=self.clock)
+        # The later-eligible third route was never a frozen member of this edge.
+        assignment = self.store.connection.execute(
+            "SELECT id FROM addresses WHERE interface_id=? AND address='198.51.100.254' AND ended_at IS NULL",
+            (interface,)).fetchone()[0]
+        core.end_address(self.store, assignment, now=self.clock)
+        self.assertEqual(current_ids(), set())
+        routes = [row for row in self.topology(receipt) if row["kind"] == "route"]
+        self.assertEqual({row["resolution"]["reason"] for row in routes if row["value"]["gateway"].endswith("254")},
+                         {"ambiguous_or_missing_gateway_assignment"})
+        later = next(row for row in routes if row["value"]["gateway"].endswith("253"))
+        self.assertEqual(later["resolution"]["reason"], "not_derived_at_application")
+        # An assertion on the withdrawn edge bypasses only collector eligibility.
+        self.update("relationship", {"target_device": peer, "relationship_type": "routes_via",
+                    "source_interface": relation["source_interface"], "target_interface": interface},
+                    device=source, now=self.clock)
+        self.assertEqual(current_ids(), {edge_id})
+        # Fresh collector support coexists with that assertion, then withdraws
+        # on a newer failed attempt. A further healthy edge withdraws on age.
+        payloads["ip -j route"] = json.dumps([
+            {"dst": "198.18.0.0/24", "gateway": "198.51.100.253", "dev": "fixture0"}]).encode()
+        _, successor = self.apply(payloads)
+        self.assertEqual(len(successor["relationships"]), 1)
+        self.assertEqual(current_ids(), {edge_id, *successor["relationships"]})
+        self.public_collect({})
+        self.assertEqual(current_ids(), {edge_id})
+        selected = json.loads(self.handlers.query({"device_id": source}))["devices"][0]["relationships"][0]
+        self.assertEqual(selected["facts"]["relationship"]["evidence"][0]["confidence"], "user_supplied")
+        _, successor = self.apply(payloads)
+        self.assertEqual(len(successor["relationships"]), 1)
+        self.assertEqual(current_ids(), {edge_id, *successor["relationships"]})
+        self.clock += timedelta(days=self.policy.stale_after_days + 1)
+        self.assertEqual(current_ids(), {edge_id})
+        detail = json.loads(self.handlers.query({"device_id": manual}))
+        self.assertNotIn("error", detail)
+        self.assertEqual([r["id"] for r in detail["devices"][0]["relationships"]], [manual_id])
+        status = json.loads(self.handlers.query({"view": "status"}))
+        self.assertNotIn("error", status)
+        self.assertEqual(status["guidance"]["devices_without_relationships"], 1)
+        mapped = json.loads(self.handlers.map({"format": "text"}))
+        self.assertNotIn("error", mapped)
+        self.assertEqual(mapped["content"].count("physical [user_supplied]"), 4100)
+        self.assertEqual(mapped["content"].count("configured next hop"), 1)
+        self.assertEqual(self.store.connection.execute("SELECT value_json FROM observations WHERE id=?",
+                         (relation["observation_id"],)).fetchone()[0], frozen)
+
     def test_public_next_hop_retains_provenance_query_map_replay_and_foreign_history(self):
         foreign, peer = self.known_peer()
         # Preserve every existing logical row, not SQLite page/journal bytes.

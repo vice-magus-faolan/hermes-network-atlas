@@ -288,7 +288,9 @@ these indexes never survive a request or conceal subsequent evidence changes. No
 probes, traffic, targets, grants or background tasks are introduced. Immutable
 evidence and superseded relations grow with inspections; stale_after_days marks
 age, not eviction. History/topology pages remain available; excessive current
-relationship detail refuses explicitly under existing bounds. Keep SQLite/WAL,
+relationship detail refuses explicitly under existing per-device result bounds.
+Unrelated operator relationships do not consume route-evidence bounds; manual
+assertions remain visible in details, filters, status and maps. Keep SQLite/WAL,
 backups and exports private: retained routes/caches reveal additional topology.
 Foreign profile evidence remains read-only knowledge, never local collection authority.
 
