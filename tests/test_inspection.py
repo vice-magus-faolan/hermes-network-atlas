@@ -164,12 +164,20 @@ class InspectionTests(AtlasFixture):
         self.assertEqual(self.counts(), before)
         other = core.create_device(self.store, "Other fixture", now=NOW)["device_id"]
         self.associate(other)
-        guidance = json.loads(tools.Handlers(lambda: self.policy).query({"view": "status"}))["guidance"]
-        self.assertEqual(guidance["inspection_targets"]["total_count"], 0)
-        with patch.object(inspection, "run", side_effect=AssertionError("ambiguous transport")):
-            for target in (ALIAS, self.device, other):
-                with self.assertRaises(ValueError):
-                    inspection.collect(self.policy, {"target": target})
+        snapshot = list(self.store.connection.iterdump())
+        tiny = replace(self.policy, limits=replace(self.policy.limits, result_count=1))
+        with (patch("subprocess.Popen", side_effect=AssertionError("ambiguous transport")) as transport,
+              patch.object(inspection, "run", side_effect=AssertionError("ambiguous transport"))):
+            for policy in (self.policy, tiny):
+                status = json.loads(tools.Handlers(lambda policy=policy: policy).query({"view": "status"}))
+                self.assertNotIn("error", status)
+                self.assertEqual(status["guidance"]["inspection_targets"],
+                                 {"items": [], "total_count": 0, "omitted_count": 0})
+                for target in (ALIAS, self.device, other):
+                    with self.assertRaises(ValueError):
+                        inspection.collect(policy, {"target": target})
+            transport.assert_not_called()
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
 
     def test_deadline_output_and_receipt_bounds_preserve_canonical_state(self):
         self.associate()

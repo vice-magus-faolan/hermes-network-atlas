@@ -13,7 +13,7 @@ from .storage import Store, timestamp, utc_now
 from .updates import DEVICE_TYPES, _text
 from .inspection_evidence import latest_inspection, most_recent_inspection
 from .batches import OUTCOMES, reconciliation_scopes
-from .ssh_identity import alias_candidates
+from .ssh_identity import alias_is_ambiguous
 from .unresolved import query_evidence
 from .endpoints import endpoint_counts, query_endpoints
 
@@ -393,7 +393,7 @@ def inventory_guidance(policy: Policy, store: Store | None, known_devices: int) 
     limit = min(5, policy.limits.result_count)
     inspections = [{"tool": "network_inspect", "parameters": {"target": alias}}
                    for alias in policy.authorized_aliases
-                   if store is None or len(alias_candidates(store, alias)) <= 1]
+                   if store is None or not alias_is_ambiguous(store, alias)]
     discoveries = [{"tool": "network_discover", "parameters": {"network": network.name, "mode": mode}}
                    for network in policy.networks
                    for mode, enabled in (("passive", network.passive), ("ping", network.ping)) if enabled]

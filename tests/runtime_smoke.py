@@ -232,6 +232,7 @@ def _policy_revocation_smoke(home, ctx, manager, dispatch, command):
 
 
 def _inspection_smoke(mode, home, manager, dispatch, command):
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
     entry = manager._cli_commands["network-atlas"]
     parser = argparse.ArgumentParser(allow_abbrev=False)
     entry["setup_fn"](parser)
@@ -242,7 +243,6 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
         return json.loads(output.getvalue())
     saved = home.parent / "phase3-receipt.json"
     if mode == "ssh_inspection":
-        database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
         policy_before = (home / "config.yaml").read_bytes()
         with patch("subprocess.Popen", side_effect=AssertionError("read attempted collection")) as transport:
             empty = dispatch("network_query", {"view": "status"})
@@ -329,6 +329,33 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
     loaded = next(item for item in manager._plugins.values() if item.manifest.name == "network-atlas")
     _profile_switch_smoke(home, PluginContext(loaded.manifest, manager), dispatch, command,
                           data["result"]["batch_id"])
+    if mode == "ssh_inspection_reopen":
+        # One qualified mapping remains usable at the minimum result limit;
+        # a second mapping must omit the suggestion, not break status.
+        ctx = PluginContext(loaded.manifest, manager)
+        policy = ctx.get_config("policy", {})
+        ctx.set_config("policy", {**policy, "limits": {**policy.get("limits", {}), "result_count": 1}})
+        policy_before = (home / "config.yaml").read_bytes()
+        snapshot = _database_dump(database)
+        with patch("subprocess.Popen", side_effect=AssertionError("status attempted transport")) as transport:
+            status = dispatch("network_query", {"view": "status"})
+            assert status["last_collection"]["probe_summary"]["detail_limit"] == 1
+            assert status["guidance"]["inspection_targets"] == {
+                "items": [{"tool": "network_inspect", "parameters": {"target": "lab-router"}}],
+                "total_count": 1, "omitted_count": 0}
+            transport.assert_not_called()
+        assert _database_dump(database) == snapshot
+        other = cli(["create", "--name", "Conflicting fixture"])["device_id"]
+        cli(["update", "--device-id", other, "--field", "ssh_alias", "--value-json", '"lab-router"'])
+        snapshot = _database_dump(database)
+        with patch("subprocess.Popen", side_effect=AssertionError("ambiguous transport")) as transport:
+            status = dispatch("network_query", {"view": "status"})
+            assert "error" not in status and status["known_devices"] == 2, status
+            assert status["guidance"]["inspection_targets"] == {"items": [], "total_count": 0, "omitted_count": 0}
+            for target in ("lab-router", data["device"], other):
+                assert "error" in dispatch("network_inspect", {"target": target})
+            transport.assert_not_called()
+        assert _database_dump(database) == snapshot and (home / "config.yaml").read_bytes() == policy_before
     manager.unload()
     print(json.dumps({"mode": mode, "native_discovery": True, "real_dispatch": True,
                       "persistent_ssh_batches": True, "fresh_native_process_persistence": True}))

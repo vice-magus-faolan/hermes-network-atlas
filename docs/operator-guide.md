@@ -290,6 +290,8 @@ object based on the same stored snapshot and current profile policy:
   including aliases with no device yet. `discovery_options` lists only enabled
   network/mode pairs. Neither promises executable availability or present access;
   actions still validate policy, mappings and bounds at invocation.
+  Ambiguous aliases are omitted even when their mappings exceed `result_count`;
+  that ambiguity alone does not prevent reading status.
 - Each suggestion group returns at most five items (fewer under `result_count`),
   with exact `total_count` and `omitted_count`. The complete status still obeys
   `output_bytes`; insufficient space refuses instead of silently hiding detail.
