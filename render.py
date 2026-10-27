@@ -12,6 +12,7 @@ from .config import Policy
 from .errors import RequestError, StoreError
 from .query import device_detail
 from .storage import Store, identifier, private_directory, timestamp, utc_now
+from .topology import TopologySnapshot
 
 
 def markdown(value: object) -> str:
@@ -180,7 +181,8 @@ def render_map(policy: Policy, *, now: datetime | None = None) -> dict[str, str]
                 "SELECT * FROM devices ORDER BY id LIMIT ?", (policy.limits.observations + 1,)).fetchall()
             if len(rows) > policy.limits.observations:
                 raise ValueError("map device bound exceeded")
-            devices = [device_detail(store, row, clock) for row in rows]
+            topology = TopologySnapshot(store, clock)
+            devices = [device_detail(store, row, clock, topology) for row in rows]
     outputs = _render(devices, policy)
     if any(len(content.encode("utf-8")) > policy.limits.output_bytes for content in outputs.values()):
         raise ValueError("map output exceeds configured byte bound")

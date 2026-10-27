@@ -53,7 +53,7 @@ jobs:
               # Report baseline debt separately; the product entrypoint enforces 15.
               if [ "$ref" = v0.22.5 ]; then
                 docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$baseline,dst=/baseline,readonly" hermes-network-atlas-tests:local ruff check --exit-zero --select C901 --config 'lint.mccabe.max-complexity = 10' /baseline
-                docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local ruff check --exit-zero --select C901 --config 'lint.mccabe.max-complexity = 10' __init__.py config.py commands.py tools.py conversion.py endpoints.py endpoint_continuation.py host_schedule.py batches.py storage.py
+                docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local ruff check --exit-zero --select C901 --config 'lint.mccabe.max-complexity = 10' __init__.py config.py commands.py tools.py conversion.py endpoints.py endpoint_continuation.py host_schedule.py batches.py storage.py topology.py query.py reconcile.py
               fi
               docker run --rm --name "$name" --label "atlas.test-run=$name" --network none --cap-drop ALL --security-opt no-new-privileges hermes-network-atlas-tests:local
             )

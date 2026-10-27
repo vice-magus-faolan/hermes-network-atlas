@@ -16,7 +16,7 @@ from .batches import OUTCOMES, reconciliation_scopes
 from .ssh_identity import alias_is_ambiguous
 from .unresolved import query_evidence
 from .endpoints import endpoint_counts, query_endpoints
-from .topology import query_topology, relation_condition, supported_relationships
+from .topology import TopologySnapshot, query_topology, relation_condition, supported_relationships
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
               "relationship", "related_to", "text", "limit", "offset", "batch_id"}
@@ -133,7 +133,7 @@ def _filters(params: dict, policy: Policy, now: datetime) -> tuple[list[str], li
     return clauses, values
 
 
-def _additional_filters(params: dict, store: Store, now: datetime) -> tuple[list[str], list]:
+def _additional_filters(params: dict, topology: TopologySnapshot) -> tuple[list[str], list]:
     clauses, values = [], []
     if "text" in params:
         clauses.append("EXISTS (SELECT 1 FROM canonical c WHERE c.subject_kind='device' AND c.entity_id=d.id "
@@ -141,7 +141,7 @@ def _additional_filters(params: dict, store: Store, now: datetime) -> tuple[list
         values.append(_like(params["text"]))
     if "relationship" in params or "related_to" in params:
         sql = "EXISTS (SELECT 1 FROM relations r WHERE (r.source_device=d.id OR r.target_device=d.id)"
-        supported, bindings = relation_condition(store, now)
+        supported, bindings = relation_condition(topology)
         sql += " AND " + supported
         values.extend(bindings)
         if "relationship" in params:
@@ -184,7 +184,7 @@ def access_answers(store: Store, device: str) -> list[dict]:
     return answers
 
 
-def device_detail(store: Store, row, now: datetime) -> dict:
+def device_detail(store: Store, row, now: datetime, topology: TopologySnapshot | None = None) -> dict:
     """Return independent IDs, selected values, actual provenance and explicit collisions."""
     result = dict(row)
     result["status"] = freshness(row, now, store.policy.stale_after_days)
@@ -201,7 +201,7 @@ def device_detail(store: Store, row, now: datetime) -> dict:
             "SELECT COUNT(*) FROM interfaces WHERE mac_address=?", (interface["mac_address"],)).fetchone()[0]
         item["identity_uncertain"] = not interface["stable_mac"] or count > 1
         result["interfaces"].append(item)
-    result["relationships"] = relationships(store, row["id"], now)
+    result["relationships"] = relationships(store, row["id"], now, topology or TopologySnapshot(store, now))
     return result
 
 
@@ -230,8 +230,8 @@ def _addresses(store: Store, interface: str) -> list[dict]:
     return result
 
 
-def relationships(store: Store, device: str, now: datetime) -> list[dict]:
-    rows = supported_relationships(store, device, now)
+def relationships(store: Store, device: str, now: datetime, topology: TopologySnapshot) -> list[dict]:
+    rows = supported_relationships(topology, device)
     result = []
     for row in rows:
         item = dict(row)
@@ -242,14 +242,15 @@ def relationships(store: Store, device: str, now: datetime) -> list[dict]:
 
 
 def _inventory(store: Store, params: dict, now: datetime) -> dict:
+    topology = TopologySnapshot(store, now)
     cte, bindings = selection_cte(now, store.policy.stale_after_days)
     first, values = _filters(params, store.policy, now)
-    second, extra = _additional_filters(params, store, now)
+    second, extra = _additional_filters(params, topology)
     clauses = first + second
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     rows = store.connection.execute(cte + "SELECT d.* FROM devices d" + where + " ORDER BY d.id LIMIT ? OFFSET ?",
       (*bindings, *values, *extra, params["limit"] + 1, params["offset"])).fetchall()
-    return {"devices": [device_detail(store, row, now) for row in rows[:params["limit"]]],
+    return {"devices": [device_detail(store, row, now, topology) for row in rows[:params["limit"]]],
             "limit": params["limit"], "offset": params["offset"], "has_more": len(rows) > params["limit"],
             "discovery_performed": False}
 
@@ -356,7 +357,7 @@ def _guidance_state(store: Store | None, limit: int, now: datetime) -> dict:
     pending, batches = _pending_guidance(store, limit)
     unresolved = store.connection.execute(
         "SELECT COUNT(*) FROM applications WHERE json_array_length(result_json,'$.unresolved')>0").fetchone()[0]
-    supported, bindings = relation_condition(store, now)
+    supported, bindings = relation_condition(TopologySnapshot(store, now))
     isolated = store.connection.execute(
         "SELECT COUNT(*) FROM devices d WHERE NOT EXISTS "
         "(SELECT 1 FROM relations r WHERE (r.source_device=d.id OR r.target_device=d.id) AND " +

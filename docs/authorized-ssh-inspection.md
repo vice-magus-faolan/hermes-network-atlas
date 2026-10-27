@@ -229,7 +229,7 @@ The model tool `network_query` accepts the same JSON. The topology view supports
 only `batch_id`, exact gateway/neighbor `address`, `limit` and `offset` filters;
 follow `has_more` with the next offset. It includes originals before application
 and after supersession, with source/confidence/time, batch/probe IDs, originating
-alias/profile context, resolved `origin_device` when unambiguous, age-based `stale`,
+alias/profile context, `local_policy_context`, resolved `origin_device` when unambiguous, age-based `stale`,
 and `resolution.reason`. Neighbor evidence is support-only, never owned inventory.
 
 An inferred `routes_via` edge means the inspected host recorded an IPv4 unicast,
@@ -257,11 +257,21 @@ origin/interface identity, conflicts and unsupported features still retain their
 own reasons even without a gateway. Passive LAN route metadata still does not
 infer an inspected-host relationship.
 
-Edges retain inferred provenance and support observation IDs; maps label them
-as configured next hops and draw them dashed. Device relationship details, filters,
+Routes between the same source-device/interface and target-device/interface pair
+share one inferred edge, even when many destinations or gateway addresses support
+it. Distinct interfaces remain distinct endpoints. All contributing route IDs are
+retained deterministically in immutable relationship evidence. Ordinary relationship
+facts expose `route_evidence_count` and an `evidence_query` pointing to bounded
+topology pages instead of embedding the entire route table. Follow those pages:
+each member identifies its shared `resolution.relationship_id`, including when its
+current support has withdrawn, alongside its original probe/source/time/provenance.
+Eligible route answers also identify their neighbor/assignment support observations.
+Maps label edges as configured next hops and draw them dashed. Device relationship details, filters,
 status isolation counts and maps share current eligibility. A newer persisted
 attempt (even failed, partial or empty), age, retirement or newly conflicting
-identity can withdraw an inferred edge without erasing history. Explicit operator
+identity can withdraw an inferred edge without erasing history. A grouped edge
+remains eligible while at least one of its original members still supports those
+exact endpoints; later eligible nonmembers do not retroactively join it. Explicit operator
 or model relationship assertions remain separate from collector certainty.
 An immutable application/replay result describes what was derived then, not a
 promise that its edges are supported now. If identity becomes sufficient only
@@ -272,7 +282,9 @@ Retention stores only bounded normalized route attributes (destination, gateway,
 interface, type, table, metric and an unsupported-feature marker) and neighbor
 address/MAC/interface/state, not raw JSON or complete kernel routing semantics.
 These records consume the existing aggregate observation, byte and transaction
-budgets; overflow retains the probe's failure, not truncated positives. No new
+budgets; overflow retains the probe's failure, not truncated positives. Reconciliation
+and each read snapshot index a batch's routes, neighbors and interface names once;
+these indexes never survive a request or conceal subsequent evidence changes. No new
 probes, traffic, targets, grants or background tasks are introduced. Immutable
 evidence and superseded relations grow with inspections; stale_after_days marks
 age, not eviction. History/topology pages remain available; excessive current

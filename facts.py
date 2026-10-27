@@ -86,7 +86,14 @@ def selected_facts(connection: sqlite3.Connection, kind: str, entity: str,
 
 def evidence(row: sqlite3.Row) -> dict:
     """Return bounded stored values with their actual provenance, not authority claims."""
-    return {"id": row["id"], "field": row["field"], "value": json.loads(row["value_json"]),
+    value = json.loads(row["value_json"])
+    if row["evidence_kind"] == "configured_route":
+        # Membership is immutable in storage, but a large host table must not
+        # expand ordinary device/history output. Original IDs and full provenance
+        # are retrieved through evidence_query pages and their relationship_id.
+        value = {key: item for key, item in value.items()
+                 if key not in {"route_evidence_ids", "supporting_evidence_ids"}}
+    return {"id": row["id"], "field": row["field"], "value": value,
             "source": row["source"], "confidence": row["confidence"], "observed_at": row["observed_at"],
             "evidence_kind": row["evidence_kind"], "qualified": bool(row["qualified"]),
             "explanation": row["explanation"], "neighbor_state": row["neighbor_state"]}
