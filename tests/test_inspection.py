@@ -406,7 +406,7 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual([r["id"] for r in unaffected["devices"][0]["relationships"]], [edge_id])
 
     def test_large_manual_graph_keeps_frozen_route_support_withdrawal_and_operator_override(self):
-        manual, _, manual_id, _, _ = self.manual_graph()
+        manual, _, manual_id, manual_ids, _ = self.manual_graph()
         _, peer = self.known_peer()
         payloads = self.payloads()
         payloads["ip -j route"] = json.dumps([
@@ -441,9 +441,10 @@ class TopologyInspectionTests(AtlasFixture):
         later = next(row for row in routes if row["value"]["gateway"].endswith("253"))
         self.assertEqual(later["resolution"]["reason"], "not_derived_at_application")
         # An assertion on the withdrawn edge bypasses only collector eligibility.
-        self.update("relationship", {"target_device": peer, "relationship_type": "routes_via",
-                    "source_interface": relation["source_interface"], "target_interface": interface},
-                    device=source, now=self.clock)
+        asserted_at = storage.timestamp(self.clock)
+        assertion = self.update("relationship", {"target_device": peer, "relationship_type": "routes_via",
+                                "source_interface": relation["source_interface"], "target_interface": interface},
+                                device=source, now=self.clock)
         self.assertEqual(current_ids(), {edge_id})
         # Fresh collector support coexists with that assertion, then withdraws
         # on a newer failed attempt. A further healthy edge withdraws on age.
@@ -461,16 +462,33 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual(current_ids(), {edge_id, *successor["relationships"]})
         self.clock += timedelta(days=self.policy.stale_after_days + 1)
         self.assertEqual(current_ids(), {edge_id})
+        # Expired collector support cannot label the surviving assertion as a configured next hop.
+        asserted = json.loads(self.handlers.query({"device_id": source}))
+        self.assertNotIn("error", asserted)
+        self.assertEqual([r["id"] for r in asserted["devices"][0]["relationships"]], [edge_id])
+        selected = asserted["devices"][0]["relationships"][0]
+        self.assertEqual((selected["source_device"], selected["target_device"], selected["relationship_type"],
+                          selected["source_interface"], selected["target_interface"]),
+                         (source, peer, "routes_via", relation["source_interface"], interface))
+        evidence = selected["facts"]["relationship"]["evidence"]
+        self.assertEqual([(fact["id"], fact["source"], fact["confidence"], fact["observed_at"])
+                          for fact in evidence],
+                         [(assertion["observation_id"], "user", "user_supplied", asserted_at)])
         detail = json.loads(self.handlers.query({"device_id": manual}))
         self.assertNotIn("error", detail)
         self.assertEqual([r["id"] for r in detail["devices"][0]["relationships"]], [manual_id])
         status = json.loads(self.handlers.query({"view": "status"}))
         self.assertNotIn("error", status)
         self.assertEqual(status["guidance"]["devices_without_relationships"], 1)
-        mapped = json.loads(self.handlers.map({"format": "text"}))
+        with patch.object(render, "_render", wraps=render._render) as projection:
+            mapped = json.loads(self.handlers.map({"format": "text"}))
         self.assertNotIn("error", mapped)
         self.assertEqual(mapped["content"].count("physical [user_supplied]"), 4100)
-        self.assertEqual(mapped["content"].count("configured next hop"), 1)
+        self.assertEqual(mapped["content"].count("routes_via [user_supplied]"), 1)
+        self.assertEqual(mapped["content"].count("configured next hop"), 0)
+        projected = {r["id"]: r for d in projection.call_args.args[0] for r in d["relationships"]}
+        self.assertEqual(set(projected), manual_ids | {edge_id})
+        self.assertEqual(projected[edge_id], selected)
         self.assertEqual(self.store.connection.execute("SELECT value_json FROM observations WHERE id=?",
                          (relation["observation_id"],)).fetchone()[0], frozen)
 
