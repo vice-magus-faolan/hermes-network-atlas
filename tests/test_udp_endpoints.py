@@ -91,9 +91,9 @@ class UDPEndpointTests(unittest.TestCase):
         self.assertEqual(self.history(), old)
 
     def test_udp_silence_malformed_wrong_peer_unreachable_and_local_failure(self):
-        self.raw['networks']['lab']['endpoints'] = {'udp_ports': [21027]}
+        self.raw['networks']['lab']['endpoints']['udp_ports'] = [21027]
         cases = (('filtered', 'no_response', 'effective_transport_deadline'),
-                 ('malformed', 'no_response', 'effective_transport_deadline'),
+                 ('malformed', 'no_response', 'udp_nonempty_reply_inconclusive'),
                  ('wrong_address', 'no_response', 'effective_transport_deadline'),
                  ('wrong_port', 'no_response', 'effective_transport_deadline'),
                  ('unreachable', 'no_response', 'udp_host_unreachable'),
@@ -103,11 +103,75 @@ class UDPEndpointTests(unittest.TestCase):
                 receipt, fixture = self.invoke({'network': 'lab'}, SyntheticSockets(
                     udp_response=lambda a, p, state=state: state))
                 self.assertTrue(receipt['queryable'], receipt)
-                rows = self.rows(batch_id=receipt['batch_id'])['endpoints']
+                rows = [r for r in self.rows(batch_id=receipt['batch_id'])['endpoints'] if r['protocol'] == 'udp']
                 self.assertEqual({r['state'] for r in rows}, {expected})
                 self.assertEqual({r['diagnostic_code'] for r in rows}, {diagnostic})
                 self.assertFalse(any(r['qualified'] for r in rows))
-                self.assertEqual(len(fixture.calls), 2)
+                self.assertEqual(len(fixture.calls), 4)
+                latest = json.loads(self.handlers(self.policy()).command('status'))['last_collection']
+                self.assertEqual({r['diagnostic_code'] for r in latest['probes']
+                                  if r['probe_name'].startswith('udp_')}, {diagnostic})
+
+    def test_disabled_retained_selections_make_no_traffic_and_udp_only_reenable(self):
+        self.raw['networks']['lab']['endpoints']['enabled'] = False
+        policy = self.policy()
+        self.assertEqual(policy.networks[0].endpoint_methods, ())
+        with patch.object(transport.socket, 'socket', side_effect=AssertionError('disabled traffic')):
+            receipt = json.loads(self.handlers(policy).check_endpoints({'network': 'lab'}))
+        self.assertIn('network.endpoints', receipt['error'])
+        self.assertFalse(policy.database.exists())
+        self.raw['networks']['lab']['endpoints'] = {'enabled': True, 'udp_ports': [22000]}
+        receipt, fixture = self.invoke({'network': 'lab'})
+        self.assertTrue(receipt['queryable'], receipt)
+        self.assertEqual({protocol for _, _, protocol, _ in fixture.protocol_calls}, {socket.IPPROTO_UDP})
+        self.assertEqual({r['protocol'] for r in self.rows()['endpoints']}, {'udp'})
+        for ports in ([True], [0], [7], [19], [4403], [22, 22]):
+            self.raw['networks']['lab']['endpoints'] = {'enabled': False, 'udp_ports': ports}
+            with self.assertRaises(config.ConfigError):
+                self.policy()
+
+    def test_nonempty_reply_then_valid_empty_wins_but_wrong_or_late_data_does_not_qualify(self):
+        self.raw['networks']['lab']['endpoints'] = {'enabled': True, 'udp_ports': [22000]}
+        for first in ('exact', 'wrong_peer', 'late'):
+            fixture = SyntheticSockets()
+            seen = set()
+            def receive(sock, maximum, first=first, fixture=fixture, seen=seen):
+                if sock in seen:
+                    return b'', (sock.address, sock.port)
+                seen.add(sock)
+                if first == 'late':
+                    fixture.clock.now += 20
+                return b'PRIVATE_PACKET_CONTENT', (sock.address, sock.port + int(first == 'wrong_peer'))
+            with patch('synthetic_sockets.SyntheticSocket.recvfrom', receive):
+                receipt, _ = self.invoke({'network': 'lab'}, fixture)
+            self.assertTrue(receipt['queryable'], receipt)
+            rows = self.rows(batch_id=receipt['batch_id'])['endpoints']
+            if first == 'late':
+                self.assertFalse(any(r['qualified'] for r in rows))
+                self.assertNotIn('udp_nonempty_reply_inconclusive', {r['diagnostic_code'] for r in rows})
+            else:
+                self.assertTrue(all(r['qualified'] and r['diagnostic_code'] == 'udp_empty_reply' for r in rows))
+            self.assertNotIn('PRIVATE_PACKET_CONTENT', json.dumps(self.history()))
+
+    def test_populated_schema3_refuses_collection_before_any_socket_or_history_change(self):
+        self.raw['networks']['lab']['endpoints'].pop('udp_ports')
+        policy = self.policy()
+        with patch.object(storage, 'SCHEMA_VERSION', 3), \
+                patch.object(storage, '_migrate_endpoint_protocols', return_value=None):
+            old, _ = self.invoke({'network': 'lab'}, policy=policy)
+        self.assertTrue(old['queryable'], old)
+        before = self.history()
+        with storage.Store(policy) as store:
+            ddl = tuple(tuple(r) for r in store.connection.execute('SELECT * FROM sqlite_master ORDER BY name'))
+        with patch.object(transport.socket, 'socket', side_effect=AssertionError('upgrade refusal sent traffic')):
+            refused = json.loads(self.handlers(policy).check_endpoints({'network': 'lab'}))
+        self.assertIn('upgrade-store --writers-stopped', refused['error'])
+        self.assertFalse(refused['persisted'])
+        self.assertEqual(self.history(), before)
+        with storage.Store(policy) as store:
+            self.assertEqual(store.schema_version, 3)
+            self.assertEqual(tuple(tuple(r) for r in store.connection.execute(
+                'SELECT * FROM sqlite_master ORDER BY name')), ddl)
 
     def test_strict_independent_udp_policy_and_pre_effect_aggregate_bound(self):
         for ports, reason in (([True], 'integer'), ([0], '1..65535'), ([65536], '1..65535'),
@@ -120,7 +184,7 @@ class UDPEndpointTests(unittest.TestCase):
         for ports in ([1, 65535], list(range(100, 132)), []):
             self.raw['networks']['lab']['endpoints']['udp_ports'] = ports
             self.assertEqual(self.policy().networks[0].endpoint_udp_ports, tuple(ports))
-        self.raw['networks']['lab']['endpoints'] = {'udp_ports': [22000]}
+        self.raw['networks']['lab']['endpoints'] = {'enabled': True, 'udp_ports': [22000]}
         self.assertEqual(self.policy().networks[0].endpoint_ports, ())
         self.raw['networks']['lab']['endpoints'].update({'enabled': True, 'tcp_ports': [7, 19]})
         self.assertEqual(self.policy().networks[0].endpoint_ports, (7, 19))
@@ -175,7 +239,8 @@ class UDPEndpointTests(unittest.TestCase):
         self.raw['networks']['lab']['endpoints'].pop('udp_ports')
         tcp_policy = self.policy()
         # Produce genuine shipped-format TCP evidence, not hand-inserted rows.
-        with patch.object(storage, '_migrate_endpoint_protocols', return_value=None):
+        with patch.object(storage, 'SCHEMA_VERSION', 3), \
+                patch.object(storage, '_migrate_endpoint_protocols', return_value=None):
             old, _ = self.invoke({'network': 'lab'}, policy=tcp_policy)
         self.assertTrue(old['queryable'], old)
         history = self.history(tcp_policy)
@@ -190,11 +255,12 @@ class UDPEndpointTests(unittest.TestCase):
             migrate(connection)
             raise sqlite3.OperationalError('after projection replacement')
         with patch.object(storage, '_migrate_endpoint_protocols', interrupted):
-            failed, _ = self.invoke({'network': 'lab'}, policy=udp_policy)
-        self.assertIn('error', failed)
+            with self.assertRaises(sqlite3.OperationalError):
+                storage.upgrade_store(udp_policy, writers_stopped=True)
         self.assertEqual(self.history(tcp_policy), history)
         with storage.Store(tcp_policy) as store:
             self.assertEqual(store.schema_version, 3)
+        storage.upgrade_store(udp_policy, writers_stopped=True)
         new, _ = self.invoke({'network': 'lab'}, policy=udp_policy)
         self.assertTrue(new['queryable'], new)
         for table, old_rows in history.items():

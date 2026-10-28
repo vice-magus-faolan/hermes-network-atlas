@@ -163,9 +163,9 @@ class ReconcileBudgetTests(fixture.AtlasFixture):
         # assertion. The real SQLite lock wait must use that remaining allowance.
         original = fixture.storage._initialize
         configured = []
-        def inspect(connection):
+        def inspect(connection, *, upgrade=False):
             configured.append(connection.execute("PRAGMA busy_timeout").fetchone()[0])
-            return original(connection)
+            return original(connection, upgrade=upgrade)
         with self.store.transaction(), patch.object(fixture.storage, "_initialize", inspect):
             started = time.monotonic()
             with self.assertRaises((ValueError, sqlite3.OperationalError)):
@@ -264,8 +264,8 @@ class ReconcileBudgetTests(fixture.AtlasFixture):
             self.policy.limits, operation_timeout_seconds=1, busy_timeout_ms=5000))
         elapsed, allowances, deadlines = [10.0], [], []
         original = fixture.storage._initialize
-        def consume(connection):
-            original(connection)
+        def consume(connection, *, upgrade=False):
+            original(connection, upgrade=upgrade)
             deadlines.append(connection.deadline)
             elapsed[0] += 0.75
             allowances.append(connection.execute("PRAGMA busy_timeout").fetchone()[0])

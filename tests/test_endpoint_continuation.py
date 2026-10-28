@@ -839,7 +839,8 @@ class ContinuationTests(unittest.TestCase):
         self.assertEqual(self.history(), before)
 
     def test_schema2_read_only_preview_upgrade_rollback_and_immutable_claim(self):
-        with patch.object(storage, '_migrate_continuations', return_value=None):
+        with patch.object(storage, 'SCHEMA_VERSION', 2), \
+                patch.object(storage, '_migrate_continuations', return_value=None):
             first, _ = self.partial()
         before = self.history(first['batch_id'])
         with storage.Store(self.policy) as store:
@@ -852,13 +853,16 @@ class ContinuationTests(unittest.TestCase):
             original(connection)
             raise sqlite3.OperationalError('synthetic schema3 interruption')
         with patch.object(storage, '_migrate_continuations', interrupted):
-            result, calls = self.invoke({'continue_batch_id': first['batch_id']})
+            with self.assertRaises(sqlite3.OperationalError):
+                storage.upgrade_store(self.policy, writers_stopped=True)
+        result, calls = self.invoke({'continue_batch_id': first['batch_id']})
         self.assertIn('error', result)
         self.assertFalse(calls)
         with storage.Store(self.policy) as store:
             self.assertEqual(store.schema_version, 2)
             self.assertIsNone(store.connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='endpoint_continuations'").fetchone())
+        storage.upgrade_store(self.policy, writers_stopped=True)
         result, _ = self.invoke({'continue_batch_id': first['batch_id']})
         self.assertTrue(result['queryable'], result)
         self.assertEqual(self.history(first['batch_id']), before)
