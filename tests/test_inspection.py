@@ -492,6 +492,188 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual(self.store.connection.execute("SELECT value_json FROM observations WHERE id=?",
                          (relation["observation_id"],)).fetchone()[0], frozen)
 
+    def collector_payload(self, number, peers):
+        """Distinct real inspection identities, with one edge per known peer."""
+        payloads = outputs()
+        mac = f"00:11:22:66:00:{number:02x}"
+        payloads["ip -j address"] = b'[]'
+        payloads["ip -j link"] = json.dumps([{"ifname": "fixture0", "address": mac}]).encode()
+        routes = [{"dst": f"198.18.0.{n}/32", "gateway": address, "dev": "fixture0"}
+                  for n, (_, _, address, _) in enumerate(peers)]
+        neighbors = [{"dst": address, "lladdr": mac, "dev": "fixture0", "state": ["REACHABLE"]}
+                     for _, _, address, mac in peers]
+        if number == 0:
+            # Two frozen members for the first edge, plus an otherwise-eligible
+            # nonmember whose gateway assignment will arrive after application.
+            routes.extend([{**routes[0], "dst": "203.0.113.0/24"},
+                           {**routes[0], "dst": "192.0.2.0/24", "gateway": "198.51.100.254"}])
+            neighbors.append({**neighbors[0], "dst": "198.51.100.254"})
+        payloads["ip -j route"] = json.dumps(routes).encode()
+        payloads["ip -j neigh"] = json.dumps(neighbors).encode()
+        return payloads
+
+    def scoped_relationships(self, device, expected, **filters):
+        """Require complete identities and provenance, not merely a successful read."""
+        answer = json.loads(self.handlers.query({"device_id": device, **filters}))
+        self.assertNotIn("error", answer)
+        self.assertEqual([row["id"] for row in answer["devices"]], [device])
+        relations = answer["devices"][0]["relationships"]
+        self.assertEqual({row["id"] for row in relations}, set(expected))
+        for row in relations:
+            facts = row["facts"]["relationship"]["evidence"]
+            self.assertTrue(facts)
+            self.assertTrue(all(fact["source"] and fact["observed_at"] for fact in facts))
+            self.assertTrue(all(fact["explanation"] for fact in facts if fact["confidence"] == "inferred"))
+        return relations
+
+    def collector_global_views(self, source, peer, expected):
+        """Global views preserve complete bounded membership or their explicit error."""
+        for params in ({}, {"view": "status"}, {"relationship": "routes_via"}, {"related_to": peer}):
+            with self.subTest(global_query=params):
+                if expected is None:
+                    with self.assertRaisesRegex(ValueError, "topology evidence exceeds configured observation bound"):
+                        query.query(self.policy, params, now=self.clock)
+                    answer = json.loads(self.handlers.query(params))
+                    self.assertIn("atlas state or bounds", answer["error"])
+                    self.assertFalse(answer["applied"])
+                else:
+                    answer = json.loads(self.handlers.query(params))
+                    self.assertNotIn("error", answer)
+                    if params == {"view": "status"}:
+                        self.assertEqual(answer["known_devices"], 66)
+                        self.assertEqual(answer["guidance"]["devices_without_relationships"], 1)
+                    else:
+                        selected = next(row for row in answer["devices"] if row["id"] == source)
+                        self.assertEqual({r["id"] for r in selected["relationships"]}, expected)
+        for kind in ("text", "markdown", "mermaid"):
+            if expected is None:
+                with self.assertRaisesRegex(ValueError, "topology evidence exceeds configured observation bound"):
+                    render.render_map(self.policy, now=self.clock)
+                self.assertIn("error", json.loads(self.handlers.map({"format": kind})))
+            else:
+                mapped = json.loads(self.handlers.map({"format": kind}))
+                self.assertNotIn("error", mapped)
+                self.assertEqual(mapped["content"].count("configured next hop"), len(expected))
+
+    def test_device_scope_ignores_unrelated_collector_volume_without_losing_native_bounds(self):
+        peers = []
+        for n in range(64):
+            device = core.create_device(self.store, f"Peer {n}", now=self.clock)["device_id"]
+            mac, address = f"00:11:22:55:00:{n:02x}", f"198.51.100.{n + 1}"
+            interface = core.add_interface(self.store, device, "peer0", mac, now=self.clock)
+            core.add_address(self.store, interface, address, 24, now=self.clock)
+            peers.append((device, interface, address, mac))
+        sources, receipts, applications = [], [], []
+        for n in range(66):
+            policy = replace(self.policy, home=self.home / f"collector-{n}")
+            receipt = self.public_collect(self.collector_payload(n, peers), policy)
+            self.assertEqual(receipt["completion"], "complete")
+            if n == 0:
+                self.scoped_relationships(peers[0][0], [])
+                self.scoped_relationships(self.device, [])
+            if n == 65:
+                # A pending real batch must not poison reads of already-applied
+                # peers or isolated devices in an already over-bound graph.
+                incident = {row[0] for row in self.store.connection.execute(
+                    "SELECT id FROM relations WHERE target_device=?", (peers[0][0],))}
+                self.scoped_relationships(peers[0][0], incident)
+                self.scoped_relationships(self.device, [])
+            started = time.monotonic()
+            applied = json.loads(tools.Handlers(lambda policy=policy: policy).reconcile(
+                {"batch_id": receipt["batch_id"]}))
+            self.assertNotIn("error", applied)
+            self.assertLess(time.monotonic() - started, self.policy.limits.operation_timeout_seconds)
+            self.assertEqual(len(applied["relationships"]), 64)
+            sources.append(applied["new"][0])
+            receipts.append(receipt)
+            applications.append(applied)
+            if n == 0:
+                self.collector_global_views(sources[0], peers[0][0], set(applied["relationships"]))
+        total = self.store.connection.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+        self.assertEqual(total, 4224)
+        self.assertGreater(total, self.policy.limits.observations)
+        manual = self.update("relationship", {"target_device": peers[-1][0], "relationship_type": "physical"},
+                             device=sources[0], now=self.clock)
+        manual_id = self.store.connection.execute("SELECT entity_id FROM observations WHERE id=?",
+                                                  (manual["observation_id"],)).fetchone()[0]
+        source_ids = {*applications[0]["relationships"], manual_id}
+        before = list(self.store.connection.iterdump())
+        # Local queries must not parse any unrelated batches, at either endpoint.
+        with (patch("subprocess.Popen", side_effect=AssertionError("reads never collect")),
+              patch.object(topology.BatchIndex, "__init__", autospec=True,
+                           side_effect=topology.BatchIndex.__init__) as loads):
+            self.scoped_relationships(self.device, [])
+            self.assertEqual(loads.call_count, 0)
+            edges = self.scoped_relationships(sources[0], source_ids)
+            self.assertEqual([call.args[2] for call in loads.call_args_list], [receipts[0]["batch_id"]])
+        peer = peers[0][0]
+        incoming = {row[0] for row in self.store.connection.execute(
+            "SELECT id FROM relations WHERE target_device=?", (peer,))}
+        self.assertEqual(len(incoming), 66)
+        self.scoped_relationships(peer, incoming)
+        self.scoped_relationships(sources[-1], applications[-1]["relationships"])
+        self.scoped_relationships(sources[0], source_ids, relationship="routes_via")
+        self.scoped_relationships(sources[0], source_ids, related_to=peer)
+        self.collector_global_views(sources[0], peer, None)
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+        edge = next(row for row in edges if row["target_device"] == peer)
+        value = edge["facts"]["relationship"]["value"]
+        self.assertEqual(value["route_evidence_count"], 2)
+        originals = []
+        for offset in (0, 100):
+            page = json.loads(self.handlers.query({"view": "topology", "batch_id": receipts[0]["batch_id"],
+                                                   "offset": offset}))
+            self.assertNotIn("error", page)
+            self.assertEqual(page["has_more"], offset == 0)
+            originals.extend(page["observations"])
+        frozen = {row["id"] for row in originals if row["kind"] == "route"
+                  and row["value"]["gateway"] == peers[0][2]}
+        self.assertEqual(len(frozen), 2)
+        self.assertEqual({row["resolution"]["relationship_id"] for row in originals if row["id"] in frozen},
+                         {edge["id"]})
+        stored = self.store.connection.execute("SELECT value_json FROM observations WHERE entity_id=?",
+                                                (edge["id"],)).fetchone()[0]
+        self.assertEqual(json.loads(stored)["route_evidence_ids"], sorted(frozen))
+        late = next(row for row in originals if row["kind"] == "route"
+                    and row["value"]["gateway"] == "198.51.100.254")
+        core.add_address(self.store, peers[0][1], "198.51.100.254", 24, now=self.clock)
+        assignment = self.store.connection.execute(
+            "SELECT id FROM addresses WHERE interface_id=? AND address=? AND ended_at IS NULL",
+            (peers[0][1], peers[0][2])).fetchone()[0]
+        core.end_address(self.store, assignment, now=self.clock)
+        remaining = source_ids - {edge["id"]}
+        self.scoped_relationships(sources[0], remaining)
+        self.scoped_relationships(peer, [])
+        page = json.loads(self.handlers.query({"view": "topology", "batch_id": receipts[0]["batch_id"],
+                                               "address": "198.51.100.254"}))
+        nonmember = next(row for row in page["observations"] if row["id"] == late["id"])
+        self.assertEqual(nonmember["resolution"]["reason"], "not_derived_at_application")
+        self.assertNotIn("relationship_id", nonmember["resolution"])
+        assertion = self.update("relationship", {"target_device": peer, "relationship_type": "routes_via",
+                                "source_interface": edge["source_interface"],
+                                "target_interface": edge["target_interface"]}, device=sources[0], now=self.clock)
+        mixed = self.scoped_relationships(sources[0], source_ids)
+        asserted = next(row for row in mixed if row["id"] == edge["id"])
+        self.assertEqual([fact["id"] for fact in asserted["facts"]["relationship"]["evidence"]],
+                         [assertion["observation_id"]])
+        self.scoped_relationships(peer, [edge["id"]])
+        # Native per-entity overflow still wins for a genuinely oversized hub.
+        hub = core.create_device(self.store, "Collector-volume overflow hub", now=self.clock)["device_id"]
+        for device in [*sources, *(item[0] for item in peers)]:
+            self.update("relationship", {"target_device": device, "relationship_type": "physical"},
+                        device=hub, now=self.clock)
+        with self.assertRaisesRegex(ValueError, "entity detail exceeds configured result bound"):
+            query.query(self.policy, {"device_id": hub}, now=self.clock)
+        self.assertIn("error", json.loads(self.handlers.query({"device_id": hub})))
+        self.scoped_relationships(self.device, [])
+        self.assertEqual(self.store.connection.execute(
+            "SELECT value_json FROM observations WHERE entity_id=? AND evidence_kind='configured_route'",
+            (edge["id"],)).fetchone()[0], stored)
+        before = list(self.store.connection.iterdump())
+        self.assertEqual(json.loads(tools.Handlers(lambda: replace(self.policy, home=self.home / "collector-0"))
+                                   .reconcile({"batch_id": receipts[0]["batch_id"]})), applications[0])
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+
     def test_public_next_hop_retains_provenance_query_map_replay_and_foreign_history(self):
         foreign, peer = self.known_peer()
         # Preserve every existing logical row, not SQLite page/journal bytes.
