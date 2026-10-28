@@ -160,7 +160,8 @@ eligibility and retention implications. Operator/model relationship assertions
 keep their separate provenance and semantics.
 
 `view=unresolved` is a separate original-evidence page, accepting only exact
-address, optional batch_id and pagination. It does not require a canonical ID.
+address, optional batch_id and pagination, or `summary=true` for compact current
+uncertainty in one required batch. It does not require a canonical ID.
 It includes original resolved history with explicit application/identity lineage,
 not a naive NULL-entity unresolved predicate. Qualified historical responses,
 unqualified caches, freshness, origin/policy_context and batch/probe coverage stay

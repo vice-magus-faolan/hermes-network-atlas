@@ -201,6 +201,75 @@ def sources_and_failure(atlas: NativeAtlas, root: Path, data: dict) -> None:
     assert "SECRET_FIXTURE_DIAGNOSTIC" not in json.dumps(after)
     atlas.update(device, "relationship", {"target_device": data["ids"]["lab-b"], "relationship_type": "hosted_on"})
     hostname_collisions(atlas, root, data["ids"])
+    data["uncertainty_batch"] = uncertainty_workflow(atlas, root, data["ids"])
+
+
+def uncertainty_workflow(atlas: NativeAtlas, root: Path, ids: dict) -> str:
+    """Real registered inspect/reconcile/query adapters, with virtual-interface noise."""
+    stage = root / "fixture-bin" / "stage"
+    stage.write_text("collision")
+    historical = atlas.tool("network_inspect", {"target": "lab-a"})["batch_id"]
+    frozen = atlas.tool("network_reconcile", {"batch_id": historical})
+    assert frozen["unresolved_total_count"] > 0
+    historical_params = {"view": "unresolved", "batch_id": historical, "summary": True}
+    assert atlas.tool("network_query", historical_params)["summary"]["current_unresolved_observation_count"] > 0
+    stage.write_text("uncertainty")
+    receipt = atlas.tool("network_inspect", {"target": "lab-a"})
+    assert receipt["completion"] == "complete" and all(p["outcome"] == "success" for p in receipt["probes"]), receipt
+    applied = atlas.slash("reconcile " + receipt["batch_id"])
+    assert not applied["new"] and applied["unresolved_total_count"] == 206, applied
+    summary = applied["uncertainty"]
+    assert summary["observation_count"] == 206 and summary["subject_count"] == 43, summary
+    reasons = {group["reason"]: group for group in summary["reasons"]}
+    assert set(reasons) == {"no_unique_stable_interface", "no_unique_stable_peer", "unsupported_route"}, summary
+    assert reasons["no_unique_stable_interface"]["conflicting_observation_count"] == 4
+    assert len(applied["unresolved"]) == 5 and applied["unresolved_omitted_count"] == 201, applied
+    assert {entry["reason"] for entry in applied["unresolved"]} == set(reasons)
+    assert any(entry.get("candidate_device_ids") == [ids["lab-b"]] for entry in applied["unresolved"])
+    assert len(json.dumps(applied)) < 12000
+    assert_uncertainty_reads(atlas, root, receipt["batch_id"])
+    resolved = atlas.tool("network_query", historical_params)
+    assert resolved["summary"]["current_unresolved_observation_count"] == 0, resolved
+    assert resolved["summary"]["resolved_observation_count"] > 0, resolved
+    assert atlas.tool("network_reconcile", {"batch_id": historical}) == frozen
+    assert atlas.tool("network_reconcile", {"batch_id": receipt["batch_id"]}) == applied
+    stage.write_text("refused")
+    return receipt["batch_id"]
+
+
+def assert_uncertainty_reads(atlas: NativeAtlas, root: Path, batch: str) -> None:
+    home = Path(os.environ["HERMES_HOME"])
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        history = tuple(connection.iterdump())
+        originals = connection.execute(
+            "SELECT id,value_json,source,observed_at,probe_id,subject_anchor FROM observations "
+            "WHERE batch_id=? AND entity_id IS NULL ORDER BY observed_at DESC,id", (batch,)).fetchall()
+    files = {p.name: p.read_bytes() for p in database.parent.glob("atlas.sqlite3*")}
+    calls = (root / "fixture-bin" / "calls.jsonl").read_bytes()
+    params = {"view": "unresolved", "batch_id": batch, "summary": True}
+    current = atlas.tool("network_query", params)
+    assert current == atlas.cli(["query", "--query-json", json.dumps(params)])
+    assert current["total_count"] == len(originals) and not current["evidence"], current
+    counts = current["summary"]
+    assert counts["current_unresolved_observation_count"] == 206, current
+    assert counts["supporting_observation_count"] == 1, current
+    assert counts["resolved_observation_count"] > 0 and counts["uncertainty"]["subject_count"] == 43
+    assert len(json.dumps(current)) < 10000
+    retained = []
+    for offset in range(0, len(originals), 23):
+        page = atlas.tool("network_query", {"view": "unresolved", "batch_id": batch, "limit": 23, "offset": offset})
+        assert page["total_count"] == len(originals) and page["omitted_count"] == len(originals) - len(page["evidence"])
+        assert page["has_more"] == (offset + len(page["evidence"]) < len(originals))
+        retained.extend(page["evidence"])
+    assert [row["id"] for row in retained] == [row[0] for row in originals]
+    for row, raw in zip(retained, originals, strict=True):
+        assert (row["value"], row["source"], row["observed_at"], row["probe"]["id"], row["subject_anchor"]) == (
+            json.loads(raw[1]), raw[2], raw[3], raw[4], json.loads(raw[5]))
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        assert tuple(connection.iterdump()) == history
+    assert {p.name: p.read_bytes() for p in database.parent.glob("atlas.sqlite3*")} == files
+    assert (root / "fixture-bin" / "calls.jsonl").read_bytes() == calls
 
 
 def hostname_collisions(atlas: NativeAtlas, root: Path, ids: dict) -> None:
@@ -329,6 +398,7 @@ def main() -> int:
         assert atlas.tool("network_reconcile", {"batch_id": data["missing"]["batch_id"]}) == data["missing"]
         assert snapshot(atlas, home) == data["snapshot"]
         assert counts(home) == before
+        assert_uncertainty_reads(atlas, root, data["uncertainty_batch"])
         for kind, name in (("markdown", "network_map.md"), ("mermaid", "network_map.mmd")):
             assert (home / "network-atlas" / "exports" / name).read_text() == data["snapshot"]["maps"][kind]["content"]
         invalid_policy_refusal(atlas, home, root)

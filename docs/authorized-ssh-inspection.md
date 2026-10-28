@@ -205,7 +205,9 @@ alias mapping, interfaces/addresses, clocks, access_evidence, application result
 and events. Ambiguous aliases remain explicit conflicts; failures never assert
 absence. Access records are appended only when a device can be resolved. The raw
 attempt remains queryable even when no device exists. Exact batch-ID replay adds
-no rows/events and returns the original result. Deadline/audit/SQL/receipt failure
+no rows/events and returns the same bounded application-time projection, not
+current failure counts. See [uncertainty summaries](unresolved-evidence.md#compact-uncertainty-and-current-state).
+Deadline/audit/SQL/receipt failure
 leaves the immutable batch retryable. Batch/application schema 1 and the existing
 database layout are retained; no topology migration or history rewrite is needed.
 

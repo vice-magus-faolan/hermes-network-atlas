@@ -36,7 +36,8 @@ class LocalCollisionTests(fixture.AtlasFixture):
                 batch = self.collect_rows(ordered)
                 answer = fixture.reconcile.reconcile(self.policy, {"batch_id": batch})
                 self.assertFalse(answer["new"])
-                self.assertEqual(len(answer["unresolved"]), 6)
+                self.assertEqual(answer["unresolved_total_count"], 6)
+                self.assertEqual(len(answer["unresolved"]), 5)
                 self.assertIn("duplicate_local_interface_mac", {entry["reason"] for entry in answer["conflicting"]})
                 self.assertEqual(self.counts()["interfaces"], 0)
                 # Preserve every parsed value as immutable, unassigned evidence.

@@ -24,6 +24,7 @@ from .facts import freshness, selected_facts
 from .identity import mac_address
 from .ssh_identity import alias_candidates
 from .topology import retain_and_derive
+from .uncertainty import reconciliation_reply
 from .storage import Store, encode, identifier, response_json, timestamp, utc_now
 
 
@@ -98,6 +99,8 @@ def reconcile(policy: Policy, params: object, *, now: datetime | None = None) ->
         if previous is not None:
             result = json.loads(previous[0])
             response_json(result, policy.limits.output_bytes)
+            result = reconciliation_reply(store, result)
+            response_json(result, policy.limits.output_bytes)
             return result
         if timestamp(clock) < batch["ended_at"]:
             raise ValueError("application time precedes batch")
@@ -129,10 +132,13 @@ def _apply(store: Store, batch, now: datetime) -> dict:
     result["unchanged"] = sorted(app.touched - app.changed - set(result["new"]))
     app.event("batch_reconciled", None, {name: len(result[name]) for name in (
         "new", "changed", "unchanged", "missing", "conflicting", "unresolved")})
+    # Frozen receipts remain complete; compact only the public projection.
     response_json(result, store.policy.limits.output_bytes)
+    reply = reconciliation_reply(store, result, observations)
+    response_json(reply, store.policy.limits.output_bytes)
     store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
                              (result["id"], batch["id"], 1, result["applied_at"], encode(result)))
-    return result
+    return reply
 
 
 def _local_collisions(app: Application, observations: list) -> None:

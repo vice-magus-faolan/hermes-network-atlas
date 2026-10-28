@@ -16,6 +16,8 @@ from .config import Policy
 from .errors import RequestError
 from .facts import evidence
 from .storage import Store, response_json, timestamp
+from .uncertainty import Subjects, original_rows, summarize
+from .topology import TopologySnapshot, _route_answer
 
 
 def _bounded(store: Store, sql: str, bindings: tuple) -> list:
@@ -25,7 +27,9 @@ def _bounded(store: Store, sql: str, bindings: tuple) -> list:
     return rows
 
 
-def _application(store: Store, batch: str) -> dict | None:
+def _application(store: Store, batch: str, cache: dict) -> dict | None:
+    if batch in cache:
+        return cache[batch]
     # Old receipts can exceed a reader's lowered byte limit. Refuse, not truncate
     # reasons or hide candidates. Bound before bringing the JSON into Python.
     maximum = store.policy.limits.output_bytes
@@ -33,15 +37,20 @@ def _application(store: Store, batch: str) -> dict | None:
         "SELECT id,batch_id,applied_at,rowid AS sequence,substr(result_json,1,?) AS result_json "
         "FROM applications WHERE batch_id=?", (maximum + 1, batch)).fetchone()
     if row is None:
+        cache[batch] = None
         return None
     if len(row["result_json"].encode("utf-8")) > maximum:
         raise ValueError("stored application exceeds configured byte bound")
     result = json.loads(row["result_json"])
     if not isinstance(result, dict) or not isinstance(result.get("unresolved", []), list):
         raise ValueError("invalid stored application")
+    reasons = {}
     for entry in result.get("unresolved", []):
+        store.check_deadline()
         _validate_entry(entry)
-    return {**dict(row), "result": result}
+        reasons.setdefault(entry["evidence_id"], []).append(entry)
+    cache[batch] = {**dict(row), "result": result, "reasons": reasons}
+    return cache[batch]
 
 
 def _validate_entry(entry: object) -> None:
@@ -57,7 +66,7 @@ def _validate_entry(entry: object) -> None:
 def _reason(store: Store, application: dict | None, ids: set[str]) -> tuple[str | None, list[str]]:
     if application is None:
         return None, []
-    entries = [entry for entry in application["result"].get("unresolved", []) if entry.get("evidence_id") in ids]
+    entries = [entry for evidence_id in ids for entry in application["reasons"].get(evidence_id, [])]
     reasons = sorted({entry["reason"] for entry in entries})
     candidates = sorted({candidate for entry in entries for candidate in entry.get("candidate_device_ids", [])})
     if len(candidates) > store.policy.limits.result_count:
@@ -106,7 +115,7 @@ def _state(application: dict | None, reason: str | None, candidates: list, resol
     return "reconciled_unresolved" if reason else "applied_without_identity_result"
 
 
-def _lineage(store: Store, row, batch, application: dict | None) -> dict | None:
+def _lineage(store: Store, row, batch, application: dict | None, applications: dict) -> dict | None:
     match, bindings = _subject_match(row)
     sequence = application["sequence"] if application else 0
     later = store.connection.execute(
@@ -118,7 +127,7 @@ def _lineage(store: Store, row, batch, application: dict | None) -> dict | None:
          application is not None, batch["sequence"])).fetchone()
     if later is None:
         return None
-    latest = _application(store, later["id"])
+    latest = _application(store, later["id"], applications)
     if latest is None:
         raise ValueError("lineage application missing from snapshot")
     originals = _bounded(store, "SELECT o.id FROM observations o WHERE " + match +
@@ -131,11 +140,11 @@ def _lineage(store: Store, row, batch, application: dict | None) -> dict | None:
             "candidate_device_ids": candidates, "resolved_device_ids": resolved}
 
 
-def _identity(store: Store, row, batch, application: dict | None) -> dict:
+def _identity(store: Store, row, batch, application: dict | None, applications: dict) -> dict:
     reason, candidates = _reason(store, application, {row["id"]})
     resolved = _copied_devices(store, row, batch["id"], exact=True) if application else []
     state = _state(application, reason, candidates, resolved)
-    lineage = _lineage(store, row, batch, application)
+    lineage = _lineage(store, row, batch, application, applications)
     if lineage:
         state = {"resolved_in_batch": "subsequently_resolved", "reconciled_conflicting": "subsequently_conflicting",
                  "reconciled_unresolved": "subsequently_unresolved"}.get(
@@ -185,7 +194,7 @@ def _detail(store: Store, row, now: datetime, batches: dict, applications: dict)
     if batch_id not in batches:
         batch = store.connection.execute("SELECT *,rowid AS sequence FROM batches WHERE id=?", (batch_id,)).fetchone()
         batches[batch_id] = {"record": batch, "summary": _batch_summary(store, batch)}
-        applications[batch_id] = _application(store, batch_id)
+        _application(store, batch_id, applications)
     batch = batches[batch_id]["record"]
     value = _checked_evidence(store, row)
     address = value["value"].get("address") if row["subject_kind"] == "address" else None
@@ -198,7 +207,7 @@ def _detail(store: Store, row, now: datetime, batches: dict, applications: dict)
             "probe": dict(probe) if probe else None, "freshness": _freshness(row, now, store.policy.stale_after_days),
             "historical_responder_evidence": _responder(row),
             "current_address_candidate_device_ids": candidates, "address_ownership_conflict": len(candidates) > 1,
-            **_identity(store, row, batch, applications[batch_id])}
+            **_identity(store, row, batch, applications[batch_id], applications)}
 
 
 def _checked_evidence(store: Store, row) -> dict:
@@ -220,6 +229,8 @@ def _page(store: Store, params: dict, now: datetime) -> dict:
     if "address" in params:
         clauses.append("o.subject_kind='address' AND json_extract(o.value_json,'$.address')=?")
         bindings.append(params["address"])
+    total = store.connection.execute("SELECT COUNT(*) FROM observations o JOIN batches b ON b.id=o.batch_id WHERE "
+                                     + " AND ".join(clauses), bindings).fetchone()[0]
     rows = store.connection.execute(
         "SELECT o.id,o.batch_id,o.probe_id,o.subject_kind,substr(o.subject_anchor,1,?) AS subject_anchor,"
         "o.entity_id,o.field,substr(o.value_json,1,?) AS value_json,o.source,o.confidence,o.observed_at,"
@@ -231,7 +242,74 @@ def _page(store: Store, params: dict, now: datetime) -> dict:
     return {"view": "unresolved",
             "evidence": [_detail(store, row, now, batches, applications) for row in rows[:params["limit"]]],
             "limit": params["limit"], "offset": params["offset"], "has_more": len(rows) > params["limit"],
+            "total_count": total, "omitted_count": total - min(len(rows), params["limit"]),
             "discovery_performed": False,
+            "reachability": "historical evidence only; current reachability not established"}
+
+
+def _current_identity(store: Store, row, batch, application, applications: dict) -> tuple[str, dict | None]:
+    identity = _identity(store, row, batch, application, applications)
+    state = identity["identity_state"]
+    current = identity["lineage"] or identity
+    value = _checked_evidence(store, row)["value"]
+    candidates = _address_candidates(store, value["address"]) if row["subject_kind"] == "address" else []
+    if len(candidates) > 1:
+        return "current_unresolved", {"evidence_id": row["id"], "reason": "address_ownership",
+                                      "candidate_device_ids": candidates}
+    if state in {"resolved_in_batch", "subsequently_resolved"}:
+        return "resolved", None
+    if state == "never_reconciled":
+        return "unapplied", None
+    if state in {"reconciled_unresolved", "reconciled_conflicting",
+                 "subsequently_unresolved", "subsequently_conflicting"}:
+        return "current_unresolved", {"evidence_id": row["id"],
+                                      "reason": current["identity_reason"] or "multiple_resolved_devices",
+                                      "candidate_device_ids": current["candidate_device_ids"]}
+    return "unknown", None
+
+
+def _current_topology(snapshot: TopologySnapshot, row) -> tuple[str, dict | None]:
+    if row["subject_kind"] == "neighbor":
+        return "supporting", None
+    resolution = _route_answer(snapshot, row)
+    reason = resolution["reason"]
+    if reason in {"supported", "no_next_hop"}:
+        return "resolved", None
+    if reason in {"stale_or_future_route", "superseded_inspection"}:
+        return "inactive", None
+    return "current_unresolved", {"evidence_id": row["id"], **resolution}
+
+
+def _summary(store: Store, params: dict, now: datetime) -> dict:
+    """Explicit one-batch projection, never a store-wide materialization."""
+    store.require("batches", params["batch_id"])
+    batch = store.connection.execute("SELECT *,rowid AS sequence FROM batches WHERE id=?",
+                                     (params["batch_id"],)).fetchone()
+    rows = original_rows(store, batch["id"])
+    subjects = Subjects(rows)
+    applications = {}
+    application = _application(store, batch["id"], applications)
+    topology = TopologySnapshot(store, now)
+    counts: dict[str, int] = dict.fromkeys(
+        ("current_unresolved", "resolved", "supporting", "unapplied", "unknown", "inactive"), 0)
+    entries = []
+    for row in rows:
+        store.check_deadline()
+        value = _checked_evidence(store, row)["value"]
+        if "address" in params and (row["subject_kind"] != "address" or value.get("address") != params["address"]):
+            continue
+        state, entry = (_current_topology(topology, row) if row["subject_kind"] in {"route", "neighbor"}
+                        else _current_identity(store, row, batch, application, applications))
+        counts[state] += 1
+        if entry:
+            entries.append(entry)
+    total = sum(counts.values())
+    return {"view": "unresolved", "evidence": [], "limit": params["limit"], "offset": 0, "has_more": False,
+            "total_count": total, "omitted_count": total, "discovery_performed": False,
+            "batch": _batch_summary(store, batch),
+            "summary": {**{key + "_observation_count": value for key, value in counts.items()},
+                        "uncertainty": summarize(entries, subjects, min(5, params["limit"]), "current")},
+            "detail_query": {key: value for key, value in params.items() if key != "summary"},
             "reachability": "historical evidence only; current reachability not established"}
 
 
@@ -242,12 +320,13 @@ def query_evidence(policy: Policy, params: dict, now: datetime) -> dict:
         if "batch_id" in params:
             raise RequestError("batch_id: select an existing atlas entity")
         result = {"view": "unresolved", "evidence": [], "limit": params["limit"], "offset": params["offset"],
+                  "total_count": 0, "omitted_count": 0,
                   "has_more": False, "discovery_performed": False,
                   "reachability": "historical evidence only; current reachability not established"}
         response_json(result, policy.limits.output_bytes)
         return result
     with Store(policy, deadline=deadline) as store, store.snapshot():
-        result = _page(store, params, now)
+        result = _summary(store, params, now) if params.get("summary") else _page(store, params, now)
         response_json(result, policy.limits.output_bytes)
         store.check_deadline()
         return result

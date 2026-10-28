@@ -8,8 +8,8 @@ NULL original `entity_id` alone never means unresolved identity.
 
 ## Request contract
 
-Only `view`, optional `address`, optional `batch_id`, `limit`, and `offset` are
-accepted for this view. Filters intersect. No device ID is required.
+Only `view`, optional `address`, optional `batch_id`, `summary`, `limit`, and
+`offset` are accepted for this view. Filters intersect. No device ID is required.
 
 - `address`: exact canonical unscoped IPv4/IPv6 literal. No CIDRs, hostnames,
   zone suffixes, normalized alternatives, wildcards or free text. The filter
@@ -23,6 +23,9 @@ accepted for this view. Filters intersect. No device ID is required.
   default is that ceiling. Booleans/fractions/coercions fail.
 - `offset`: integer 0–10000, or the lower current `limits.page_offset` ceiling;
   default 0. Advance offset by the returned page size while `has_more=true`.
+- `summary`: boolean, default false. True requires one exact `batch_id` and offset
+  zero; it returns compact current diagnostics instead of an evidence page.
+  The optional address filter still intersects. See below for counts and bounds.
 - `batch_id` is also supported by the separate endpoint view, not
   devices/status/history. Other inventory/history filters are rejected on this
   view. No SQL, paths, commands, source, policy or grants inputs.
@@ -34,10 +37,59 @@ silently deduplicated devices/responders. Each invocation has one read snapshot;
 concurrent appends can shift offset pages between invocations (not a cursor or a
 cross-request snapshot guarantee).
 
-The response has `view`, `evidence`, `limit`, `offset`, `has_more`,
+The detail response has `view`, `evidence`, `limit`, `offset`, `has_more`,
+`total_count` (all retained originals matching the filters), `omitted_count`
+(matching originals not in this page, including earlier pages),
 `discovery_performed=false`, and an explicit historical-only reachability message.
 A missing store gives the same empty shape and never creates directories/files.
 The serialized byte cap also applies to empty responses.
+
+## Compact uncertainty and current state
+
+Reconciliation with uncertainty returns a compact projection of the complete
+immutable application. `unresolved` and `conflicting` are samples of at most five
+entries each (or the lower result_count); their `*_total_count` and
+`*_omitted_count` describe the full saved lists. These are observation/diagnostic
+counts, not counts of devices. `uncertainty` groups unresolved observations by
+reason and identity/topology category, reporting `observation_count`, diagnostic
+`subject_count`, and candidate-bearing `conflicting_observation_count` per reason.
+Each reason has at most three example subjects with one original `evidence_id`
+pointer, not an embedded evidence list. Reason/subject omissions are explicit.
+Conflicts and topology reasons take precedence over repetitive candidate-free
+interface fields. Collection completion and probe outcomes remain separate.
+
+Diagnostic subjects belong only to the selected batch/origin, never canonical
+devices. Repeated fields for one uniquely named interface/anchor count as one
+subject. Ambiguous anchors and MAC-less labels retain probe/value qualification
+where no interface can safely be selected; their subject count is not an estimate
+of physical devices. Locally administered MACs remain unresolved. No identity
+rule, original observation, saved application or audit total is changed.
+
+Replays return the same application-time projection, including its original
+applied_at and event IDs; they do not refresh uncertainty from newer evidence.
+Older saved applications receive the same read-only projection without rewriting
+their receipts. `evidence_query` points to complete native original pagination;
+`current_summary_query` selects the separate present-state interpretation:
+
+    hermes network-atlas query --query-json '{"view":"unresolved","batch_id":"BATCH_ID","summary":true}'
+
+This response includes the batch/probe summary, retained `total_count`, and a
+`summary` with mutually exclusive observation counts: `current_unresolved`,
+`resolved`, `supporting`, `unapplied`, `unknown`, and `inactive` (each suffixed
+`_observation_count`). Current identity follows the existing same-subject lineage;
+current route support follows the topology resolver. Neighbor caches are supporting
+metadata, and superseded/expired route configuration is inactive, not a current
+failure. Unknown outcomes are not silently called unresolved. Identity resolution
+does not establish current reachability or topology support.
+
+The current `uncertainty` uses the same bounded reason/subject shape, marked
+`temporal_scope=current` instead of `at_application`. Summary replies intentionally
+return no evidence rows (`omitted_count=total_count`, `has_more=false`); follow
+`detail_query`, removing summary, to page all originals. Summary work is restricted
+to one batch under the existing observations, operation and byte ceilings; an
+over-limit batch refuses rather than returning a deceptively complete prefix.
+Unrelated batches do not consume that batch's observation ceiling. Detail
+pagination remains usable independently of this optional summary ceiling.
 
 ## Evidence and provenance
 

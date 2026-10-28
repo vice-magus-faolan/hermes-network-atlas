@@ -84,7 +84,8 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.assertEqual({row["identity_state"] for row in before_apply}, {"never_reconciled"})
         applied = self.apply(batch)
         self.assertEqual(applied["new"], [])
-        self.assertEqual(len(applied["unresolved"]), 7)
+        self.assertEqual(applied["unresolved_total_count"], 7)
+        self.assertEqual(len(applied["unresolved"]), 5)
         before = self.snapshot()
         result = self.read()
         self.assertFalse(result["has_more"])
@@ -158,7 +159,10 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                        {"batch_id": "a" * 65}, {"batch_id": None}, {"address": "192.0.2.0/24"},
                        {"address": "192.000.2.10"}, {"address": "fe80::1%eth0"}, {"address": "2001:DB8::1"},
                        {"limit": True}, {"limit": 101}, {"offset": -1}, {"offset": 10001},
-                       {"source": "user"}, {"device_id": "x"}, {"text": "x"}, {"command": "id"}):
+                       {"source": "user"}, {"device_id": "x"}, {"text": "x"}, {"command": "id"},
+                       {"summary": True}, {"summary": 1, "batch_id": first},
+                       {"summary": "true", "batch_id": first},
+                       {"summary": True, "batch_id": first, "offset": 1}):
             with self.subTest(params=params), self.assertRaises(ValueError):
                 self.read(**params)
         for view in ("devices", "history", "status"):
@@ -173,6 +177,27 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.read(policy=policy, batch_id="unknown")
         self.assertFalse(policy.home.exists())
+
+    def test_summary_scope_counts_filters_caps_and_unrelated_history(self):
+        batch = self.batch([self.observation("192.0.2.10") for _ in range(7)])
+        self.apply(batch)
+        # An unrelated population larger than the reader's summary observation
+        # ceiling must not consume the selected batch's budget.
+        self.batch([self.observation("192.0.2.11") for _ in range(40)])
+        reader = replace(self.policy, limits=replace(self.policy.limits, observations=7, result_count=1))
+        before = self.snapshot()
+        page = self.read(policy=reader, batch_id=batch, summary=True, address="192.0.2.10")
+        self.assertEqual((page["total_count"], page["omitted_count"]), (7, 7))
+        summary = page["summary"]["uncertainty"]
+        self.assertEqual((summary["observation_count"], summary["subject_count"]), (7, 1))
+        self.assertEqual(len(summary["reasons"]), 1)
+        self.assertEqual(self.read(batch_id=batch, summary=True, address="192.0.2.11")["total_count"], 0)
+        with self.assertRaisesRegex(ValueError, "observation bound"):
+            self.read(policy=replace(reader, limits=replace(reader.limits, observations=6)),
+                      batch_id=batch, summary=True)
+        foreign = replace(reader, home=self.home / "foreign", ssh_enabled=False, networks=())
+        self.assertFalse(self.read(policy=foreign, batch_id=batch, summary=True)["batch"]["local_policy_context"])
+        self.assertEqual(self.snapshot(), before)
 
     def test_tie_safe_pagination_duplicate_history_and_lowered_caps(self):
         first = self.batch([self.observation() for _ in range(5)])
@@ -359,6 +384,12 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.assertEqual({row["identity_state"] for row in old}, {"subsequently_resolved"})
         self.assertTrue(all(row["lineage"]["resolved_device_ids"] == [device] for row in old))
         self.assertTrue(all(row["identity_reason"] == "no_unique_stable_interface" for row in old))
+        before = self.snapshot()
+        historical = self.read(batch_id=first, summary=True, now=NOW + timedelta(days=1))
+        self.assertEqual(historical["total_count"], 2)
+        self.assertEqual(historical["summary"]["current_unresolved_observation_count"], 0)
+        self.assertEqual(historical["summary"]["resolved_observation_count"], 2)
+        self.assertEqual(self.snapshot(), before)
 
     def test_address_ownership_conflict_not_identity_or_authority_transfer(self):
         first = self.batch([self.observation(anchor=batches.Anchor("mac", MAC))])

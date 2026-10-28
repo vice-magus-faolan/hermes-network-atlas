@@ -347,10 +347,13 @@ assigning them to an IP's former owner:
 ```sh
 hermes -p PROFILE network-atlas query --query-json '{"view":"unresolved","limit":10,"offset":0}'
 hermes -p PROFILE network-atlas query --query-json '{"view":"unresolved","batch_id":"BATCH_ID","limit":10}'
+hermes -p PROFILE network-atlas query --query-json '{"view":"unresolved","batch_id":"BATCH_ID","summary":true}'
 ```
 
 Check `identity_state`, `historical_responder_evidence`, freshness and coverage.
-Originals remain listed after resolution; see [unresolved evidence](unresolved-evidence.md).
+Originals remain listed after resolution; retained totals are not current failure
+counts. The batch summary separates current uncertainty from resolved/supporting
+history and points to complete detail pagination. See [unresolved evidence](unresolved-evidence.md).
 
 TCP endpoint history is another separate read-only view:
 
