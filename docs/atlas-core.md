@@ -247,13 +247,29 @@ core paths; slash updates still fail closed on unattested origin.
 Only fixed profile-local exports/network_map.md and exports/network_map.mmd are
 written. Rendering uses stored supported edges, stable ID ordering, escaped labels,
 explicit provenance, stale/retired/isolated/uncertain states, and no regeneration
-time. Ambiguous alias associations mark nodes uncertain in every format, including
+time. Device labels prefer an unambiguous operator-friendly name, then the selected
+unambiguous hostname, then the stable UUID. Collision checks compare the chosen
+visible labels, not every stored hostname. A hostname-derived label matching
+another chosen label falls back to UUID; explicit canonical labels retain
+precedence. For example, if A has a canonical label and also reports hostname
+`lab-b`, hostname-only B can still display `lab-b` when A's chosen label differs.
+Comparison is exact and case-sensitive, without whitespace normalization:
+`LAB-B`, `lab-b` and `lab-b ` can remain distinct but visually confusing labels,
+especially in text maps, which do not separately list UUIDs. Inventory UUIDs are
+reserved for fallback, not hostname-derived labels. Relationship endpoints use the same
+names; Markdown also lists stable IDs and Mermaid node IDs always derive from
+UUIDs, never names. Conflicting names are skipped for labeling but still mark the
+device uncertain; this fallback assigns no canonical name or identity.
+Ambiguous alias associations mark nodes uncertain in every format, including
 Mermaid and fixed exports; text/Markdown name the unresolved aliases separately
 from inspection authorization. No owner or permission is selected for a colliding
 alias. Inference edges are dashed and labelled. No unknown physical connectivity
 is invented. The complete map is capped by observations (default 4096 devices),
 child detail limits, and output_bytes; overflow refuses instead of truncating a
-node/edge silently. Every export attempt is audited before file writes, and a
+node/edge silently. Labels are not shortened; long hostnames, expanded further
+by Markdown/Mermaid escaping, can exceed `output_bytes` and cause the entire map
+to refuse rendering even within the device-count limit. This is an accepted
+fail-closed limit, not partial output. Every export attempt is audited before file writes, and a
 completion event follows successful replacement. Each file replacement is atomic;
 filesystem interruption between the two can leave mismatched generated files.
 Regenerate both from SQLite to recover. Symlink export destinations are refused.

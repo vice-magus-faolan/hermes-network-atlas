@@ -454,6 +454,124 @@ class QueryUpdateMapTests(AtlasFixture):
             self.assertNotIn("\x1b", output)
         self.assertFalse(empty.home.exists())
 
+    def test_map_name_precedence_conflicts_missing_and_stable_endpoints(self):
+        cases = ((["Friendly"], ["Observed"], "Friendly", False),
+                 ([], ["Unique observed"], "Unique observed", False),
+                 (["First", "Second"], ["Conflict fallback"], "Conflict fallback", True),
+                 (["Friendly"], ["One", "Two"], "Friendly", True),
+                 ([], ["One", "Two"], None, True),
+                 ([], [], None, False),
+                 (["First", "Second"], [], None, True))
+        for canonical, hostnames, expected, uncertain in cases:
+            with self.subTest(canonical=canonical, hostnames=hostnames):
+                device = storage.identifier()
+                with self.store.transaction():
+                    self.store.connection.execute(
+                        "INSERT INTO devices(id,created_at) VALUES (?,?)", (device, storage.timestamp(NOW)))
+                    for field, values in (("canonical_name", canonical), ("hostname", hostnames)):
+                        for index, value in enumerate(values):
+                            core.append_fact(self.store, "device", device, field, value, f"fixture:{index}",
+                                             "user_supplied" if field == "canonical_name" else "observed",
+                                             storage.timestamp(NOW), qualified=field == "hostname",
+                                             evidence_kind="ssh_response" if field == "hostname" else "none")
+                self.update("relationship", {"target_device": self.device, "relationship_type": "hosted_on"},
+                            device=device)
+                detail = self.detail(device=device)
+                history = tuple(self.store.connection.iterdump())
+                with patch("subprocess.Popen", side_effect=AssertionError("map must not collect")):
+                    outputs = render.render_map(self.policy, now=NOW)
+                    self.assertEqual(render.render_map(self.policy, now=NOW), outputs)
+                name = expected or device
+                state = "known; uncertain" if uncertain else "known"
+                self.assertTrue(any(line.startswith(name + " [" + state + ";")
+                                    for line in outputs["text"].splitlines()))
+                self.assertIn(f"| {name} ({device}) |", outputs["markdown"])
+                node = "n" + device.replace("-", "")
+                escaped_name = name.replace("-", "#45;")
+                escaped_state = state.replace(";", "#59;")
+                self.assertIn(f'{node}["{escaped_name} #91;{escaped_state}', outputs["mermaid"])
+                self.assertIn(name + " -- hosted_on [user_supplied] --> Synthetic router", outputs["text"])
+                self.assertIn(name + " -- hosted&#95;on &#91;user&#95;supplied&#93; --&#62; Synthetic router",
+                              outputs["markdown"])
+                self.assertIn(node + ' -->|', outputs["mermaid"])
+                self.assertEqual(self.detail(device=device), detail)
+                self.assertEqual(tuple(self.store.connection.iterdump()), history)
+
+    def test_map_hostname_collisions_preserve_canonical_labels_and_endpoints(self):
+        cases = (("Shared hostname", None, False, None),
+                 ("Canonical collision", "Canonical collision", False, None),
+                 ("Fallback collision", None, True, None),
+                 ("lab-b", "Friendly A", False, "lab-b"))
+        for hostname, canonical, uuid_collision, second_label in cases:
+            with self.subTest(hostname=hostname, canonical=canonical, uuid_collision=uuid_collision):
+                first, second = storage.identifier(), storage.identifier()
+                with self.store.transaction():
+                    for device in (first, second):
+                        self.store.connection.execute(
+                            "INSERT INTO devices(id,created_at) VALUES (?,?)", (device, storage.timestamp(NOW)))
+                for device in (first, second):
+                    core.record_direct_fact(self.store, "device", device, "hostname", hostname,
+                                            "ssh:fixture", "ssh_response", now=NOW)
+                if canonical:
+                    self.update("canonical_name", canonical, device=first)
+                self.update("relationship", {"target_device": second, "relationship_type": "hosted_on"},
+                            device=first)
+                self.update("relationship", {"target_device": self.device, "relationship_type": "hosted_on"},
+                            device=second)
+                names = {first: canonical or first, second: second_label or second}
+                if uuid_collision:
+                    third = storage.identifier()
+                    with self.store.transaction():
+                        self.store.connection.execute(
+                            "INSERT INTO devices(id,created_at) VALUES (?,?)", (third, storage.timestamp(NOW)))
+                    core.record_direct_fact(self.store, "device", third, "hostname", first,
+                                            "ssh:fixture", "ssh_response", now=NOW)
+                    names[third] = third
+                details = {device: self.detail(device=device) for device in names}
+                self.assertTrue(all(not detail["fields"]["hostname"]["conflict"] for detail in details.values()))
+                history = tuple(self.store.connection.iterdump())
+                files = {path.name: path.read_bytes() for path in self.policy.database.parent.glob("atlas.sqlite3*")}
+                with patch("subprocess.Popen", side_effect=AssertionError("map must not collect")):
+                    outputs = render.render_map(self.policy, now=NOW)
+                    self.assertEqual(render.render_map(self.policy, now=NOW), outputs)
+                for device, name in names.items():
+                    self.assertTrue(any(line.startswith(name + " [observed;")
+                                        for line in outputs["text"].splitlines()))
+                    self.assertIn(f"| {name} ({device}) |", outputs["markdown"])
+                    node = "n" + device.replace("-", "")
+                    self.assertIn(node + '["' + name.replace("-", "#45;") + ' #91;', outputs["mermaid"])
+                    self.assertEqual(self.detail(device=device), details[device])
+                edge = names[first] + " -- hosted_on [user_supplied] --> " + names[second]
+                self.assertIn(edge, outputs["text"])
+                self.assertIn(edge.replace("_", "&#95;").replace("[", "&#91;").replace(
+                    "]", "&#93;").replace(">", "&#62;"), outputs["markdown"])
+                self.assertIn(names[second] + " -- hosted_on [user_supplied] --> Synthetic router", outputs["text"])
+                self.assertIn('n' + first.replace("-", "") + ' -->|"hosted#95;on #91;user#95;supplied#93;"| n'
+                              + second.replace("-", ""), outputs["mermaid"])
+                self.assertEqual(tuple(self.store.connection.iterdump()), history)
+                self.assertEqual({path.name: path.read_bytes() for path in
+                                  self.policy.database.parent.glob("atlas.sqlite3*")}, files)
+
+    def test_observed_hostname_uses_existing_hostile_label_escaping(self):
+        fixture = json.loads((ROOT / "tests" / "fixtures" / "render-golden.json").read_text())
+        device = storage.identifier()
+        with self.store.transaction():
+            self.store.connection.execute(
+                "INSERT INTO devices(id,created_at) VALUES (?,?)", (device, storage.timestamp(NOW)))
+        core.record_direct_fact(self.store, "device", device, "hostname", fixture["hostile_label"] + "\x1b",
+                                "ssh:lab-router", "ssh_response", now=NOW)
+        self.update("relationship", {"target_device": self.device, "relationship_type": "hosted_on"}, device=device)
+        history = tuple(self.store.connection.iterdump())
+        outputs = render.render_map(self.policy, now=NOW)
+        self.assertIn('"|`<script>\\u000a雪\\u001b [', outputs["text"])
+        self.assertIn(fixture["markdown_label"] + "&#92;u001b (" + device + ")", outputs["markdown"])
+        self.assertIn(fixture["mermaid_label"] + "#27; #91;", outputs["mermaid"])
+        self.assertNotIn("<script>", outputs["markdown"])
+        self.assertNotIn('"|`<script>', outputs["mermaid"])
+        for content in outputs.values():
+            self.assertNotIn("\x1b", content)
+        self.assertEqual(tuple(self.store.connection.iterdump()), history)
+
     def test_unicode_hostname_search_read_only_files_and_export_preflight(self):
         self.update("hostname", "雪-host")
         self.assertEqual(query.query(self.policy, {"text": "雪"}, now=NOW)["devices"][0]["id"], self.device)
