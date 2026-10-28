@@ -24,8 +24,11 @@ recovery/application rechecks current authority. See
 Routes never authorize additional ranges. Passive collection reads local `ip`
 JSON. Legacy active discovery uses bounded Nmap host discovery, not service/OS,
 script or UDP scanning. Opt-in sockets use numeric authorized destinations,
-at most four configured TCP ports, and Linux ICMP echo datagrams under existing
-permissions. There is no raw-socket/helper fallback, sudo or privilege grant.
+at most four configured TCP host-discovery ports or 32 separately enabled TCP
+endpoint ports, and Linux ICMP echo datagrams under existing permissions.
+The full endpoint address/port grid must fit the existing observation ceiling
+before traffic; larger selections do not increase concurrency/rate or deadlines.
+There is no raw-socket/helper fallback, sudo or privilege grant.
 TCP checks send/read no application bytes; ICMP sends only an eight-byte header.
 TCP handshakes can still consume connection slots, generate logs and trigger
 kernel retransmissions. Port 4403 is refused without override because contention

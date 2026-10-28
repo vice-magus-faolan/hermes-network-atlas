@@ -97,7 +97,7 @@ class EndpointTests(unittest.TestCase):
         invalid = [{'enabled': True}, {'tcp_ports': [22]}, {'enabled': False, 'tcp_ports': [22]},
                    {'enabled': 1, 'tcp_ports': [22]}, {'enabled': True, 'tcp_ports': [4403]},
                    *({'enabled': True, 'tcp_ports': ports}
-                     for ports in ([True], [0], [-1], [65536], [22, 22], [1, 2, 3, 4, 5], ['22'], [22.0])),
+                     for ports in ([True], [0], [-1], [65536], [22, 22], list(range(1, 34)), ['22'], [22.0])),
                    {'enabled': True, 'tcp_ports': [22], 'ssh_greeting': 'SSH-2.0-evil\n' * 4096}]
         for settings in invalid:
             with self.subTest(settings=str(settings)[:100]), self.assertRaises(config.ConfigError):
@@ -108,6 +108,83 @@ class EndpointTests(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.validate_policy({'networks': {'lab': {'cidr': '2001:db8::/64',
                                                        'endpoints': {'enabled': True, 'tcp_ports': [22]}}}}, self.home)
+
+    def test_endpoint_port_ceiling_and_invalid_lists_through_public_loader(self):
+        for ports in ([1], [65535], list(range(1, 33))):
+            with self.subTest(ports=ports):
+                policy = self.policy(ports=ports)
+                fixture = SyntheticSockets()
+                with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock):
+                    result = json.loads(fixture_handlers(self.home).check_endpoints({'network': 'lab'}))
+                self.assertTrue(result['queryable'], result)
+                self.assertEqual(result['observation_count'], 2 * len(ports))
+                self.assertEqual({row['port'] for row in self.rows(policy, batch_id=result['batch_id'])['endpoints']},
+                                 set(ports))
+                self.assertLessEqual(fixture.peak, 4)
+                self.assertTrue(all(sock.closed for sock in fixture.sockets))
+        path = self.home / 'network-atlas' / 'config.yaml'
+        raw = json.loads(path.read_text())
+        invalid = ((None, 'list'), ((22,), 'list'), ('22', 'list'), ({'22': True}, 'list'),
+                   ([], 'nonempty'), (list(range(1, 34)), '32'), ([True], 'integer'),
+                   ([False], 'integer'), ([22.0], 'integer'), (['22'], 'integer'),
+                   ([None], 'integer'), ([[22]], 'integer'), ([0], '1..65535'),
+                   ([-1], '1..65535'), ([65536], '1..65535'), ([22, 22], 'distinct'), ([4403], '4403'))
+        with storage.Store(policy) as store:
+            history = tuple(store.connection.iterdump())
+        for ports, reason in invalid:
+            with self.subTest(ports=ports):
+                raw['networks']['lab']['endpoints']['tcp_ports'] = ports
+                # Preserve the tuple type for the native-value validator control;
+                # JSON otherwise normalizes it to an accepted list.
+                def loader(raw=raw):
+                    return config.validate_policy(raw, self.home)
+                with patch.object(endpoints, 'Scheduler') as scheduler, \
+                        patch.object(transport.socket, 'socket') as socket:
+                    result = json.loads(tools.Handlers(loader).check_endpoints({'network': 'lab'}))
+                self.assertIn('network.endpoints', result['error'])
+                self.assertIn(reason, result['error'])
+                self.assertFalse(result['persisted'])
+                scheduler.assert_not_called()
+                socket.assert_not_called()
+        with storage.Store(policy) as store:
+            self.assertEqual(tuple(store.connection.iterdump()), history)
+
+    def test_large_grid_refuses_before_planning_traffic_or_store(self):
+        for ports, limits in ((list(range(1, 33)), None), (list(range(1, 18)), None),
+                              ([22, 2222, 8006, 8384, 22000], {'observations': 1279})):
+            with self.subTest(ports=ports, limits=limits):
+                policy = self.policy(cidr='192.168.1.0/24', ports=ports, limits=limits)
+                with patch.object(endpoints, 'Scheduler') as scheduler, patch.object(endpoints, 'plans') as plans, \
+                        patch.object(transport.socket, 'socket') as socket, patch.object(endpoints, 'Store') as opened:
+                    result = json.loads(fixture_handlers(self.home).check_endpoints({'network': 'lab'}))
+                self.assertIn('limits.observations', result['error'])
+                self.assertFalse(result['persisted'])
+                scheduler.assert_not_called()
+                plans.assert_not_called()
+                socket.assert_not_called()
+                opened.assert_not_called()
+                self.assertFalse(policy.database.exists())
+        # The exact hard grid boundary is admissible; deadlines still leave
+        # truthful unstarted work rather than increasing runtime power.
+        policy = self.policy(cidr='192.168.1.0/24', ports=list(range(1, 17)),
+                             limits={'operation_timeout_seconds': 2, 'host_timeout_seconds': 1})
+        fixture = SyntheticSockets(lambda address, port: 'closed' if address == '192.168.1.1' else 'filtered')
+        with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock):
+            result = json.loads(fixture_handlers(self.home).check_endpoints({'network': 'lab'}))
+        self.assertTrue(result['queryable'], result)
+        self.assertEqual(result['observation_count'], 4096)
+        self.assertEqual(sum(result['state_counts'].values()), 4096)
+        self.assertEqual(result['completion'], 'partial')
+        self.assertGreater(result['state_counts']['not_started'], 0)
+        self.assertGreater(result['state_counts']['no_response'], 0)
+        self.assertEqual(result['state_counts']['unavailable'], 32)
+        self.assertLessEqual(fixture.peak, 4)
+        self.assertLessEqual(fixture.clock.now - fixture.calls[0][0], 1.5 + 1e-6)
+        self.assertEqual(len(fixture.calls), len({(a, p) for _, a, p in fixture.calls}))
+        self.assertTrue(all(later[0] - earlier[0] >= 1 / 32 - 1e-7
+                            for earlier, later in zip(fixture.calls, fixture.calls[1:], strict=False)))
+        self.assertTrue(all(sock.closed for sock in fixture.sockets))
+        self.assertEqual(self.rows(policy, batch_id=result['batch_id'])['total_count'], 4096)
 
     def test_all_public_request_injections_refuse_before_effects(self):
         policy = self.policy()

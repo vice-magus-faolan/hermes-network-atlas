@@ -187,6 +187,66 @@ class ContinuationTests(unittest.TestCase):
         self.assertFalse(no_calls or repeated_calls)
         self.assertEqual(self.history(), history)
 
+    def test_old_four_and_larger_five_port_history_recovery_and_exact_continuation(self):
+        for ports in ([22, 2222, 8006, 8384], [22, 2222, 8006, 8384, 22000]):
+            with self.subTest(ports=ports):
+                self.policy = config.validate_policy({
+                    'networks': {'lab': {'cidr': '192.168.1.0/28',
+                                         'endpoints': {'enabled': True, 'tcp_ports': ports}}},
+                    'limits': {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}}, self.home)
+                # Save genuine evidence but interrupt projection, as can happen
+                # to a four-port producer before an upgrade.
+                with patch.object(endpoints, '_project', side_effect=sqlite3.OperationalError('interrupted')):
+                    first, prior_calls = self.invoke({'network': 'lab'}, response=lambda address, port:
+                                                     'closed' if address == '192.168.1.1' else 'filtered')
+                self.assertTrue(first['persisted'], first)
+                self.assertFalse(first['applied'] or first['queryable'])
+                batch = first['batch_id']
+                raw_history = self.history(batch)
+                with patch.object(transport.socket, 'socket', side_effect=AssertionError('resume contacted')):
+                    resumed = json.loads(self.handler().command('resume-endpoints ' + batch))
+                self.assertTrue(resumed['queryable'], resumed)
+                self.assertFalse(resumed['collection_performed'])
+                original = self.history(batch)
+                assert isinstance(original, dict) and isinstance(raw_history, dict)
+                self.assertEqual(original['batches'], raw_history['batches'])
+                self.assertEqual(original['probes'], raw_history['probes'])
+                rows, history = self.rows(batch), self.history()
+                remaining = {(row['address'], row['port']) for row in rows if row['state'] == 'not_started'}
+                self.assertTrue(remaining and prior_calls)
+                self.assertEqual({row['port'] for row in rows}, set(ports))
+                self.assertEqual({row['policy_context'] for row in rows}, {str(self.home)})
+                changed = replace(self.policy, networks=(replace(self.policy.networks[0], endpoint_ports=(
+                    tuple(ports + [22000]) if len(ports) == 4 else tuple(ports[:-1]))),))
+                revoked = replace(self.policy, networks=())
+                for denied in (changed, revoked):
+                    with patch.object(transport.socket, 'socket', side_effect=AssertionError('denied contacted')):
+                        self.assertEqual(json.loads(self.handler(denied).query(
+                            {'view': 'endpoints', 'batch_id': batch}))['endpoints'], rows)
+                        status = json.loads(self.handler(denied).command('status'))
+                        self.assertGreaterEqual(status['endpoint_observation_count'], len(rows))
+                        for selection in ('batch_id', 'preview_batch_id', 'continue_batch_id'):
+                            refused = json.loads(self.handler(denied).check_endpoints({selection: batch}))
+                            self.assertIn('error', refused)
+                    self.assertEqual(self.history(), history)
+                with patch.object(transport.socket, 'socket', side_effect=AssertionError('preview contacted')):
+                    preview = self.preview(batch)
+                self.assertEqual({(row['address'], row['port']) for row in preview['remaining']}, remaining)
+                second, calls = self.invoke({'continue_batch_id': batch})
+                self.assertTrue(second['queryable'], second)
+                self.assertTrue(calls)
+                self.assertEqual(calls, remaining)
+                self.assertFalse(calls & prior_calls)
+                self.assertEqual(self.history(batch), original)
+                self.assertEqual(self.rows(batch), rows)
+                history = self.history()
+                with patch.object(transport.socket, 'socket', side_effect=AssertionError('repeat contacted')):
+                    repeated = json.loads(self.handler().command('continue-endpoints ' + batch))
+                self.assertTrue(repeated['queryable'], repeated)
+                self.assertEqual(repeated['batch_id'], second['batch_id'])
+                self.assertFalse(repeated['collection_performed'])
+                self.assertEqual(self.history(), history)
+
     def test_lower_deadline_retains_truthful_unstarted_work_and_bounded_preview(self):
         first, _ = self.partial()
         lower = replace(self.policy, limits=replace(self.policy.limits, operation_timeout_seconds=1, result_count=2))

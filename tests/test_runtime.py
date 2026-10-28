@@ -178,9 +178,10 @@ class NativeRuntimeTests(unittest.TestCase):
                     (home / 'network-atlas').mkdir()
                 raw: dict = {} if mode == 'isolated' else {'store': {'shared_sqlite_path': str(shared)}}
                 if mode == 'collect':
-                    raw['networks'] = {'lab': {'cidr': '192.0.2.0/27' if continuation else '192.0.2.8/31',
+                    raw['networks'] = {'lab': {'cidr': '192.0.2.0/27' if continuation else '192.168.1.0/24',
                                               'allow_public': True,
-                                              'endpoints': {'enabled': True, 'tcp_ports': [22, 2222]}}}
+                                              'endpoints': {'enabled': True, 'tcp_ports': (
+                                                  [22, 2222] if continuation else [22, 2222, 8006, 8384, 22000])}}}
                     if continuation:
                         raw['limits'] = {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}
                 if mode != 'owner':
