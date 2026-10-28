@@ -3,6 +3,7 @@
 from dataclasses import replace
 import errno
 import importlib
+import json
 from pathlib import Path
 import struct
 import unittest
@@ -88,17 +89,42 @@ class HostTransportTests(unittest.TestCase):
         policy = self.policy(cidr='192.0.2.8/31')
         result = self.collect(policy, SyntheticSockets())
         self.assertEqual(result['completion'], 'complete')
-        self.assertEqual(len(self.evidence(policy, result)), 10)
+        originals = self.evidence(policy, result)
+        self.assertEqual(len(originals), 10)
         applied = reconcile.reconcile(policy, {'batch_id': result['batch_id']})
-        self.assertEqual(len(applied['unresolved']), 10)
+        self.assertEqual(len(applied['unresolved']), 5)
+        self.assertEqual(applied['unresolved_total_count'], 10)
+        self.assertEqual(applied['unresolved_omitted_count'], 5)
+        self.assertEqual(applied['uncertainty']['observation_count'], 10)
         self.assertEqual(query.query(policy, {})['devices'], [])
         with storage.Store(policy) as store:
+            saved = store.connection.execute('SELECT result_json FROM applications WHERE batch_id=?',
+                                             (result['batch_id'],)).fetchone()[0]
+            frozen = json.loads(saved)['unresolved']
+            self.assertEqual(len(frozen), 10)
+            self.assertEqual({row['evidence_id'] for row in frozen}, {row['id'] for row in originals})
+            self.assertEqual(len({row['evidence_id'] for row in applied['unresolved']}), 5)
+            self.assertTrue({row['evidence_id'] for row in applied['unresolved']} <=
+                            {row['evidence_id'] for row in frozen})
             totals = query._probe_totals(store, result['batch_id'])
             self.assertEqual(
                 (totals['address_count'], totals['responding_address_count'], totals['total_count']), (2, 2, 13))
             self.assertEqual(store.connection.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+        retained = []
+        for offset in (0, 5):
+            page = query.query(policy, {**applied['evidence_query'], 'offset': offset})
+            self.assertEqual((len(page['evidence']), page['total_count'], page['omitted_count']), (5, 10, 5))
+            self.assertEqual(page['has_more'], offset == 0)
+            retained.extend(page['evidence'])
+        for original, row in zip(originals, retained, strict=True):
+            for key in ('id', 'value', 'field', 'source', 'confidence', 'observed_at', 'evidence_kind',
+                        'qualified', 'subject_anchor', 'probe', 'batch'):
+                self.assertEqual(row[key], original[key])
         self.assertEqual(reconcile.reconcile(policy, {'batch_id': result['batch_id']}), applied)
         self.assertEqual(len(self.evidence(policy, result)), 10)
+        with storage.Store(policy) as store:
+            self.assertEqual(store.connection.execute('SELECT result_json FROM applications WHERE batch_id=?',
+                                                      (result['batch_id'],)).fetchone()[0], saved)
 
     def test_denied_missing_icmp_does_not_suppress_tcp_and_no_fallback(self):
         for number in (errno.EACCES, errno.EPROTONOSUPPORT):

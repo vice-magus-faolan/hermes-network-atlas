@@ -730,6 +730,9 @@ class TopologyInspectionTests(AtlasFixture):
         route = next(row for row in self.topology(receipt) if row["kind"] == "route")
         self.assertEqual(route["resolution"]["reason"], "no_unique_stable_peer")
         self.assertEqual([item["reason"] for item in applied["unresolved"]], ["no_unique_stable_peer"])
+        parameters = {"view": "unresolved", "batch_id": receipt["batch_id"], "summary": True}
+        summary = json.loads(self.handlers.query(parameters))["summary"]
+        self.assertEqual(summary["current_unresolved_observation_count"], 1)
         self.assert_no_edges()
         self.known_peer()
         route = next(row for row in self.topology(receipt) if row["kind"] == "route")
@@ -738,6 +741,147 @@ class TopologyInspectionTests(AtlasFixture):
         self.assert_no_edges()
         _, successor = self.apply()
         self.assertEqual(len(successor["relationships"]), 1)
+        summary = json.loads(self.handlers.query(parameters))["summary"]
+        self.assertEqual(summary["current_unresolved_observation_count"], 0)
+        self.assertEqual(summary["inactive_observation_count"], 1)
+
+    def noisy_interfaces(self):
+        payloads = self.payloads()
+        interfaces = [{"ifname": "fixture0", "address": MAC, "operstate": "UP",
+                       "addr_info": [{"local": "198.51.100.1", "prefixlen": 24}]}]
+        interfaces += [{"ifname": f"veth{n:03}", "address": f"02:00:00:00:00:{n:02x}", "operstate": "UP",
+                        "addr_info": [{"local": f"192.0.2.{n + 1}", "prefixlen": 24}]} for n in range(40)]
+        interfaces.append({"ifname": "collision0", "address": MAC2, "operstate": "UP", "addr_info": []})
+        payloads["ip -j address"] = json.dumps(interfaces).encode()
+        payloads["ip -j link"] = json.dumps([{key: value for key, value in row.items() if key != "addr_info"}
+                                            for row in interfaces]).encode()
+        payloads["ip -j route"] = json.dumps([
+            {"dst": "default", "gateway": "198.51.100.254", "dev": "fixture0"},
+            {"dst": "203.0.113.0/24", "gateway": "198.51.100.253", "dev": "fixture0", "table": 100}]).encode()
+        return payloads
+
+    def test_actionable_uncertainty_survives_virtual_noise_and_complete_read_only_drilldown(self):
+        core.add_interface(self.store, self.device, "other0", MAC2, now=self.clock)
+        receipt = self.public_collect(self.noisy_interfaces())
+        self.assertEqual(receipt["completion"], "complete")
+        self.assertTrue(all(probe["outcome"] == "success" for probe in receipt["probes"]))
+        parameters = {"view": "unresolved", "batch_id": receipt["batch_id"], "summary": True}
+        kinds = [row[0] for row in self.store.connection.execute(
+            "SELECT subject_kind FROM observations WHERE batch_id=? AND entity_id IS NULL",
+            (receipt["batch_id"],))]
+        self.assertEqual(kinds.count("route"), 2)
+        self.assertGreater(sum(kind not in {"route", "neighbor"} for kind in kinds), 0)
+        before = list(self.store.connection.iterdump())
+        files = {p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}
+        with patch("subprocess.Popen", side_effect=AssertionError("reads never collect")):
+            pending = json.loads(self.handlers.query(parameters))
+        self.assertNotIn("error", pending)
+        self.assertEqual(pending["total_count"], len(kinds))
+        self.assertEqual({key: value for key, value in pending["summary"].items() if key != "uncertainty"},
+                         {"unapplied_observation_count": len(kinds) - kinds.count("neighbor"),
+                          "supporting_observation_count": kinds.count("neighbor"),
+                          "current_unresolved_observation_count": 0, "resolved_observation_count": 0,
+                          "unknown_observation_count": 0, "inactive_observation_count": 0})
+        self.assertEqual(pending["summary"]["uncertainty"]["observation_count"], 0)
+        self.assertEqual(pending["summary"]["uncertainty"]["reasons"], [])
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+        self.assertEqual({p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}, files)
+        applied = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", applied)
+        summary = applied["uncertainty"]
+        self.assertEqual(summary["temporal_scope"], "at_application")
+        self.assertEqual(summary["observation_count"], 206)
+        self.assertEqual(summary["subject_count"], 43)
+        reasons = {group["reason"]: group for group in summary["reasons"]}
+        self.assertEqual(set(reasons), {"no_unique_stable_interface", "no_unique_stable_peer", "unsupported_route"})
+        self.assertEqual(reasons["no_unique_stable_interface"]["observation_count"], 204)
+        self.assertEqual(reasons["no_unique_stable_interface"]["subject_count"], 41)
+        self.assertLessEqual(len(applied["unresolved"]), 5)
+        self.assertEqual({row["reason"] for row in applied["unresolved"]}, set(reasons))
+        self.assertTrue(any(row.get("candidate_device_ids") == [self.device] for row in applied["unresolved"]))
+        self.assertEqual(applied["unresolved_omitted_count"], 201)
+        self.assertLess(len(json.dumps(summary)), 8000)
+        device = json.loads(self.handlers.query({"device_id": applied["new"][0]}))["devices"][0]
+        self.assertEqual([i["mac_address"] for i in device["interfaces"]], [MAC])
+        original = [dict(row) for row in self.store.connection.execute(
+            "SELECT * FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY observed_at DESC,id",
+            (receipt["batch_id"],))]
+        saved = self.store.connection.execute("SELECT result_json FROM applications WHERE batch_id=?",
+                                             (receipt["batch_id"],)).fetchone()[0]
+        self.assertEqual(len(json.loads(saved)["unresolved"]), 206)
+        before = list(self.store.connection.iterdump())
+        files = {p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}
+        with patch("subprocess.Popen", side_effect=AssertionError("reads never collect")):
+            current = json.loads(self.handlers.query(parameters))
+            self.assertNotIn("error", current)
+            self.assertEqual(current["total_count"], len(original))
+            self.assertEqual(current["summary"]["current_unresolved_observation_count"], 206)
+            self.assertEqual(current["summary"]["uncertainty"]["subject_count"], 43)
+            self.assertEqual(current["summary"]["supporting_observation_count"], 1)
+            self.assertGreater(current["summary"]["resolved_observation_count"], 0)
+            self.assertLess(len(json.dumps(current)), 10000)
+            retained = []
+            for offset in range(0, len(original), 23):
+                page = json.loads(self.handlers.query({"view": "unresolved", "batch_id": receipt["batch_id"],
+                                                       "limit": 23, "offset": offset}))
+                self.assertNotIn("error", page)
+                self.assertEqual(page["total_count"], len(original))
+                self.assertEqual(page["omitted_count"], len(original) - len(page["evidence"]))
+                retained.extend(page["evidence"])
+            self.assertEqual([row["id"] for row in retained], [row["id"] for row in original])
+            for row, raw in zip(retained, original, strict=True):
+                self.assertEqual((row["value"], row["source"], row["observed_at"], row["batch"]["id"],
+                                  row["probe"]["id"], row["subject_anchor"]),
+                                 (json.loads(raw["value_json"]), raw["source"], raw["observed_at"], raw["batch_id"],
+                                  raw["probe_id"], json.loads(raw["subject_anchor"])))
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+        self.assertEqual({p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}, files)
+        self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
+        small = replace(self.policy, limits=replace(self.policy.limits, result_count=2))
+        truncated = json.loads(tools.Handlers(lambda: small).query(parameters))
+        self.assertNotIn("error", truncated)
+        reasons = truncated["summary"]["uncertainty"]
+        self.assertEqual((reasons["reason_count"], reasons["omitted_reason_count"], len(reasons["reasons"])), (3, 1, 2))
+        self.assertEqual(reasons["observation_count"], 206)
+
+    def test_complete_saved_conflicts_survive_noise_and_replay_without_history_changes(self):
+        payloads = self.noisy_interfaces()
+        interfaces = json.loads(payloads["ip -j address"])
+        for n in range(7):
+            interfaces += [{"ifname": f"duplicate{n}_{side}", "address": f"00:22:33:44:55:{n:02x}",
+                            "operstate": "UP", "addr_info": []} for side in (0, 1)]
+        payloads["ip -j address"] = json.dumps(interfaces).encode()
+        payloads["ip -j link"] = json.dumps([{key: value for key, value in row.items() if key != "addr_info"}
+                                            for row in interfaces]).encode()
+        receipt = self.public_collect(payloads)
+        applied = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", applied)
+        saved = json.loads(self.store.connection.execute(
+            "SELECT result_json FROM applications WHERE batch_id=?", (receipt["batch_id"],)).fetchone()[0])
+        self.assertEqual(applied["conflicting"], saved["conflicting"])
+        self.assertEqual(len(applied["conflicting"]), 7)
+        self.assertTrue(all("evidence_id" not in entry for entry in applied["conflicting"]))
+        self.assertEqual((applied["conflicting_total_count"], applied["conflicting_omitted_count"]), (7, 0))
+        uncertainty = applied["uncertainty"]
+        self.assertEqual(uncertainty["conflict_record_count"], 7)
+        self.assertEqual(uncertainty["conflict_reasons"], [
+            {"reason": "duplicate_remote_interface_mac", "conflict_record_count": 7}])
+        self.assertEqual(uncertainty["observation_count"], len(saved["unresolved"]))
+        self.assertIn("no_unique_stable_peer", {group["reason"] for group in uncertainty["reasons"]})
+        originals = [row[0] for row in self.store.connection.execute(
+            "SELECT id FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY observed_at DESC,id",
+            (receipt["batch_id"],))]
+        before = list(self.store.connection.iterdump())
+        with patch("subprocess.Popen", side_effect=AssertionError("replay must not collect")):
+            self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
+            retained = []
+            for offset in range(0, len(originals), 23):
+                page = json.loads(self.handlers.query({"view": "unresolved", "batch_id": receipt["batch_id"],
+                                                       "limit": 23, "offset": offset}))
+                self.assertNotIn("error", page)
+                retained.extend(row["id"] for row in page["evidence"])
+            self.assertEqual(retained, originals)
+        self.assertEqual(list(self.store.connection.iterdump()), before)
 
     def test_connected_only_retains_evidence_without_unresolved_receipt_or_status_warning(self):
         payloads = self.payloads()
@@ -965,6 +1109,15 @@ class TopologyInspectionTests(AtlasFixture):
         route = next(row for row in self.topology(receipt) if row["kind"] == "route")
         self.assertEqual(route["resolution"]["reason"], "unapplied_or_ambiguous_origin")
         self.assertIsNone(route["origin_device"])
+        snapshot = list(self.store.connection.iterdump())
+        summary = json.loads(self.handlers.query(
+            {"view": "unresolved", "batch_id": receipt["batch_id"], "summary": True}))
+        self.assertNotIn("error", summary)
+        self.assertEqual(summary["summary"]["unapplied_observation_count"], 0)
+        self.assertEqual(summary["summary"]["current_unresolved_observation_count"], 1)
+        self.assertEqual([group["reason"] for group in summary["summary"]["uncertainty"]["reasons"]],
+                         ["unapplied_or_ambiguous_origin"])
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
 
 
 class InspectionParserTests(unittest.TestCase):

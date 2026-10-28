@@ -19,7 +19,7 @@ from .endpoints import endpoint_counts, query_endpoints
 from .topology import TopologySnapshot, query_topology, relation_condition
 
 QUERY_KEYS = {"view", "device_id", "name", "address", "device_type", "status", "access_method",
-              "relationship", "related_to", "text", "limit", "offset", "batch_id"}
+              "relationship", "related_to", "text", "limit", "offset", "batch_id", "summary"}
 STATUSES = ("known", "observed", "stale", "retired", "unknown")
 
 
@@ -29,7 +29,7 @@ def validate_query(params: object, policy: Policy) -> dict:
         raise RequestError("query arguments: object with documented filters required")
     result = dict(params)
     for key, value in result.items():
-        if key not in {"limit", "offset"}:
+        if key not in {"limit", "offset", "summary"}:
             _text(value, policy.limits.input_chars, key)
     _enum(result, "view", ("devices", "status", "history", "unresolved", "endpoints", "topology"))
     _enum(result, "device_type", DEVICE_TYPES)
@@ -54,14 +54,18 @@ def validate_query(params: object, policy: Policy) -> dict:
 def _validate_view(params: dict) -> None:
     view = params.get("view", "devices")
     allowed = {"status": {"view"}, "history": {"view", "device_id", "limit", "offset"},
-               "unresolved": {"view", "address", "batch_id", "limit", "offset"},
+               "unresolved": {"view", "address", "batch_id", "limit", "offset", "summary"},
                "endpoints": {"view", "address", "batch_id", "limit", "offset"},
                "topology": {"view", "address", "batch_id", "limit", "offset"},
-               "devices": QUERY_KEYS - {"batch_id"}}
+               "devices": QUERY_KEYS - {"batch_id", "summary"}}
     if not set(params) <= allowed[view]:
         raise RequestError("view: use only filters supported by the selected query view")
     if params.get("view") == "history" and "device_id" not in params:
         raise RequestError("device_id: history view requires an existing device ID")
+    if "summary" in params and type(params["summary"]) is not bool:
+        raise RequestError("summary: boolean required")
+    if params.get("summary") and ("batch_id" not in params or params.get("offset", 0)):
+        raise RequestError("summary: select one batch_id with offset zero; use detail pagination for originals")
 
 
 def _enum(params: dict, key: str, choices: tuple[str, ...]) -> None:

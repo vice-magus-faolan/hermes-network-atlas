@@ -25,6 +25,9 @@ QUERY_SCHEMA = {
                 "relationship", "related_to", "text")},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100},
             "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
+            "summary": {"type": "boolean", "description": (
+                "Unresolved view only: compact current uncertainty for one required batch_id, offset zero. "
+                "Omit or use false for complete original-evidence pagination.")},
         },
         "required": [],
     },

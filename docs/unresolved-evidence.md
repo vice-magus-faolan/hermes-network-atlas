@@ -8,8 +8,8 @@ NULL original `entity_id` alone never means unresolved identity.
 
 ## Request contract
 
-Only `view`, optional `address`, optional `batch_id`, `limit`, and `offset` are
-accepted for this view. Filters intersect. No device ID is required.
+Only `view`, optional `address`, optional `batch_id`, `summary`, `limit`, and
+`offset` are accepted for this view. Filters intersect. No device ID is required.
 
 - `address`: exact canonical unscoped IPv4/IPv6 literal. No CIDRs, hostnames,
   zone suffixes, normalized alternatives, wildcards or free text. The filter
@@ -23,6 +23,9 @@ accepted for this view. Filters intersect. No device ID is required.
   default is that ceiling. Booleans/fractions/coercions fail.
 - `offset`: integer 0–10000, or the lower current `limits.page_offset` ceiling;
   default 0. Advance offset by the returned page size while `has_more=true`.
+- `summary`: boolean, default false. True requires one exact `batch_id` and offset
+  zero; it returns compact current diagnostics instead of an evidence page.
+  The optional address filter still intersects. See below for counts and bounds.
 - `batch_id` is also supported by the separate endpoint view, not
   devices/status/history. Other inventory/history filters are rejected on this
   view. No SQL, paths, commands, source, policy or grants inputs.
@@ -34,10 +37,70 @@ silently deduplicated devices/responders. Each invocation has one read snapshot;
 concurrent appends can shift offset pages between invocations (not a cursor or a
 cross-request snapshot guarantee).
 
-The response has `view`, `evidence`, `limit`, `offset`, `has_more`,
+The detail response has `view`, `evidence`, `limit`, `offset`, `has_more`,
+`total_count` (all retained originals matching the filters), `omitted_count`
+(matching originals not in this page, including earlier pages),
 `discovery_performed=false`, and an explicit historical-only reachability message.
 A missing store gives the same empty shape and never creates directories/files.
 The serialized byte cap also applies to empty responses.
+
+## Compact uncertainty and current state
+
+Reconciliation with uncertainty returns a compact projection of the complete
+immutable application. `unresolved` samples at most five observations (or the
+lower result_count); `unresolved_total_count` and `unresolved_omitted_count`
+describe the full saved list. `conflicting` retains EVERY saved conflict record,
+including duplicate MACs, ambiguous aliases and equal-rank disagreements without
+an evidence ID. Its `conflicting_total_count` counts records and
+`conflicting_omitted_count` is zero; the complete response must still fit the
+configured byte/deadline bounds or it refuses. Conflict records are not device,
+subject or observation counts, and can overlap unresolved observations.
+
+`uncertainty` presents conflict diagnostics separately, before repetitive field
+uncertainty: `conflict_record_count`, `conflict_reason_count`, at most five
+`conflict_reasons` (or the lower result_count), and `omitted_conflict_reason_count`.
+Each conflict reason counts saved records, without inventing evidence IDs or
+subject identities. The complete `conflicting` list remains available even when
+reason examples are omitted. Separately, `uncertainty` groups unresolved observations by
+reason and identity/topology category, reporting `observation_count`, diagnostic
+`subject_count`, and candidate-bearing `conflicting_observation_count` per reason.
+Each reason has at most three example subjects with one original `evidence_id`
+pointer, not an embedded evidence list. Reason/subject omissions are explicit.
+Conflicts and topology reasons take precedence over repetitive candidate-free
+interface fields. Collection completion and probe outcomes remain separate.
+
+Diagnostic subjects belong only to the selected batch/origin, never canonical
+devices. Repeated fields for one uniquely named interface/anchor count as one
+subject. Ambiguous anchors and MAC-less labels retain probe/value qualification
+where no interface can safely be selected; their subject count is not an estimate
+of physical devices. Locally administered MACs remain unresolved. No identity
+rule, original observation, saved application or audit total is changed.
+
+Replays return the same application-time projection, including its original
+applied_at and event IDs; they do not refresh uncertainty from newer evidence.
+Older saved applications receive the same read-only projection without rewriting
+their receipts. `evidence_query` points to complete native original pagination;
+`current_summary_query` selects the separate present-state interpretation:
+
+    hermes network-atlas query --query-json '{"view":"unresolved","batch_id":"BATCH_ID","summary":true}'
+
+This response includes the batch/probe summary, retained `total_count`, and a
+`summary` with mutually exclusive observation counts: `current_unresolved`,
+`resolved`, `supporting`, `unapplied`, `unknown`, and `inactive` (each suffixed
+`_observation_count`). Current identity follows the existing same-subject lineage;
+current route support follows the topology resolver. Neighbor caches are supporting
+metadata, and superseded/expired route configuration is inactive, not a current
+failure. Unknown outcomes are not silently called unresolved. Identity resolution
+does not establish current reachability or topology support.
+
+The current `uncertainty` uses the bounded observation reason/subject shape, marked
+`temporal_scope=current` instead of `at_application`. Summary replies intentionally
+return no evidence rows (`omitted_count=total_count`, `has_more=false`); follow
+`detail_query`, removing summary, to page all originals. Summary work is restricted
+to one batch under the existing observations, operation and byte ceilings; an
+over-limit batch refuses rather than returning a deceptively complete prefix.
+Unrelated batches do not consume that batch's observation ceiling. Detail
+pagination remains usable independently of this optional summary ceiling.
 
 ## Evidence and provenance
 
@@ -126,9 +189,17 @@ payloads and saved receipts are bounded before JSON parsing; oversized payloads
 refuse without returning a truncated value. Saved receipts are bounded
 before JSON parsing by the reader's output_bytes; a lowered byte cap may refuse
 older larger receipts even for limit=1. Final JSON uses that same output cap.
+Reconciliation replay also reads the original batch to project uncertainty: a
+populated saved result that fits output_bytes can still refuse when the current
+limits.observations is lower than its original-row count. It does not reapply or
+truncate the saved application. Restore sufficient configured capacity to replay;
+original evidence pagination remains independent of that summary row ceiling.
 Saved unresolved entries require string evidence_id/reason and an optional list
-of string candidate_device_ids; malformed entries fail with a controlled query
-error, for original applications and subsequent lineage alike. No receipt is
+of string candidate_device_ids; every referenced ID must belong to an original
+observation in that application batch. Malformed/foreign/missing entries fail with
+a controlled public error, including replay, original reads and subsequent lineage.
+Conflict records may omit evidence_id; any supplied ID has the same membership
+requirement. No receipt is
 rewritten or repaired by reading it.
 One operation_timeout_seconds budget covers the read, with SQLite progress
 interruption during long statements, bounded busy waits, Python phase checks and
