@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Owned nonblocking host-only sockets; no raw sockets, payloads or helper fallback."""
+"""Owned nonblocking sockets; fixed empty UDP/ICMP header, no arbitrary payloads."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ import struct
 import sys
 import time
 
-from .config import EXCLUDED_TCP_PORTS, Network, validate_network
+from .config import EXCLUDED_TCP_PORTS, EXCLUDED_UDP_PORTS, Network, validate_network
 
 Outcome = tuple[str, str, bool]
 
@@ -26,6 +26,7 @@ class Attempt:
     deadline: float
     identifier: int = 0
     sequence: int = 1
+    protocol: str = 'tcp'
 
 
 def checksum(packet: bytes) -> int:
@@ -69,17 +70,74 @@ def _tcp_result(code: int) -> tuple[str, str, bool]:
 
 
 def begin_endpoint(network: Network, address: str, port: int | None,
-                   deadline: float) -> tuple[Attempt | None, Outcome | None]:
+                   deadline: float, *, protocol: str = 'tcp') -> tuple[Attempt | None, Outcome | None]:
     """Separate endpoint grant, checked at the actual socket-effect boundary."""
     validate_network(network, active=True)
+    forbidden = EXCLUDED_UDP_PORTS if protocol == 'udp' else EXCLUDED_TCP_PORTS
     if (excluded(network, address) or type(port) is not int
-            or port not in network.endpoint_ports or port in EXCLUDED_TCP_PORTS):
+            or (protocol, port) not in network.endpoint_methods or port in forbidden):
         raise ValueError('endpoint destination/port not authorized')
     if not math.isfinite(deadline):
         raise ValueError('finite endpoint deadline required')
     if time.monotonic() >= deadline:
         return None, ('not_started', 'effective_deadline_before_start', False)
-    return _open(address, port, deadline)
+    return _open_udp(address, port, deadline) if protocol == 'udp' else _open(address, port, deadline)
+
+
+def _open_udp(address: str, port: int, deadline: float) -> tuple[Attempt | None, Outcome | None]:
+    """One empty unicast datagram; local connect/send success is never evidence.
+
+    No SO_REUSEADDR, broadcast, raw ICMP, error queue or application payload.
+    Each connected socket owns a fresh ephemeral tuple until its deadline.
+    """
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setblocking(False)
+        if time.monotonic() >= deadline:
+            sock.close()
+            return None, ('not_started', 'effective_deadline_before_start', False)
+        code = sock.connect_ex((address, port))
+        if code:
+            raise OSError(code, '')
+        if time.monotonic() >= deadline:
+            sock.close()
+            return None, ('not_started', 'effective_deadline_before_start', False)
+        if sock.send(b'') != 0:
+            raise OSError(errno.EIO, '')
+        return Attempt(sock, address, port, deadline, protocol='udp'), None
+    except BaseException as error:
+        if sock is not None:
+            sock.close()
+        if isinstance(error, OSError):
+            return None, _error(error)
+        raise
+
+
+def _udp_ready(attempt: Attempt, remaining_bytes: int) -> tuple[Outcome | None, int]:
+    """Validate the empty-reply method, not a QUIC/application service identity."""
+    if time.monotonic() >= attempt.deadline:
+        return ('timeout', 'effective_transport_deadline', False), 0
+    try:
+        packet, source = attempt.sock.recvfrom(min(65536, remaining_bytes + 1))
+        if len(packet) > remaining_bytes:
+            return ('output_limit', 'shared_receive_limit', False), len(packet)
+        if time.monotonic() >= attempt.deadline:
+            return ('timeout', 'effective_transport_deadline', False), len(packet)
+        if packet == b'' and source == (attempt.address, attempt.port):
+            return ('success', 'udp_empty_reply', True), 0
+        return None, len(packet)
+    except BlockingIOError:
+        return None, 0
+    except OSError as error:
+        if time.monotonic() >= attempt.deadline:
+            return ('timeout', 'effective_transport_deadline', False), 0
+        if error.errno == errno.ECONNREFUSED:
+            return ('success', 'udp_kernel_rejected', True), 0
+        if error.errno in {errno.EHOSTUNREACH, errno.ENETUNREACH}:
+            return ('timeout', 'udp_host_unreachable', False), 0
+        outcome, diagnostic, qualified = _error(error)
+        return (outcome, 'udp_receive_' + diagnostic, qualified), 0
 
 
 def begin(network: Network, address: str, port: int | None, deadline: float) -> tuple[Attempt | None, Outcome | None]:
@@ -149,6 +207,8 @@ def _initiate(attempt: Attempt) -> Outcome | None:
 
 def ready(attempt: Attempt, remaining_bytes: int) -> tuple[Outcome | None, int]:
     """Validate a bounded matching response; return outcome (or pending), bytes read."""
+    if attempt.protocol == 'udp':
+        return _udp_ready(attempt, remaining_bytes)
     try:
         if attempt.port is not None:
             code = attempt.sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
@@ -172,5 +232,5 @@ def _reply(attempt: Attempt, packet: bytes, source: tuple) -> bool:
     return (kind, code, identifier, sequence) == (0, 0, attempt.identifier, attempt.sequence)
 
 
-def event_mask(port: int | None) -> int:
-    return selectors.EVENT_WRITE if port is not None else selectors.EVENT_READ
+def event_mask(port: int | None, protocol: str = 'tcp') -> int:
+    return selectors.EVENT_WRITE if port is not None and protocol == 'tcp' else selectors.EVENT_READ

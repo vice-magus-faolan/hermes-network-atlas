@@ -261,11 +261,11 @@ class EndpointTests(unittest.TestCase):
             with self.subTest(state=state):
                 fixture = SyntheticSockets(lambda address, port: 'positive' if port == 22 else 'filtered')
                 original = transport.begin_endpoint
-                def begin(network, address, port, deadline, *, state=state, original=original):
+                def begin(network, address, port, deadline, *, protocol='tcp', state=state, original=original):
                     if port == 2222 and state != 'filtered':
                         return None, (('unavailable', 'transport_permission_denied', False) if state == 'unavailable'
                                       else ('not_started', 'effective_deadline_before_start', False))
-                    return original(network, address, port, deadline)
+                    return original(network, address, port, deadline, protocol=protocol)
                 with patch.object(transport, 'begin_endpoint', begin):
                     result = self.collect(policy, fixture)
                 self.assertEqual(result['completion'], 'partial')
@@ -645,7 +645,7 @@ class EndpointTests(unittest.TestCase):
         result = self.collect(policy)
         self.assertTrue(result['queryable'])
         with storage.Store(policy, writable=True) as migrated:
-            self.assertEqual(migrated.schema_version, 3)
+            self.assertEqual(migrated.schema_version, 4)
             for table, rows in history.items():
                 actual = [tuple(row) for row in migrated.connection.execute(f'SELECT * FROM {table}')]
                 self.assertEqual(actual[:len(rows)], rows)

@@ -71,7 +71,7 @@ def _select(store: Store, batch_id: str | None):
             raise RequestError("batch_id: no unapplied locally authorized batch; collect or select an eligible batch")
     else:
         row = store.require("batches", batch_id)
-    if row["collector"] == "tcp_endpoint":
+    if row["collector"] in {"tcp_endpoint", "endpoint"}:
         raise RequestError("batch_id: endpoint evidence requires resume-endpoints, not identity reconciliation")
     if row["policy_context"] != str(store.policy.home):
         raise RequestError("batch_id: select evidence owned by this profile")

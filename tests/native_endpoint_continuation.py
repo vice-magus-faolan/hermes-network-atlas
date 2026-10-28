@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import socket
 import time
 from unittest.mock import patch
 
@@ -29,7 +30,8 @@ def main():
     storage = sys.modules[prefix + 'storage']
     snapshot = scratch / 'continuation.json'
     if mode == 'collect':
-        fixture = SyntheticSockets(lambda address, port: 'closed' if address == '192.0.2.1' else 'filtered')
+        fixture = SyntheticSockets(lambda address, port: 'closed' if address == '192.0.2.1' else 'filtered',
+                                   udp_response=lambda address, port: 'filtered')
         with fixture.install(schedule, transport, capability), ExitStack() as stack:
             for module in (endpoints, storage):
                 stack.enter_context(patch.object(module, 'time', fixture.clock))
@@ -42,8 +44,11 @@ def main():
         before = database.read_bytes()
         preview = atlas.cli(['preview-endpoints', first['batch_id']])
         assert database.read_bytes() == before
-        remaining = {(r['address'], r['port']) for r in original['endpoints'] if r['state'] == 'not_started'}
-        assert {(r['address'], r['port']) for r in preview['remaining']} == remaining
+        remaining = {(r['address'], r['protocol'], r['port']) for r in original['endpoints']
+                     if r['state'] == 'not_started'}
+        assert {(r['address'], r['protocol'], r['port']) for r in preview['remaining']} == remaining
+        attempted = {(a, 'udp' if protocol == socket.IPPROTO_UDP else 'tcp', p)
+                     for _, a, protocol, p in fixture.protocol_calls}
         fixture = SyntheticSockets()
         # The lazy continuation import is ours, not a replacement native runtime.
         __import__(prefix + 'endpoint_continuation')
@@ -57,7 +62,9 @@ def main():
                 stack.enter_context(patch.object(module, 'utc_now', return_value=child_at))
             second = atlas.slash('continue-endpoints ' + first['batch_id'])
         assert second['queryable'] and second['collection_performed'], second
-        assert {(a, p) for _, a, p in fixture.calls} == remaining
+        actual = {(a, 'udp' if protocol == socket.IPPROTO_UDP else 'tcp', p)
+                  for _, a, protocol, p in fixture.protocol_calls}
+        assert actual == remaining and not actual & attempted
         assert all(sock.closed for sock in fixture.sockets)
         child = atlas.tool('network_query', {'view': 'endpoints', 'batch_id': second['batch_id'], 'limit': 100})
         assert child['total_count'] == len(remaining)

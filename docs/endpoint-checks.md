@@ -1,4 +1,4 @@
-# Durable native TCP endpoint checks
+# Durable native TCP/UDP endpoint checks
 
 Illustrative receipt for a two-address, two-port check:
 
@@ -12,7 +12,7 @@ Illustrative receipt for a two-address, two-port check:
 `persisted` means the immutable batch is saved; `applied`/`projected` mean its
 endpoint rows committed; `queryable` means fresh readback verified the batch.
 Collection completion is separate: failed checks can still be saved and queried.
-These are historical TCP outcomes, not service identification or device identity.
+These are historical transport outcomes, not service identification or device identity.
 
 If `persisted=true` but `queryable=false`, save the returned batch ID and run
 `hermes network-atlas resume-endpoints <returned-id>` (or
@@ -39,23 +39,30 @@ networks:
     endpoints:
       enabled: true
       tcp_ports: [22, 2222, 8006, 8384, 22000]
+      udp_ports: [21027, 22000]
 ```
 
-The endpoint list must contain **1..32** distinct strict integer ports in
+The TCP endpoint list must contain **1..32** distinct strict integer ports in
 1..65535, excluding 4403. The 32-port ceiling gives smaller networks useful
 headroom without permitting an arbitrary port sweep; it is a selection limit,
 not a concurrency setting. Both `enabled: true` and the nonempty list are
-required; omitted endpoints are disabled. IPv4 ranges have at most 256 addresses.
+required for TCP. UDP is independently enabled only by an explicit nonempty
+`udp_ports` list; `enabled` continues to control TCP only. Omitted/empty UDP means
+no UDP traffic, even when TCP is enabled. UDP-only policy can omit both TCP keys.
+UDP accepts up to 32 distinct strict integer ports in 1..65535, excluding 7, 19
+and 4403 (echo/chargen loop/reflection risk and conservative radio protection).
+The same numeric port can appear once in each protocol. These are selection
+ceilings, not independent work allowances. IPv4 ranges have at most 256 addresses.
 Network/broadcast and special destinations are recorded as excluded, not contacted.
 Host-discovery TCP defaults `[80, 443]` and its separate four-port ceiling remain
 unchanged. Older Atlas versions reject endpoint lists longer than four ports.
 
-Before planning or traffic, the **full address count × selected TCP port count**
+Before planning or traffic, the **full address count × (TCP count + UDP count)**
 must fit `limits.observations` (hard ceiling 4096), including excluded destinations
-and work that may never start. The five-port /24 above needs 1280 records. A /24
-can admit at most 16 ports at that ceiling; 17..32 ports require a smaller scope,
+and work that may never start. The five-TCP/two-UDP /24 above needs 1792 records.
+A /24 can admit at most 16 protocol/port selections at that ceiling; more require a smaller scope,
 not aliases or overlapping copies of a LAN. A lowered record limit can also
-refuse a smaller list. List errors name `network.endpoints.tcp_ports`; a valid
+list errors name `network.endpoints.tcp_ports` or `network.endpoints.udp_ports`; a valid
 list whose grid is too large names `limits.observations`. No limit is raised
 automatically, and admission does not promise all endpoints will be checked.
 
@@ -73,12 +80,45 @@ kernel retransmissions. This is not a zero-effect probe. 4403 is excluded at bot
 policy and socket boundaries because connection contention can affect radio
 clients. Other sensitive endpoints remain an operator selection risk.
 
+### UDP method and limits
+
+`udp_empty_datagram_v1` sends exactly one zero-byte UDP datagram over an ordinary
+connected nonblocking IPv4 socket to the selected unicast address/port. Connecting
+only selects the peer; local connect/send success never qualifies as a response.
+Atlas accepts only an empty reply from that exact numeric peer/port on the owned
+socket before its nonrenewing deadline. Nonempty/wrong-peer replies are ignored
+under the shared receive/time budget; late replies lose to expiry. Raw contents
+are discarded. No broadcast, multicast, raw ICMP/error queues, caller bytes,
+service payloads or automatic retries are used.
+
+An accepted empty reply is `open` with diagnostic `udp_empty_reply`: historical
+transport response only, not a successful service handshake. After the send,
+connected-socket `ECONNREFUSED` is `closed`/`udp_kernel_rejected`, a kernel-reported
+rejection, not an authenticated remote verdict (a firewall/local stack can reject).
+Unreachable or silence is `no_response`; no conclusion about listening/closed/
+filtered service state follows. Other local errors remain `unavailable`.
+Receive failures/receive-budget exhaustion after sending retain attempted coverage;
+budget exhaustion before sending is `not_started`. No unavailable outcome is retried.
+
+UDP has no transport transaction ID. Correlation is limited to the connected
+ephemeral socket, numeric peer and receive lifetime, not authentication or proof
+against spoofing/delayed packets after OS tuple reuse. No old socket is reused by
+Atlas, and each owned socket closes at completion/interruption. Even an empty
+datagram can generate remote logs, application processing, ICMP and firewall state.
+
+UDP 22000 and 21027 are supported only as these unicast empty-datagram targets.
+Typical Syncthing QUIC/local-discovery implementations may ignore them. This
+does not implement QUIC negotiation, authenticated synchronization, or Syncthing
+broadcast/multicast local discovery. A timeout is expected for many functioning
+services. A service-aware nonempty-payload method would need separate fixed-byte
+design/review and explicit authorization; no arbitrary application-payload API exists.
+
 ## Commands and recovery
 
 The model tool is `network_check_endpoints` with exactly one selection:
 `{"network":"home"}` to collect, `{"batch_id":"<returned-id>"}` to resume,
 `{"preview_batch_id":"<returned-id>"}` to preview remaining work, or
-`{"continue_batch_id":"<returned-id>"}` to explicitly make new TCP checks.
+`{"continue_batch_id":"<returned-id>"}` to explicitly make new TCP/UDP checks.
 The same operation is exposed through the native local CLI and slash command:
 
 ```sh
@@ -92,7 +132,7 @@ hermes network-atlas resume-endpoints <returned-id>
 ```
 
 `collection_performed` is false on resume. `completion` is complete only when
-every eligible check connected or was refused, partial when some succeeded, and
+every eligible check produced its supported reply or rejection, partial when some succeeded, and
 failed when none succeeded (including zero eligible work). Excluded destinations
 do not prevent completion; they remain in immutable history and final
 `state_counts`/`observation_count` alongside every failed or unstarted check.
@@ -134,12 +174,13 @@ not its latest descendants. Its historical `total`, `attempted`,
 `responded`, `still_unattempted`, `excluded` and non-excluded `unavailable` counts
 describe that selection only. An old root's counts do not reflect later progress;
 select the returned `successor_batch_id` and repeat as needed to inspect later runs.
-Attempted counts open/closed/no-response connects, not unavailable local transport.
+Attempted counts open/closed/no-response probes and post-send UDP receive failures,
+not unavailable local socket setup. Receive failures remain in `unavailable` too.
 
-Continue makes NEW TCP traffic only for saved `not_started` tuples. It never
+Continue makes NEW TCP/UDP traffic only for saved `not_started` tuples. It never
 retries open, closed, no-response or unavailable results, and never contacts
 excluded destinations. Current profile ownership and the exact original named
-network, CIDR and port grant must still match; evidence or another profile cannot
+network, CIDR and protocol/port grant must still match; evidence or another profile cannot
 grant access. The original grid must still fit `limits.observations`. All existing
 invocation deadlines, concurrency/rate, socket cleanup and output/record ceilings
 still apply, with the [continuation persistence reserve](#continuation-persistence-reserve)
@@ -225,9 +266,9 @@ hermes network-atlas status
 `network_query` accepts these same filters. `limit`/`offset` are bounded by local
 policy, ordering is timestamp plus unique probe ID, and `has_more` is explicit.
 `total_count` counts matching historical outcomes, including failed/unstarted
-checks. Each row retains the numeric address, TCP port, state, original UTC check
+checks. Each row retains the numeric address, protocol, port, fixed `probe_method`, state, original UTC check
 time, diagnostic and probe ID, exact collector/batch/profile/network scope and
-collection completion. Qualified means an actual historical TCP response only:
+collection completion. Qualified means the method's historical response/rejection only:
 
 - `open`: TCP connected; it does not prove which service or device answered;
 - `closed`: TCP refused; it is not a listening service;
@@ -235,19 +276,26 @@ collection completion. Qualified means an actual historical TCP response only:
 - `unavailable`: excluded destination or unavailable local transport;
 - `not_started`: no check began before its applicable budget expired.
 
+For UDP, `open`/`closed` mean only the empty reply/kernel rejection defined above;
+`no_response` includes unreachable and unvalidated replies. They do not inherit
+TCP handshake semantics. Protocol is part of every endpoint identity and each
+continuation preview tuple; TCP/UDP at the same numeric address/port never collapse.
+
 Host unreachable is a timeout-style result of connect/SO_ERROR, not a local
 socket-setup failure. It does not prove a SYN was sent or a host is absent.
 The shared host-discovery transport reports this same diagnostic without
 creating positive response evidence. Permission, protocol and other local socket
 failures remain distinct unavailable diagnostics.
 
-Coverage says connect attempted or not checked, never complete host inventory.
+Coverage says transport attempted or not checked, never complete host inventory.
 All rows are historical; current reachability and identity remain not established.
 `device_id` is always null. Existing or conflicting address assignments cannot
 attach this evidence to either old or new owners after DHCP/address reuse.
+Device/topology map exports do not turn TCP/UDP rows into devices or links; use
+the endpoint query/CLI JSON for protocol-aware historical evidence.
 
 Normal status exposes distinct recorded endpoint
-address/port tuples (`endpoint_count`), all historical outcomes
+address/protocol/port tuples (`endpoint_count`), all historical outcomes
 (`endpoint_observation_count`), distinct tuples with at least one historical
 response (`responding_endpoint_count`), evidence batches and unprojected batches.
 These are separate from identified-device counts. A configured but unstarted
@@ -263,20 +311,22 @@ from the shared file. Same-UID/native code remains trusted; SQLite is not an OS
 security boundary.
 
 Store schema 2 adds the endpoint projection; schema 3 adds immutable continuation
-reservations. A writable open transactionally upgrades schema 1 or 2, preserving
-original rows and their immutable triggers. Batch/application envelope versions
-remain 1. Read-only opens support schema 1 and 2 without migration (schema 1 has
-no endpoint rows). Upgrade failure rolls back DDL and the version together.
-Schema-3 stores require compatible readers AND writers. Retain backups and update
+reservations; schema 4 widens endpoint projection constraints to TCP/UDP. A writable
+open transactionally upgrades schema 1..3, copying exact old projection values
+and retaining original batch/probe/application rows and immutable guards. Legacy
+TCP-only batches retain `tcp_endpoint` provenance; UDP-containing batches use
+`endpoint`, with per-probe `tcp_endpoint`/`udp_endpoint` evidence kinds.
+Batch/application envelope versions remain 1. Read-only opens support schema 1..3
+without migration (schema 1 has no endpoint rows). Upgrade failure rolls back DDL
+and the version together. Schema-4 stores require compatible readers AND writers. Retain backups and update
 all shared-store readers and writers before any writer upgrades the database,
 rather than attempting a downgrade. An older writer may contact endpoints before
 discovering that it cannot persist to the upgraded store.
 
-SSH greeting/banner reading is not supported; those inputs fail closed. No
-application bytes are sent/read, no credentials or host keys are touched, and an
+SSH greeting/banner reading is not supported; those inputs fail closed. TCP
+checks send/read no application bytes; UDP replies are bounded and discarded.
+No credentials or host keys are touched, and an
 open customary port does not grant SSH access. Service/version/OS/NSE and
 vulnerability scanning or external scan imports are outside this feature.
-Native UDP evidence is the separate outstanding portion of
-[issue #48](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/48).
-This larger-TCP-list change does not deliver UDP 22000/21027 probing, QUIC or
-broadcast/multicast discovery and does not complete that issue.
+The UDP method above supplies bounded transport evidence, not QUIC or
+broadcast/multicast discovery.

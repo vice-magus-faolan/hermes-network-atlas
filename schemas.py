@@ -107,10 +107,11 @@ INSPECT_SCHEMA = {
 
 ENDPOINT_SCHEMA = {
     "name": "network_check_endpoints",
-    "description": ("Check separately enabled configured TCP endpoints, persist, project and read back historical "
+    "description": ("Check explicitly configured TCP/UDP endpoints, persist, project and read back historical "
                     "evidence. Select network, no-contact resume batch_id, read-only preview_batch_id, OR "
-                    "explicit continue_batch_id to make NEW TCP checks of remaining unattempted work. "
-                    "Read stored results via network_query view=endpoints. TCP responses do not create device "
+                    "explicit continue_batch_id to make NEW checks of remaining unattempted protocol/port tuples. "
+                    "UDP sends one empty unicast datagram; silence is unknown, not open/closed. "
+                    "Read stored results via network_query view=endpoints. Responses do not create device "
                     "identity or machine inventory; use authorized network_inspect for that. "
                     "No service identity, greetings or SSH authority."),
     "parameters": {"type": "object", "additionalProperties": False,

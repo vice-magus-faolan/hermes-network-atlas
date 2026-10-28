@@ -29,7 +29,7 @@ def validate_count(network: Network, policy: Policy) -> None:
         raise RequestError('limits.observations: selected discovery methods and scope exceed configured record budget')
 
 
-def _plans(network: Network, window: int, *, endpoints: bool = False) -> Iterator[tuple[int, str, int | None]]:
+def _plans(network: Network, window: int, *, endpoints: bool = False) -> Iterator[tuple[int, str, int | None, str]]:
     """Rotate first methods by address, then round-robin addresses on each pass.
 
     Use a window no larger than the shared concurrency ceiling. Within each
@@ -37,29 +37,30 @@ def _plans(network: Network, window: int, *, endpoints: bool = False) -> Iterato
     passes, later methods do not wait behind 256 initial attempts. A host deadline
     begins at its first attempt and never resets. No retries.
     """
-    methods = (list(network.endpoint_ports) if endpoints
-               else ([None] if network.icmp_echo else []) + list(network.tcp_ports))
+    methods = (network.endpoint_methods if endpoints else
+               tuple(('tcp', port) for port in ([None] if network.icmp_echo else []) + list(network.tcp_ports)))
     addresses = list(ip_network(network.cidr))
     for offset in range(0, len(addresses), window):
         for turn in range(len(methods)):
             for index, address in enumerate(addresses[offset:offset + window], offset):
-                yield index, str(address), methods[(turn + index) % len(methods)]
+                protocol, port = methods[(turn + index) % len(methods)]
+                yield index, str(address), port, protocol
 
 
-def _name(index: int, port: int | None) -> str:
-    return 'icmp_' + str(index) if port is None else 'tcp_' + str(port) + '_' + str(index)
+def _name(index: int, port: int | None, protocol: str = 'tcp') -> str:
+    return 'icmp_' + str(index) if port is None else protocol + '_' + str(port) + '_' + str(index)
 
 
 def _probe(index: int, address: str, port: int | None, started: str, result: transport.Outcome, *,
-           endpoints: bool = False) -> Probe:
+           endpoints: bool = False, protocol: str = 'tcp') -> Probe:
     outcome, code, positive = result
     at = timestamp(utc_now())
     observations = ()
     if positive and not endpoints:
         observations = (Observation('address', Anchor('unresolved', 'ping_' + address.replace('.', '_')),
                                     'assignment', (('address', address), ('prefix_length', 32)), at),)
-    return Probe(_name(index, port), outcome, started, at, 'none', '',
-                 'tcp_endpoint' if endpoints else 'ping_response', code, observations)
+    return Probe(_name(index, port, protocol), outcome, started, at, 'none', '',
+                 protocol + '_endpoint' if endpoints else 'ping_response', code, observations)
 
 
 class Scheduler:
@@ -69,12 +70,12 @@ class Scheduler:
         self.network, self.policy, self.deadline = network, policy, deadline
         self.endpoints = endpoints
         self.host_deadlines: dict[int, float] = {}
-        self.results: dict[tuple[int, int | None], Probe] = {}
+        self.results: dict[tuple[int, int | None, str], Probe] = {}
         self.active: dict[object, tuple[transport.Attempt, int, str]] = {}
         if selection is not None and not endpoints:
             raise ValueError('subset selection is endpoint-only')
         self.plans = (plan for plan in _plans(network, policy.limits.concurrent_probes, endpoints=endpoints)
-                      if selection is None or _name(plan[0], plan[2]) in selection)
+                      if selection is None or _name(plan[0], plan[2], plan[3]) in selection)
         self.pending = next(self.plans, None)
         self.next_start = time.monotonic()
         self.remaining_bytes = policy.limits.output_bytes
@@ -93,7 +94,7 @@ class Scheduler:
             return tuple(probe for _, probe in sorted(self.results.items()))
         return _aggregates(self.network, self.results)
 
-    def _preflight(self, index, address, port):
+    def _preflight(self, index, address, port, protocol):
         if transport.excluded(self.network, address):
             return 'unavailable', 'destination_excluded', False
         if port is None and self.capability is not None and self.capability.state != 'unverified':
@@ -101,6 +102,8 @@ class Scheduler:
         if time.monotonic() >= self.deadline:
             return 'not_started', 'operation_deadline_exceeded', False
         if self.remaining_bytes <= 0:
+            if self.endpoints:
+                return 'not_started', 'receive_budget_before_start', False
             return 'output_limit', 'shared_receive_limit', False
         if time.monotonic() >= self.host_deadlines.get(index, math.inf):
             return 'not_started', 'host_deadline_before_start', False
@@ -109,9 +112,9 @@ class Scheduler:
     def _launch(self, selector):
         if self.pending is None:
             raise ValueError('scheduler has no pending probe')
-        index, address, port = self.pending
+        index, address, port, protocol = self.pending
         started = timestamp(utc_now())
-        result = self._preflight(index, address, port)
+        result = self._preflight(index, address, port, protocol)
         if result is None:
             now = time.monotonic()
             self.host_deadlines.setdefault(index, min(self.deadline, now + min(
@@ -120,16 +123,20 @@ class Scheduler:
             # Reserve a fair slice for later methods within this host's ONE wall
             # deadline. Slices are reductions, never independent renewed budgets.
             bound = min(self.policy.limits.host_timeout_seconds, self.policy.limits.command_timeout_seconds)
-            count = len(self.network.endpoint_ports) if self.endpoints else method_count(self.network)
+            count = len(self.network.endpoint_methods) if self.endpoints else method_count(self.network)
             attempt_deadline = min(self.host_deadlines[index], now + bound / (count + 1))
-            begin = transport.begin_endpoint if self.endpoints else transport.begin
-            attempt, result = begin(self.network, address, port, attempt_deadline)
+            if self.endpoints:
+                attempt, result = transport.begin_endpoint(self.network, address, port, attempt_deadline,
+                                                            protocol=protocol)
+            else:
+                attempt, result = transport.begin(self.network, address, port, attempt_deadline)
             if attempt is not None:
                 # Own before registration so even a selector failure closes it.
                 self.active[attempt.sock] = (attempt, index, started)
-                selector.register(attempt.sock, transport.event_mask(port))
+                selector.register(attempt.sock, transport.event_mask(port, protocol))
         if result is not None:
-            self.results[(index, port)] = _probe(index, address, port, started, result, endpoints=self.endpoints)
+            self.results[(index, port, protocol)] = _probe(index, address, port, started, result,
+                                                         endpoints=self.endpoints, protocol=protocol)
         self.pending = next(self.plans, None)
 
     def _finish(self, selector, sock, result):
@@ -138,8 +145,8 @@ class Scheduler:
             selector.unregister(sock)
         finally:
             sock.close()
-        self.results[(index, attempt.port)] = _probe(
-            index, attempt.address, attempt.port, started, result, endpoints=self.endpoints)
+        self.results[(index, attempt.port, attempt.protocol)] = _probe(
+            index, attempt.address, attempt.port, started, result, endpoints=self.endpoints, protocol=attempt.protocol)
 
     def _expire(self, selector):
         for sock, (attempt, _, _) in list(self.active.items()):
@@ -187,7 +194,7 @@ def _aggregates(network: Network, results: dict) -> tuple[Probe, ...]:
     probes = []
     methods = ([None] if network.icmp_echo else []) + list(network.tcp_ports)
     for index, _ in enumerate(ip_network(network.cidr)):
-        checks = [results[(index, port)] for port in methods]
+        checks = [results[(index, port, 'tcp')] for port in methods]
         probes.extend(checks)
         failed = next((probe for probe in checks if probe.outcome != 'success'), None)
         aggregate = replace(failed or checks[0], probe_name='ping_' + str(index),

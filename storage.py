@@ -20,7 +20,7 @@ from collections.abc import Iterator
 from .config import Policy
 from .errors import RequestError, StoreError
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 IMMUTABLE_TABLES = ("batches", "probes", "observations", "applications", "audit_events", "access_evidence")
 
 
@@ -109,6 +109,9 @@ def _initialize_locked(connection: sqlite3.Connection) -> None:
     if version == 2:
         _migrate_continuations(connection)
         return
+    if version == 3:
+        _migrate_endpoint_protocols(connection)
+        return
     if version != 0 or connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
         raise StoreError("unsupported or unversioned atlas schema; no automatic downgrade")
     schema = Path(__file__).with_name("storage_schema.sql").read_text(encoding="utf-8")
@@ -143,6 +146,18 @@ def _migrate_continuations(connection: sqlite3.Connection) -> None:
     for action in ("UPDATE", "DELETE"):
         connection.execute(f"CREATE TRIGGER immutable_endpoint_continuations_{action} BEFORE {action} "
                            "ON endpoint_continuations BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
+    _migrate_endpoint_protocols(connection)
+
+
+def _migrate_endpoint_protocols(connection: sqlite3.Connection) -> None:
+    """Replace only the derived endpoint table within the same upgrade transaction."""
+    schema = Path(__file__).with_name("storage_endpoint_protocols.sql").read_text(encoding="utf-8")
+    for statement in schema.split(";"):
+        if statement.strip():
+            connection.execute(statement)
+    for action in ("UPDATE", "DELETE"):
+        connection.execute(f"CREATE TRIGGER immutable_endpoint_observations_{action} BEFORE {action} "
+                           "ON endpoint_observations BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
 
 
 class _DeadlineConnection(sqlite3.Connection):
@@ -206,7 +221,7 @@ class Store:
                 _initialize(self.connection)
                 os.chmod(policy.database, 0o600)
                 self.connection.execute("PRAGMA journal_mode=WAL")
-            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, SCHEMA_VERSION):
+            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, SCHEMA_VERSION):
                 raise StoreError("unsupported atlas schema")
             else:
                 self.connection.execute("PRAGMA query_only=ON")

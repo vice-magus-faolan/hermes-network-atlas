@@ -67,7 +67,7 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
                                   help="Read remaining unattempted work; no collection")
     preview.add_argument("batch_id")
     continuation = commands.add_parser("continue-endpoints", allow_abbrev=False,
-                                       help="Explicitly make NEW TCP checks of remaining unattempted work")
+                                       help="Explicitly make NEW TCP/UDP checks of remaining unattempted work")
     continuation.add_argument("batch_id")
 
 
