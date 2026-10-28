@@ -762,9 +762,32 @@ class TopologyInspectionTests(AtlasFixture):
 
     def test_actionable_uncertainty_survives_virtual_noise_and_complete_read_only_drilldown(self):
         core.add_interface(self.store, self.device, "other0", MAC2, now=self.clock)
-        receipt, applied = self.apply(self.noisy_interfaces())
+        receipt = self.public_collect(self.noisy_interfaces())
         self.assertEqual(receipt["completion"], "complete")
         self.assertTrue(all(probe["outcome"] == "success" for probe in receipt["probes"]))
+        parameters = {"view": "unresolved", "batch_id": receipt["batch_id"], "summary": True}
+        kinds = [row[0] for row in self.store.connection.execute(
+            "SELECT subject_kind FROM observations WHERE batch_id=? AND entity_id IS NULL",
+            (receipt["batch_id"],))]
+        self.assertEqual(kinds.count("route"), 2)
+        self.assertGreater(sum(kind not in {"route", "neighbor"} for kind in kinds), 0)
+        before = list(self.store.connection.iterdump())
+        files = {p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}
+        with patch("subprocess.Popen", side_effect=AssertionError("reads never collect")):
+            pending = json.loads(self.handlers.query(parameters))
+        self.assertNotIn("error", pending)
+        self.assertEqual(pending["total_count"], len(kinds))
+        self.assertEqual({key: value for key, value in pending["summary"].items() if key != "uncertainty"},
+                         {"unapplied_observation_count": len(kinds) - kinds.count("neighbor"),
+                          "supporting_observation_count": kinds.count("neighbor"),
+                          "current_unresolved_observation_count": 0, "resolved_observation_count": 0,
+                          "unknown_observation_count": 0, "inactive_observation_count": 0})
+        self.assertEqual(pending["summary"]["uncertainty"]["observation_count"], 0)
+        self.assertEqual(pending["summary"]["uncertainty"]["reasons"], [])
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+        self.assertEqual({p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}, files)
+        applied = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", applied)
         summary = applied["uncertainty"]
         self.assertEqual(summary["temporal_scope"], "at_application")
         self.assertEqual(summary["observation_count"], 206)
@@ -788,7 +811,6 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual(len(json.loads(saved)["unresolved"]), 206)
         before = list(self.store.connection.iterdump())
         files = {p.name: p.read_bytes() for p in self.policy.database.parent.glob("atlas.sqlite3*")}
-        parameters = {"view": "unresolved", "batch_id": receipt["batch_id"], "summary": True}
         with patch("subprocess.Popen", side_effect=AssertionError("reads never collect")):
             current = json.loads(self.handlers.query(parameters))
             self.assertNotIn("error", current)
@@ -1048,6 +1070,15 @@ class TopologyInspectionTests(AtlasFixture):
         route = next(row for row in self.topology(receipt) if row["kind"] == "route")
         self.assertEqual(route["resolution"]["reason"], "unapplied_or_ambiguous_origin")
         self.assertIsNone(route["origin_device"])
+        snapshot = list(self.store.connection.iterdump())
+        summary = json.loads(self.handlers.query(
+            {"view": "unresolved", "batch_id": receipt["batch_id"], "summary": True}))
+        self.assertNotIn("error", summary)
+        self.assertEqual(summary["summary"]["unapplied_observation_count"], 0)
+        self.assertEqual(summary["summary"]["current_unresolved_observation_count"], 1)
+        self.assertEqual([group["reason"] for group in summary["summary"]["uncertainty"]["reasons"]],
+                         ["unapplied_or_ambiguous_origin"])
+        self.assertEqual(list(self.store.connection.iterdump()), snapshot)
 
 
 class InspectionParserTests(unittest.TestCase):

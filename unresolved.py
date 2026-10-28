@@ -268,7 +268,7 @@ def _current_identity(store: Store, row, batch, application, applications: dict)
     return "unknown", None
 
 
-def _current_topology(snapshot: TopologySnapshot, row) -> tuple[str, dict | None]:
+def _current_topology(snapshot: TopologySnapshot, row, application: dict | None) -> tuple[str, dict | None]:
     if row["subject_kind"] == "neighbor":
         return "supporting", None
     resolution = _route_answer(snapshot, row)
@@ -277,6 +277,9 @@ def _current_topology(snapshot: TopologySnapshot, row) -> tuple[str, dict | None
         return "resolved", None
     if reason in {"stale_or_future_route", "superseded_inspection"}:
         return "inactive", None
+    # The resolver shares one diagnostic for absent application and ambiguous origin.
+    if reason == "unapplied_or_ambiguous_origin" and application is None:
+        return "unapplied", None
     return "current_unresolved", {"evidence_id": row["id"], **resolution}
 
 
@@ -298,7 +301,7 @@ def _summary(store: Store, params: dict, now: datetime) -> dict:
         value = _checked_evidence(store, row)["value"]
         if "address" in params and (row["subject_kind"] != "address" or value.get("address") != params["address"]):
             continue
-        state, entry = (_current_topology(topology, row) if row["subject_kind"] in {"route", "neighbor"}
+        state, entry = (_current_topology(topology, row, application) if row["subject_kind"] in {"route", "neighbor"}
                         else _current_identity(store, row, batch, application, applications))
         counts[state] += 1
         if entry:
