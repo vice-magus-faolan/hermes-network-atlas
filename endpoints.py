@@ -81,9 +81,9 @@ def _authorized_network(policy: Policy, name: str) -> Network:
     network = next((item for item in policy.networks if item.name == name), None)
     if network is None:
         raise RequestError('network: select a configured endpoint network')
-    validate_network(network, active=True)
     if not network.endpoint_methods:
         raise RequestError('network.endpoints: enabled nonempty tcp_ports or explicit nonempty udp_ports required')
+    validate_network(network, active=True)
     return network
 
 

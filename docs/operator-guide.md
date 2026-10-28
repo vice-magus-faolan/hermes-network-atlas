@@ -310,8 +310,8 @@ object based on the same stored snapshot and current profile policy:
   batch IDs only for current matching local grants. Endpoint batches are separate.
 - `inspection_targets` lists currently authorized, unambiguous configured aliases,
   including aliases with no device yet. `discovery_options` lists only enabled
-  network/mode pairs. Neither promises executable availability or present access;
-  actions still validate policy, mappings and bounds at invocation.
+  network/mode pairs. These are policy-eligible suggestions, not runtime availability
+  claims; actions still validate policy, mappings and bounds at invocation.
   Ambiguous aliases are omitted even when their mappings exceed `result_count`;
   that ambiguity alone does not prevent reading status.
 - Each suggestion group returns at most five items (fewer under `result_count`),
@@ -323,6 +323,24 @@ object based on the same stored snapshot and current profile policy:
   and next-hop reasons.
 - `devices_without_relationships` counts devices with no supported relationships.
   Maps retain those nodes; missing links mean unknown topology, not disconnection.
+
+Native status replaces the former unconditional `collection_available` and
+`ssh_transport_available` booleans with `availability`. Its `executable_presence`
+checks whether executable `ip`, `nmap` and `ssh` files can be found on the current
+PATH, without running them. `methods` reports `missing_executable` or `unverified`:
+passive collection requires `ip`, legacy ping requires `nmap`, and SSH inspection
+requires local `ssh`. Legacy ping is the default TCP `[80, 443]` discovery without
+ICMP; enabling ICMP or changing discovery TCP ports selects `socket_ping` instead.
+Socket ping and TCP/UDP endpoints need none of those executables. A missing tool
+does not disable unrelated methods, and a present tool does not enable policy.
+
+`availability.runtime` remains `unverified`: status does not execute tools, open
+sockets or test socket permissions, SSH credentials/host keys, remote probes or
+connectivity. Guidance carries the same caveat; it does not gate actions using
+these diagnostics. No checks install tools, change policy or collect evidence.
+Disabled methods and passive-only IPv6 scopes are refused before public opt-in
+advice; an `allow_public` grant cannot enable them. Even an eligible method remains
+subject to destination exclusions and resource bounds when explicitly invoked.
 
 No collection grants means no collection choices, not permission to invent an alias,
 change policy or run a custom scanner. An empty query/map does not trigger collection;

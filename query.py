@@ -421,7 +421,10 @@ def inventory_guidance(policy: Policy, store: Store | None, known_devices: int, 
             "inventory_workflow": "When an inspection target is listed, inspect that authorized alias even "
                                   "without a device ID; reconcile its returned "
                                   "batch_id, then query the returned device ID and render a stored map. "
-                                  "Actions are suggestions only and remain subject to current policy and limits.",
+                                  "Suggestions reflect policy eligibility, not runtime availability, and remain "
+                                  "subject to current policy and limits. Native status checks local executable "
+                                  "presence only; execution, socket permissions, SSH credentials/host keys, "
+                                  "remote probes and connectivity remain unverified.",
             "evidence_query": {"tool": "network_query", "parameters": {"view": "unresolved"}}}
 
 

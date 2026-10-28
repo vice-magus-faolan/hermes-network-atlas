@@ -225,7 +225,7 @@ class BoundaryTests(unittest.TestCase):
         with patch("subprocess.Popen", side_effect=AssertionError("query must not collect")):
             result = json.loads(self.handlers.query({"view": "status"}))
         self.assertTrue(result["persistence_available"])
-        self.assertTrue(result["collection_available"])
+        self.assertEqual(result["availability"]["runtime"], "unverified")
         self.assertIsNone(result["last_inspection"])
         self.assertEqual(list(self.home.iterdir()), [])
 

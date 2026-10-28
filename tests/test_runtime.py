@@ -39,6 +39,8 @@ class NativeRuntimeTests(unittest.TestCase):
                 symlink_plugin_data(home, data_layout)
             (home / "network-atlas").mkdir()
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
+            if mode in {"status_availability", "status_eligibility"}:
+                policy = {}
             if mode in {"conversion", "conversion_overlap", "conversion_hardkill", "native_clone"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy))
                 policy = {}
@@ -117,6 +119,12 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_active_scope_admission_and_saved_work_revocation(self):
         self.assertTrue(self.run_smoke("active_scopes")["native_scope_admission"])
+
+    def test_native_status_executable_presence_and_unverified_runtime_without_contact(self):
+        self.assertTrue(self.run_smoke("status_availability")["read_only_no_contact"])
+
+    def test_native_disabled_methods_refuse_before_public_opt_in_guidance(self):
+        self.assertTrue(self.run_smoke("status_eligibility")["read_only_no_contact"])
 
     def test_real_native_ssh_inspect_alias_device_slash_cli_failure_and_restart(self):
         self.assertTrue(self.run_smoke("ssh_inspection")["persistent_ssh_batches"])
