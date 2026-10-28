@@ -99,7 +99,7 @@ def reconcile(policy: Policy, params: object, *, now: datetime | None = None) ->
         if previous is not None:
             result = json.loads(previous[0])
             response_json(result, policy.limits.output_bytes)
-            result = reconciliation_reply(store, result)
+            result = reconciliation_reply(store, batch["id"], result)
             response_json(result, policy.limits.output_bytes)
             return result
         if timestamp(clock) < batch["ended_at"]:
@@ -134,7 +134,7 @@ def _apply(store: Store, batch, now: datetime) -> dict:
         "new", "changed", "unchanged", "missing", "conflicting", "unresolved")})
     # Frozen receipts remain complete; compact only the public projection.
     response_json(result, store.policy.limits.output_bytes)
-    reply = reconciliation_reply(store, result, observations)
+    reply = reconciliation_reply(store, batch["id"], result, observations)
     response_json(reply, store.policy.limits.output_bytes)
     store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
                              (result["id"], batch["id"], 1, result["applied_at"], encode(result)))
