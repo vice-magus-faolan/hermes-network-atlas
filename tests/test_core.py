@@ -78,8 +78,8 @@ class PersistenceTests(AtlasFixture):
     def test_initial_schema_creation_failure_rolls_back_and_reopens(self):
         policy = config.validate_policy({}, self.home / "initialization-failure")
         original = storage._initialize_locked
-        def interrupted(connection):
-            original(connection)
+        def interrupted(connection, *, upgrade=False):
+            original(connection, upgrade=upgrade)
             raise RuntimeError("synthetic schema interruption")
         with patch.object(storage, "_initialize_locked", interrupted), self.assertRaises(RuntimeError):
             storage.Store(policy, writable=True)
@@ -87,10 +87,10 @@ class PersistenceTests(AtlasFixture):
             self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 0)
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()[0], 0)
         with storage.Store(policy, writable=True) as reopened:
-            self.assertEqual(reopened.connection.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(reopened.connection.execute("PRAGMA user_version").fetchone()[0], 4)
 
     def test_schema_foreign_keys_private_files_read_only(self):
-        self.assertEqual(self.store.connection.execute("PRAGMA user_version").fetchone()[0], 3)
+        self.assertEqual(self.store.connection.execute("PRAGMA user_version").fetchone()[0], 4)
         self.assertEqual(self.store.connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         self.assertEqual(self.policy.database.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.policy.database.parent.stat().st_mode & 0o777, 0o700)
@@ -136,7 +136,7 @@ class PersistenceTests(AtlasFixture):
         self.assertEqual(self.counts()["devices"], before["devices"] + 1)
 
     def test_version_refusal_does_not_mutate_future_or_unversioned_db(self):
-        for version in (0, 4):
+        for version in (0, 5):
             home = self.home / f"bad-{version}"
             policy = config.validate_policy({}, home)
             policy.database.parent.mkdir(parents=True)
@@ -149,6 +149,9 @@ class PersistenceTests(AtlasFixture):
             self.assertEqual(policy.database.read_bytes(), before)
             with self.assertRaises(ValueError):
                 storage.Store(policy)
+            with self.assertRaises(ValueError):
+                storage.upgrade_store(policy, writers_stopped=True)
+            self.assertEqual(policy.database.read_bytes(), before)
 
     def test_immutable_observation_history_and_audit(self):
         old = self.update("description", "Original operator fact")

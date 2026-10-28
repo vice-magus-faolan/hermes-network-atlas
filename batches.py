@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     from .endpoint_continuation import Reservation
 
 OUTCOMES = ("success", "unavailable", "timeout", "output_limit", "command_failed", "parse_failed", "not_started")
-EVIDENCE_KINDS = ("local_interface", "cached_neighbor", "ping_response", "ssh_response", "tcp_endpoint", "none")
+EVIDENCE_KINDS = ("local_interface", "cached_neighbor", "ping_response", "ssh_response",
+                  "tcp_endpoint", "udp_endpoint", "none")
 
 
 @dataclass(frozen=True)
@@ -84,13 +85,14 @@ def _scope(store: Store, collector: str, scope_name: str) -> tuple[str, str, str
                 "ssh.enabled/ssh.hosts.inspect: stored alias is not currently authorized; "
                 "restore intended policy or select an eligible batch")
         return "ssh_alias", scope_name, "ssh:" + scope_name
-    mode = {"local_passive": "passive", "ping": "ping", "tcp_endpoint": "endpoint_ports"}.get(collector)
+    mode = {"local_passive": "passive", "ping": "ping", "tcp_endpoint": "endpoint_ports",
+            "endpoint": "endpoint_methods"}.get(collector)
     if mode is None:
         raise ValueError("unknown collector")
     network = next((net for net in store.policy.networks if net.name == scope_name), None)
     if network is None or not getattr(network, mode):
         setting = {"passive": "network.discovery.passive", "ping": "network.discovery.ping",
-                   "endpoint_ports": "network.endpoints"}[mode]
+                   "endpoint_ports": "network.endpoints", "endpoint_methods": "network.endpoints"}[mode]
         raise RequestError(
             f"{setting}: stored scope requires a configured network and enabled collection mode; "
             "restore intended policy or select an eligible batch")
@@ -112,7 +114,7 @@ def _probe(probe: Probe, collector: str, scope: str, start: str, end: str) -> No
     if probe.outcome not in OUTCOMES or probe.evidence_kind not in EVIDENCE_KINDS:
         raise ValueError("invalid probe outcome/evidence")
     permitted = {"local_passive": {"local_host", "none"}, "ping": {"exact_network", "none"},
-                 "ssh": {"exact_target", "none"}, "tcp_endpoint": {"none"}}
+                 "ssh": {"exact_target", "none"}, "tcp_endpoint": {"none"}, "endpoint": {"none"}}
     if probe.coverage_kind not in permitted[collector]:
         raise ValueError("invalid collector coverage")
     if probe.coverage_kind != "none" and probe.coverage_value != scope:
@@ -120,7 +122,8 @@ def _probe(probe: Probe, collector: str, scope: str, start: str, end: str) -> No
     if probe.coverage_kind == "none" and probe.coverage_value != "":
         raise ValueError("unexamined coverage must be empty")
     expected = {"local_passive": {"local_interface", "cached_neighbor", "none"}, "ping": {"ping_response", "none"},
-                "ssh": {"ssh_response", "none"}, "tcp_endpoint": {"tcp_endpoint"}}
+                "ssh": {"ssh_response", "none"}, "tcp_endpoint": {"tcp_endpoint"},
+                "endpoint": {"tcp_endpoint", "udp_endpoint"}}
     if probe.evidence_kind not in expected[collector]:
         raise ValueError("inconsistent collector evidence")
     if probe.outcome != "success" and probe.observations:
@@ -215,7 +218,7 @@ def store_batch(store: Store, collector: str, scope_name: str, started_at: str, 
     _times(started_at, ended_at, started_at, ended_at)
     _validate_probes(store, collector, kind, scope, started_at, ended_at, completion, probes)
     batch, operation = identifier(), identifier()
-    if collector == "tcp_endpoint":
+    if collector in {"tcp_endpoint", "endpoint"}:
         from .endpoints import validate_probes
         selection = endpoint_reservation.selection(store) if endpoint_reservation is not None else None
         validate_probes(store.policy, scope_name, probes, selection=selection)
@@ -258,7 +261,7 @@ def _validate_probes(store: Store, collector: str, kind: str, scope: str, start:
                      completion: str, probes: tuple[Probe, ...]) -> None:
     if not isinstance(probes, tuple) or not 1 <= len(probes) <= store.policy.limits.observations:
         raise ValueError("invalid/bounded probe count")
-    if collector == "tcp_endpoint":
+    if collector in {"tcp_endpoint", "endpoint"}:
         from .endpoints import collection_completion
         expected = collection_completion(probes)
     else:

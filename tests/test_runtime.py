@@ -74,14 +74,15 @@ class NativeRuntimeTests(unittest.TestCase):
             # Revocation also launches the documented installed config CLI;
             # each native subprocess retains its own bounded timeout.
             timeout = 180 if mode in {"revocation", "native_clone"} else 60
-            script = "native_profiles.py" if mode in {"native_clone", "native_privacy"} else "runtime_smoke.py"
+            script = ("native_store_upgrade.py" if mode == "store_upgrade" else
+                      "native_profiles.py" if mode in {"native_clone", "native_privacy"} else "runtime_smoke.py")
             child = subprocess.run([sys.executable, str(ROOT / "tests" / script), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=timeout)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
             if mode in {"valid", "local_discovery", "ssh_inspection", "conversion",
-                        "conversion_overlap", "conversion_hardkill"}:
+                        "conversion_overlap", "conversion_hardkill", "store_upgrade"}:
                 if not mode.startswith("conversion"):
                     (home / "config.yaml").write_text(json.dumps({"plugins": {
                         "enabled": ["network-atlas"], "entries": {"network-atlas": {
@@ -93,7 +94,7 @@ class NativeRuntimeTests(unittest.TestCase):
                     (fixture_bin / binary).unlink()
                     env["PATH"] = str(fixture_bin)
                 restarted = subprocess.run(
-                    [sys.executable, str(ROOT / "tests" / "runtime_smoke.py"), str(root), reopen_mode],
+                    [sys.executable, str(ROOT / "tests" / script), str(root), reopen_mode],
                                            env=env, cwd=scratch, capture_output=True, text=True, timeout=60)
                 self.assertEqual(restarted.returncode, 0, restarted.stdout + restarted.stderr)
                 persistence = json.loads(restarted.stdout.strip().splitlines()[-1])
@@ -126,6 +127,9 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_conversion_wal_conflicts_interruption_and_cold_retry(self):
         self.assertTrue(self.run_smoke("conversion")["fresh_native_process_persistence"])
+
+    def test_native_operator_upgrade_refusal_rollback_cold_retry_and_endpoint_pause(self):
+        self.assertTrue(self.run_smoke("store_upgrade")["fresh_native_process_persistence"])
 
     def test_native_conversion_writer_overlap_refuses_changed_source_and_stale_cold_retry(self):
         self.assertTrue(self.run_smoke("conversion_overlap")["fresh_native_process_persistence"])
@@ -178,10 +182,11 @@ class NativeRuntimeTests(unittest.TestCase):
                     (home / 'network-atlas').mkdir()
                 raw: dict = {} if mode == 'isolated' else {'store': {'shared_sqlite_path': str(shared)}}
                 if mode == 'collect':
-                    raw['networks'] = {'lab': {'cidr': '192.0.2.0/27' if continuation else '192.168.1.0/24',
+                    raw['networks'] = {'lab': {'cidr': '192.0.2.0/28' if continuation else '192.168.1.0/24',
                                               'allow_public': True,
                                               'endpoints': {'enabled': True, 'tcp_ports': (
-                                                  [22, 2222] if continuation else [22, 2222, 8006, 8384, 22000])}}}
+                                                  [22, 2222] if continuation else [22, 2222, 8006, 8384, 22000]),
+                                                  'udp_ports': [2222, 22000] if continuation else [21027, 22000]}}}
                     if continuation:
                         raw['limits'] = {'operation_timeout_seconds': 2, 'host_timeout_seconds': 1}
                 if mode != 'owner':

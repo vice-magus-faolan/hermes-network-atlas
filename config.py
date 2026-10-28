@@ -18,6 +18,8 @@ LEGACY_TCP_PORTS = (80, 443)
 MAX_TCP_DISCOVERY_PORTS = 4
 MAX_TCP_ENDPOINT_PORTS = 32
 EXCLUDED_TCP_PORTS = frozenset({4403})
+MAX_UDP_ENDPOINT_PORTS = 32
+EXCLUDED_UDP_PORTS = frozenset({7, 19, 4403})
 LAN_SCOPES = tuple(IPv4Network(cidr) for cidr in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"))
 
@@ -67,6 +69,13 @@ class Network:
     tcp_ports: tuple[int, ...] = LEGACY_TCP_PORTS
     endpoint_ports: tuple[int, ...] = ()
     allow_public: bool = False
+    endpoint_udp_ports: tuple[int, ...] = ()
+
+    @property
+    def endpoint_methods(self) -> tuple[tuple[str, int], ...]:
+        """One protocol-sensitive selection for admission, scheduling and recovery."""
+        return tuple(('tcp', port) for port in self.endpoint_ports) + tuple(
+            ('udp', port) for port in self.endpoint_udp_ports)
 
 
 @dataclass(frozen=True)
@@ -163,6 +172,23 @@ def _tcp_ports(value: object, label: str = "network.discovery.tcp_ports", *,
     return tuple(sorted(ports))
 
 
+def _endpoint_settings(raw: object) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    endpoints = _object(raw, {"enabled", "tcp_ports", "udp_ports"}, "network.endpoints")
+    enabled = _bool(endpoints.get("enabled", False), "endpoints.enabled")
+    tcp = _tcp_ports(endpoints.get("tcp_ports", []), "network.endpoints.tcp_ports", ceiling=MAX_TCP_ENDPOINT_PORTS)
+
+    udp = endpoints.get("udp_ports", [])
+    label = "network.endpoints.udp_ports"
+    if type(udp) is not list or len(udp) > MAX_UDP_ENDPOINT_PORTS:
+        raise ConfigError(f"{label}: list of at most 32 ports required")
+    udp = tuple(_integer(port, 65535, label) for port in udp)
+    if len(set(udp)) != len(udp) or EXCLUDED_UDP_PORTS.intersection(udp):
+        raise ConfigError(f"{label}: ports must be distinct and must not include excluded ports 7, 19, 4403")
+    if enabled and not (tcp or udp):
+        raise ConfigError("network.endpoints: enabled requires nonempty tcp_ports or udp_ports")
+    return (tcp, tuple(sorted(udp))) if enabled else ((), ())
+
+
 def _network(name: str, raw: object) -> Network:
     data = _object(raw, {"cidr", "discovery", "endpoints", "allow_public"}, "network")
     network = _scope(data.get("cidr"))
@@ -178,15 +204,10 @@ def _network(name: str, raw: object) -> Network:
         raise ConfigError("network.discovery.icmp_echo: requires ping authorization")
     if ping and not (icmp_echo or ports):
         raise ConfigError("network.discovery.ping: requires icmp_echo or nonempty tcp_ports")
-    endpoints = _object(data.get("endpoints", {}), {"enabled", "tcp_ports"}, "network.endpoints")
-    enabled = _bool(endpoints.get("enabled", False), "endpoints.enabled")
-    endpoint_ports = _tcp_ports(endpoints.get("tcp_ports", []), "network.endpoints.tcp_ports",
-                                ceiling=MAX_TCP_ENDPOINT_PORTS)
-    if enabled != bool(endpoint_ports):
-        raise ConfigError("network.endpoints: enabled must match a nonempty tcp_ports list")
-    if enabled and network.version != 4:
+    endpoint_ports, udp_ports = _endpoint_settings(data.get("endpoints", {}))
+    if (endpoint_ports or udp_ports) and network.version != 4:
         raise ConfigError("network.endpoints: checks require an IPv4 cidr")
-    return Network(name, str(network), passive, ping, icmp_echo, ports, endpoint_ports, allow_public)
+    return Network(name, str(network), passive, ping, icmp_echo, ports, endpoint_ports, allow_public, udp_ports)
 
 
 def active_scope_allowed(network: Network) -> bool:
@@ -204,10 +225,11 @@ def validate_network(network: Network, *, active: bool = False) -> None:
     """Revalidate native snapshots before invocation, not just YAML at startup."""
     if type(network.tcp_ports) is not tuple or len(network.tcp_ports) > MAX_TCP_DISCOVERY_PORTS:
         raise ConfigError("invalid immutable TCP discovery ports")
-    if type(network.endpoint_ports) is not tuple:
+    if type(network.endpoint_ports) is not tuple or type(network.endpoint_udp_ports) is not tuple:
         raise ConfigError("invalid immutable endpoint ports")
     _network(_name(network.name), {"cidr": network.cidr, "allow_public": network.allow_public,
-        "endpoints": {"enabled": bool(network.endpoint_ports), "tcp_ports": list(network.endpoint_ports)},
+        "endpoints": {"enabled": bool(network.endpoint_methods), "tcp_ports": list(network.endpoint_ports),
+                      "udp_ports": list(network.endpoint_udp_ports)},
         "discovery": {
         "passive": network.passive, "ping": network.ping, "icmp_echo": network.icmp_echo,
         "tcp_ports": list(network.tcp_ports)}})

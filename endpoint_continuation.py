@@ -41,10 +41,11 @@ class Lineage:
     counts: dict[str, int]
     excluded_count: int
     grid: dict[str, tuple[str, int]]
+    attempted_count: int
 
     def progress(self) -> dict:
         return {'root_batch_id': self.root, 'runs': self.runs, 'total': sum(self.counts.values()),
-                'attempted': sum(self.counts[state] for state in ('open', 'closed', 'no_response')),
+                'attempted': self.attempted_count,
                 'responded': self.counts['open'] + self.counts['closed'],
                 'still_unattempted': len(self.remaining), 'excluded': self.excluded_count,
                 'unavailable': self.counts['unavailable'] - self.excluded_count,
@@ -129,7 +130,7 @@ def _history(store: Store, batch_id: str) -> list:
             raise RequestError(LINEAGE_LIMIT_ERROR)
         seen.add(current)
         batch = endpoints._stored(store, current)
-        if batch['source'] != 'tcp_endpoint' or batch['schema_version'] != 1:
+        if batch['source'] != batch['collector'] or batch['schema_version'] != 1:
             raise RequestError('endpoint continuation: inconsistent saved batch')
         claim = _claim(store, 'child_batch_id', current)
         chain.append((batch, claim))
@@ -143,6 +144,7 @@ def load_lineage(store: Store, batch_id: str, *, allow_unapplied: bool = False) 
     counts: dict[str, int] = dict.fromkeys(endpoints.STATES, 0)
     grid: dict[str, tuple[str, int]] = {}
     remaining, excluded_count, previous = (), 0, None
+    attempted_count = 0
     exclusions = None
     for batch, claim in reversed(chain):
         store.check_deadline()
@@ -153,7 +155,7 @@ def load_lineage(store: Store, batch_id: str, *, allow_unapplied: bool = False) 
             _validate_link(previous, batch, claim, selection, remaining)
             counts['not_started'] = 0
         grid = endpoints.validate_probes(store.policy, batch['scope_name'], probes, selection=selection)
-        _validate_probes(store, 'tcp_endpoint', 'network', batch['scope_value'], batch['started_at'],
+        _validate_probes(store, batch['collector'], 'network', batch['scope_value'], batch['started_at'],
                          batch['ended_at'], batch['completion'], probes)
         _verify_projection(store, batch, probes, grid, allow_unapplied and batch['id'] == batch_id)
         network = endpoints._authorized_network(store.policy, batch['scope_name'])
@@ -165,9 +167,11 @@ def load_lineage(store: Store, batch_id: str, *, allow_unapplied: bool = False) 
                 raise RequestError('endpoint continuation: contradictory exclusion evidence')
             counts[endpoints.RESULTS[(probe.outcome, probe.diagnostic_code)][0]] += 1
             excluded_count += int(is_excluded)
+            attempted_count += int(endpoints.attempted(probe.outcome, probe.diagnostic_code))
         remaining = tuple(sorted(probe.probe_name for probe in probes if probe.outcome == 'not_started'))
         previous = batch
-    return Lineage(chain[0][0], chain[-1][0]['id'], len(chain), remaining, counts, excluded_count, grid)
+    return Lineage(chain[0][0], chain[-1][0]['id'], len(chain), remaining, counts, excluded_count,
+                   grid, attempted_count)
 
 
 def _verify_projection(store: Store, batch, probes, grid, allow_missing: bool) -> None:
@@ -182,7 +186,8 @@ def _verify_projection(store: Store, batch, probes, grid, allow_missing: bool) -
         'WHERE p.batch_id=? LIMIT ?', (batch['id'], Limits().observations + 1)).fetchall()
     actual = {row['probe_name']: (row['address'], row['protocol'], row['port'], row['state'], row['qualified'])
               for row in rows}
-    expected = {probe.probe_name: (grid[probe.probe_name][0], 'tcp', grid[probe.probe_name][1],
+    expected = {probe.probe_name: (grid[probe.probe_name][0], endpoints.protocol(probe.probe_name),
+                grid[probe.probe_name][1],
                 *endpoints.RESULTS[(probe.outcome, probe.diagnostic_code)]) for probe in probes}
     counts: dict[str, int] = dict.fromkeys(endpoints.STATES, 0)
     for probe in probes:
@@ -199,7 +204,8 @@ def _validate_link(parent, child, claim, selection, remaining) -> None:
     # between parent, reservation and child; it is evidence, not a causal clock.
     if (selection != remaining or not selection or claim['parent_batch_id'] != parent['id']
             or claim['child_batch_id'] != child['id']
-            or (child['scope_name'], child['scope_value']) != (parent['scope_name'], parent['scope_value'])):
+            or (child['collector'], child['scope_name'], child['scope_value']) != (
+                parent['collector'], parent['scope_name'], parent['scope_value'])):
         raise RequestError('endpoint continuation: inconsistent saved lineage; no new collection')
 
 
@@ -229,7 +235,8 @@ def _preview(store: Store, lineage: Lineage) -> dict:
     cap = store.policy.limits.result_count
     result = {'batch_id': lineage.batch['id'], 'successor_batch_id': child, 'state': state,
               'collection_performed': False, 'progress': lineage.progress(),
-              'remaining': [{'address': lineage.grid[name][0], 'port': lineage.grid[name][1]}
+              'remaining': [{'address': lineage.grid[name][0], 'port': lineage.grid[name][1],
+                             'protocol': endpoints.protocol(name)}
                             for name in lineage.remaining[:cap]],
               'omitted_remaining': max(0, len(lineage.remaining) - cap)}
     response_json(result, store.policy.limits.output_bytes)
@@ -244,7 +251,7 @@ def _validate_reservation(lineage: Lineage, claim) -> None:
 
 
 def continuation(policy: Policy, params: dict) -> dict:
-    """Preview is observational; continue reserves once then makes NEW TCP traffic."""
+    """Preview is observational; continue reserves once then makes NEW TCP/UDP traffic."""
     key, batch_id = next(iter(params.items()))
     if not isinstance(batch_id, str) or re.fullmatch(NAME_PATTERN, batch_id) is None:
         # check() admits only the two code-owned continuation selection keys.
@@ -324,8 +331,8 @@ def _collect(reservation: Reservation, deadline: float) -> dict:
         probes = Scheduler(network, policy, deadline - reserve, endpoints=True,
                            selection=frozenset(selection)).run()
         completion = endpoints.collection_completion(probes)
-        stored = store_batch(store, 'tcp_endpoint', network.name, started, timestamp(utc_now()), completion,
-                             probes, deadline=deadline, endpoint_reservation=reservation)
+        stored = store_batch(store, endpoints.collector(network), network.name, started, timestamp(utc_now()),
+                             completion, probes, deadline=deadline, endpoint_reservation=reservation)
         if stored != child:
             raise ValueError('continuation persistence identity mismatch')
         receipt.update(persisted=True, completion=completion)

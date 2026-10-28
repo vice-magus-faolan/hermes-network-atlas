@@ -7,7 +7,7 @@ migrate, chmod, or repair the store. Shared files are knowledge, not authority.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 import json
 import os
@@ -18,9 +18,9 @@ from uuid import uuid4
 from collections.abc import Iterator
 
 from .config import Policy
-from .errors import RequestError, StoreError
+from .errors import RequestError, StoreError, UpgradeRequiredError
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 IMMUTABLE_TABLES = ("batches", "probes", "observations", "applications", "audit_events", "access_evidence")
 
 
@@ -88,10 +88,10 @@ def _prepare_file(path: Path) -> None:
     os.close(fd)
 
 
-def _initialize(connection: sqlite3.Connection) -> None:
+def _initialize(connection: sqlite3.Connection, *, upgrade: bool = False) -> None:
     connection.execute("BEGIN IMMEDIATE")
     try:
-        _initialize_locked(connection)
+        _initialize_locked(connection, upgrade=upgrade)
         connection.execute("COMMIT")
     except BaseException:
         if connection.in_transaction:
@@ -99,15 +99,20 @@ def _initialize(connection: sqlite3.Connection) -> None:
         raise
 
 
-def _initialize_locked(connection: sqlite3.Connection) -> None:
+def _initialize_locked(connection: sqlite3.Connection, *, upgrade: bool = False) -> None:
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
+    if version in (1, 2, 3) and not upgrade:
+        raise UpgradeRequiredError()
     if version == 1:
         _migrate_endpoints(connection)
         return
     if version == 2:
         _migrate_continuations(connection)
+        return
+    if version == 3:
+        _migrate_endpoint_protocols(connection)
         return
     if version != 0 or connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
         raise StoreError("unsupported or unversioned atlas schema; no automatic downgrade")
@@ -143,6 +148,18 @@ def _migrate_continuations(connection: sqlite3.Connection) -> None:
     for action in ("UPDATE", "DELETE"):
         connection.execute(f"CREATE TRIGGER immutable_endpoint_continuations_{action} BEFORE {action} "
                            "ON endpoint_continuations BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
+    _migrate_endpoint_protocols(connection)
+
+
+def _migrate_endpoint_protocols(connection: sqlite3.Connection) -> None:
+    """Replace only the derived endpoint table within the same upgrade transaction."""
+    schema = Path(__file__).with_name("storage_endpoint_protocols.sql").read_text(encoding="utf-8")
+    for statement in schema.split(";"):
+        if statement.strip():
+            connection.execute(statement)
+    for action in ("UPDATE", "DELETE"):
+        connection.execute(f"CREATE TRIGGER immutable_endpoint_observations_{action} BEFORE {action} "
+                           "ON endpoint_observations BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
 
 
 class _DeadlineConnection(sqlite3.Connection):
@@ -184,7 +201,10 @@ class _DeadlineConnection(sqlite3.Connection):
 class Store:
     """Profile-policy-selected store with bounded waits and explicitly owned lifetime."""
 
-    def __init__(self, policy: Policy, *, writable: bool = False, deadline: float | None = None):
+    def __init__(self, policy: Policy, *, writable: bool = False, deadline: float | None = None,
+                 upgrade: bool = False):
+        if upgrade and not writable:
+            raise ValueError("upgrade requires a writable operator open")
         self.policy = policy
         self.writable = writable
         if writable:
@@ -203,10 +223,10 @@ class Store:
             if deadline is None:
                 self.connection.execute(f"PRAGMA busy_timeout={policy.limits.busy_timeout_ms}")
             if writable:
-                _initialize(self.connection)
+                _initialize(self.connection, upgrade=upgrade)
                 os.chmod(policy.database, 0o600)
                 self.connection.execute("PRAGMA journal_mode=WAL")
-            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, SCHEMA_VERSION):
+            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, SCHEMA_VERSION):
                 raise StoreError("unsupported atlas schema")
             else:
                 self.connection.execute("PRAGMA query_only=ON")
@@ -273,3 +293,36 @@ class Store:
         self.connection.execute("INSERT INTO audit_events VALUES (?,?,?,?,?,?,?,?)",
                                 (event, operation, batch, at, actor, action, entity, encode(details)))
         return event
+
+
+def require_current_schema(policy: Policy, *, deadline: float) -> None:
+    """Read-only admission before collection; never initialize/migrate/reserve.
+
+    Persistence rechecks under its write lock. Other same-UID writers remain
+    trusted; this preflight is not a lock held across network effects.
+    """
+    if not policy.database.exists():
+        return
+    with closing(sqlite3.connect(policy.database.as_uri() + '?mode=ro', uri=True,
+                                 factory=_DeadlineConnection)) as connection:
+        connection.bind(deadline, policy.limits.busy_timeout_ms)
+        version = connection.execute('PRAGMA user_version').fetchone()[0]
+        if version == SCHEMA_VERSION:
+            return
+        if version in (1, 2, 3):
+            raise UpgradeRequiredError()
+        if version != 0 or connection.execute('SELECT 1 FROM sqlite_master LIMIT 1').fetchone():
+            raise StoreError('unsupported or unversioned atlas schema')
+
+
+def upgrade_store(policy: Policy, *, writers_stopped: bool) -> dict:
+    """Explicit native local operator action on the policy-selected existing file."""
+    if not writers_stopped:
+        raise RequestError('upgrade-store: stop all writers and supply --writers-stopped')
+    if not policy.database.exists():
+        raise RequestError('upgrade-store: existing atlas database required')
+    result = {'upgraded': True, 'schema_version': SCHEMA_VERSION, 'collection_performed': False}
+    response_json(result, policy.limits.output_bytes)
+    deadline = time.monotonic() + policy.limits.operation_timeout_seconds
+    with Store(policy, writable=True, deadline=deadline, upgrade=True):
+        return result

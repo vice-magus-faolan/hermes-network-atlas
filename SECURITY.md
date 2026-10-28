@@ -15,7 +15,7 @@ successes and shared evidence cannot grant or expand access. Query and map only
 read stored knowledge; map export is a separate explicit local write.
 
 Configured IPv4 scopes contain at most 256 addresses; IPv6 is passive/storage-only.
-Active discovery and TCP endpoints require RFC1918/private or IPv4 link-local
+Active discovery and TCP/UDP endpoints require RFC1918/private or IPv4 link-local
 scopes unless that exact network has `allow_public: true` in operator policy.
 The opt-in never overrides sensitive-destination/port or resource exclusions.
 Passive collection and historical reads do not require it; saved active-work
@@ -25,14 +25,25 @@ Routes never authorize additional ranges. Passive collection reads local `ip`
 JSON. Legacy active discovery uses bounded Nmap host discovery, not service/OS,
 script or UDP scanning. Opt-in sockets use numeric authorized destinations,
 at most four configured TCP host-discovery ports or 32 separately enabled TCP
-endpoint ports, and Linux ICMP echo datagrams under existing permissions.
-The full endpoint address/port grid must fit the existing observation ceiling
+endpoint ports, up to 32 independently configured UDP ports, and Linux ICMP echo
+datagrams under existing permissions. UDP excludes 7, 19 and 4403; UDP enablement
+does not follow from TCP. `endpoints.enabled: false` disables both protocols,
+even with retained valid lists. The full endpoint address/protocol/port grid must fit the existing observation ceiling
 before traffic; larger selections do not increase concurrency/rate or deadlines.
 There is no raw-socket/helper fallback, sudo or privilege grant.
 TCP checks send/read no application bytes; ICMP sends only an eight-byte header.
 TCP handshakes can still consume connection slots, generate logs and trigger
 kernel retransmissions. Port 4403 is refused without override because contention
 can affect radio clients; other sensitive endpoints remain an operator risk.
+UDP sends exactly one zero-byte unicast datagram, with no service-specific payload,
+broadcast or multicast. Only an empty reply from the exact connected peer within
+the owned socket lifetime or a post-send kernel-reported rejection qualifies.
+Local connect/send success, silence, malformed/wrong-peer/late replies do not.
+An on-time exact-peer nonempty reply retains an inconclusive diagnostic, never
+packet contents, validation or authenticated identity; a later valid reply can win.
+UDP correlation is not authentication or protection against spoofing/OS tuple
+reuse. Logs, remote processing, firewall state and ICMP remain possible effects;
+QUIC and Syncthing local-discovery handshakes are not implemented.
 See [LAN collection](docs/local-discovery.md), [host discovery](docs/host-discovery-policy.md)
 and the separate opt-in [endpoint policy](docs/endpoint-checks.md).
 

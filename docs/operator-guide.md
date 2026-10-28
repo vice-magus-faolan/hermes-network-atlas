@@ -130,11 +130,15 @@ render:
 - `discovery.icmp_echo` defaults false and requires `ping: true`. TCP ports default
   to `[80, 443]`; choose at most four distinct ports in 1..65535, excluding 4403.
   ICMP-only uses `tcp_ports: []`. See [host-discovery policy](host-discovery-policy.md).
-- Endpoint checks need `enabled: true` and a nonempty `tcp_ports` list under
-  `networks.NAME.endpoints`, independently of discovery or SSH. Select up to 32
-  distinct integer ports in 1..65535, excluding 4403; the full address/port grid
-  must still fit `limits.observations` before any traffic (at most 16 ports on a
-  /24 with the hard 4096-record ceiling). For a standing five-port LAN example
+- Endpoints need the master `networks.NAME.endpoints.enabled: true`, independently
+  of discovery or SSH, and at least one nonempty protocol list. TCP and UDP use
+  their own `tcp_ports`/`udp_ports` selections; UDP-only uses empty/omitted TCP.
+  `enabled: false` pauses both, retaining valid native settings lists for later
+  re-enable; status shows only effective selections. Each list
+  accepts up to 32 distinct integer ports in 1..65535; TCP excludes 4403 and UDP
+  excludes 7, 19 and 4403. The full address × (TCP + UDP selections) grid
+  must fit `limits.observations` before any traffic (at most 16 protocol/port pairs
+  on a /24 with the hard 4096-record ceiling). For a standing mixed-protocol example
   and unchanged runtime budgets, see [endpoint policy](endpoint-checks.md#operator-policy).
 - SSH needs `ssh.enabled: true` and a host entry such as
   `lab-a: {alias: lab-a, inspect: true}` under `ssh.hosts`, referencing an existing
@@ -246,6 +250,15 @@ is read only by the explicit converter (bounded to 64 KiB); it is never a runtim
    An explicit `store.shared_sqlite_path` stays in place, even when it names a
    legacy location: this converts policy only, never makes private shared-store copies.
 
+Conversion preserves the source and destination schema versions; it is not a
+schema upgrade. If the selected converted store is schema 1..3, keep writers
+stopped and deliberately run `hermes -p PROFILE network-atlas upgrade-store --writers-stopped`
+after conversion finishes, before restarting writers. Upgrade changes only the
+selected destination (or deliberately selected shared file), not retained originals.
+Do not replay conversion after upgrading the destination: its schema now differs
+from the original, so the exact-copy retry correctly refuses. See
+[shared-store upgrade procedure](endpoint-checks.md#sharing-and-upgrades).
+
 The flag attests that you stopped writers; it is not a process detector. Originals
 are retained, not renamed/deleted. Existing nonempty native settings and an existing
 destination must match the conversion exactly; divergent stores/settings refuse
@@ -292,7 +305,7 @@ There is no slash `query` command; use the model tool or local CLI for filters.
 
 Status shows inventory, freshness, local policy and collection history separately.
 SSH permission and last inspection success do not prove present reachability.
-`endpoint_count` counts recorded address and port pairs, not devices or services;
+`endpoint_count` counts recorded address/protocol/port tuples, not devices or services;
 `endpoint_observation_count` includes failed and unstarted history.
 
 ### Status guidance
@@ -325,7 +338,7 @@ object based on the same stored snapshot and current profile policy:
 No collection grants means no collection choices, not permission to invent an alias,
 change policy or run a custom scanner. An empty query/map does not trigger collection;
 use status to distinguish unapplied evidence from a genuinely empty store. IP-only
-responses and TCP endpoint evidence remain separate from canonical device identity.
+responses and TCP/UDP endpoint evidence remain separate from canonical device identity.
 
 To filter devices and inspect their provenance, use returned stable IDs:
 
@@ -358,14 +371,17 @@ Originals remain listed after resolution; retained totals are not current failur
 counts. The batch summary separates current uncertainty from resolved/supporting
 history and points to complete detail pagination. See [unresolved evidence](unresolved-evidence.md).
 
-TCP endpoint history is another separate read-only view:
+TCP/UDP endpoint history is another separate read-only view:
 
 ```sh
 hermes -p PROFILE network-atlas query --query-json '{"view":"endpoints","limit":20,"offset":0}'
 ```
 
 Filter endpoints with exact `address` or `batch_id` as needed. `open` means a
-historical TCP connect; `closed` means refusal. Neither identifies a service.
+historical TCP connect or validated empty UDP reply; `closed` means TCP refusal
+or post-send UDP kernel-reported rejection. Read `protocol`, `probe_method` and
+`diagnostic_code`: UDP is transport-only evidence, not QUIC/local discovery or
+authenticated service identity. Local UDP send success and silence do not qualify.
 `no_response`, `unavailable` and `not_started` are not offline verdicts. Rows carry
 no device identity or SSH access; see [endpoint history](endpoint-checks.md#read-historical-evidence).
 
@@ -441,7 +457,7 @@ events. Failed or partial batches contribute valid positives, not scope absence.
 Slash equivalents are `/network discover home passive`, `/network inspect lab-a`,
 and `/network reconcile BATCH_ID`.
 
-TCP endpoint checking instead performs collection, persistence, projection, and
+TCP/UDP endpoint checking instead performs collection, persistence, projection, and
 readback through one operation under its separate `endpoints` grant:
 
 ```sh
@@ -454,7 +470,7 @@ rescanning. Resume never recollects. Read `completion` separately from `persiste
 `applied`, `projected` and `queryable`. Endpoint batches do not use reconciliation
 or create devices, aliases or topology. To make further bounded progress after a
 timeout, use `preview-endpoints BATCH_ID`, then explicitly `continue-endpoints BATCH_ID`.
-Continue makes new TCP traffic only for still-unattempted work and returns a new
+Continue makes new TCP/UDP traffic only for still-unattempted tuples and returns a new
 linked batch; preview that successor to inspect progress. This is different from
 no-contact resume. See [continuation and interruption](endpoint-checks.md#continue-unfinished-work--new-traffic).
 
@@ -472,6 +488,9 @@ Unavailable ICMP does not erase valid TCP evidence. See
   without application traffic. Port 4403 is refused because contention can affect
   radio clients; other sensitive endpoints can still be affected. Checks send no
   application payloads or banner requests and make no service or version claims.
+- UDP sends exactly one empty unicast datagram per selected tuple; this can cause
+  logs, processing, firewall state or ICMP. No broadcast/multicast or application
+  handshake is sent. See [UDP semantics and limits](endpoint-checks.md#udp-method-and-limits).
 - SSH uses existing aliases, keys, known_hosts and remote Linux utilities. It
   requires BatchMode and strict host keys, with no sudo, PTY, forwarding,
   LocalCommand or multiplex reuse. Unknown or changed keys fail closed; do not
@@ -545,9 +564,10 @@ resume a saved batch after repairing the reported category, rather than rescanni
   permissions. Reduce the configured scope or enabled methods if work cannot fit
   the budget. Endpoint recovery uses its stored ID rather than another scan.
 - Store or version failure: preserve the database and use a compatible Atlas version;
-  make a consistent backup before changing versions. Writable opens upgrade
-  schema 1 or 2 to 3 transactionally; read-only access does not migrate.
-  Older binaries cannot read/write schema 3. See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
+  make a consistent backup before changing versions. Ordinary writes to schema
+  1..3 refuse before collection; reads remain available without migration. The
+  explicit local `upgrade-store --writers-stopped` command upgrades to 4 transactionally.
+  Older binaries cannot read/write schema 4. See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
 
 Older readers may also reject additive configuration keys or `not_started` probe
 outcomes. Update shared-store readers before using new features; historical

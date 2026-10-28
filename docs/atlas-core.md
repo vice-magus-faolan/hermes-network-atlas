@@ -26,10 +26,15 @@ migrates the database or changes settings. Store remains Atlas's relational,
 read-only/deadline/transaction boundary rather than a second JSON state store.
 
 The original schema is in `storage_schema.sql`; schema 2 adds endpoint projection
-through `storage_endpoints.sql`, and schema 3 adds immutable successor reservations
-through `storage_continuations.sql`. `storage.py` initializes or additively upgrades
-schema 1/2 transactionally under a bounded write lock. Read-only opens support
-schema 1/2 without migration. A nonempty unversioned database or
+through `storage_endpoints.sql`, schema 3 adds immutable successor reservations
+through `storage_continuations.sql`, and schema 4 widens only endpoint projection
+constraints through `storage_endpoint_protocols.sql`, copying exact old row values.
+`storage.py` initializes new empty stores at schema 4. Existing schema 1..3 stores
+remain readable but ordinary writable opens refuse; only the explicit native local
+`upgrade-store --writers-stopped` action migrates under a bounded write lock.
+Collection preflights the version before transport, then persistence rechecks
+under its lock; this is not a lock across network effects. Read-only opens
+support schema 1..3 without migration. A nonempty unversioned database or
 future version is refused without repair/downgrade. See endpoint-checks.md for
 upgrade compatibility. Foreign keys are enabled for
 every connection. Write transactions use BEGIN IMMEDIATE, bounded busy waits,

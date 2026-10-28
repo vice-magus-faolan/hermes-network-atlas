@@ -379,7 +379,7 @@ def _guidance_notes(state: dict, known_devices: int, inspections: list) -> list[
     """Explain inventory gaps without turning missing evidence into conclusions."""
     notes = []
     if not known_devices:
-        notes.append("Canonical inventory is empty, not proof of an empty network. IP-only and TCP endpoint "
+        notes.append("Canonical inventory is empty, not proof of an empty network. IP-only and TCP/UDP endpoint "
                      "responses do not establish device identity.")
     if state["local_collection_state"] == "none":
         notes.append("No collection is recorded for this profile. Reads do not collect evidence.")

@@ -2,7 +2,7 @@
 
 Durable network knowledge for Hermes: devices, interfaces, addresses, relations,
 and historical evidence in profile-aware SQLite. Query what is already known,
-render Markdown/Mermaid maps, or explicitly collect bounded LAN, TCP endpoint,
+render Markdown/Mermaid maps, or explicitly collect bounded LAN, TCP/UDP endpoint,
 and configured SSH observations. Atlas observes and remembers; it does not
 administer infrastructure. No external database or background service is needed.
 
@@ -129,7 +129,7 @@ matching local policy (the quick start enables only passive discovery).
 - `network_inspect` — collect hostname/OS/interface/address inventory from an
   authorized SSH alias, even without an existing device. Reconcile its returned
   batch, then query/map the device. Example: `{"target":"lab-a"}`.
-- `network_check_endpoints` — collect and persist separately enabled TCP evidence.
+- `network_check_endpoints` — collect and persist explicitly configured TCP/UDP evidence.
   Example: `{"network":"home"}`; no device or service identity is created.
   For unfinished work, preview with `{"preview_batch_id":"BATCH_ID"}`, then
   explicitly make new subset checks with `{"continue_batch_id":"BATCH_ID"}`.
@@ -150,8 +150,13 @@ matching local policy (the quick start enables only passive discovery).
   No raw-socket fallback, service enumeration or absence-based deletion.
 - TCP connects can consume slots and generate logs without application payloads;
   port 4403 is refused. Same-UID code, executables and SSH config are trusted.
+- UDP sends one empty unicast datagram per selected tuple; local send success or
+  silence is inconclusive. No QUIC or broadcast/multicast discovery is performed.
 - Keep policy, SQLite, WAL, exports and credentials private; use a consistent SQLite
-  backup before upgrades. See the runbook for recovery without deleting history.
+  backup before upgrades. Existing schema 1..3 stores stay readable; ordinary writes
+  refuse until an operator deliberately runs
+  [upgrade-store](docs/endpoint-checks.md#sharing-and-upgrades) with writers stopped.
+  See the runbook for recovery without deleting history.
 
 ## Guides
 
@@ -160,7 +165,7 @@ matching local policy (the quick start enables only passive discovery).
 - [Unidentified discovery evidence and lineage](docs/unresolved-evidence.md)
 - [LAN collection and reconciliation](docs/local-discovery.md)
 - [ICMP/TCP host-discovery policy and limitations](docs/host-discovery-policy.md)
-- [TCP endpoint policy, recovery, and shared queries](docs/endpoint-checks.md)
+- [TCP/UDP endpoint policy, recovery, and shared queries](docs/endpoint-checks.md)
 - [Authorized SSH inspection and transport trust](docs/authorized-ssh-inspection.md)
 - [Security boundaries](SECURITY.md) · [Contributing and tests](CONTRIBUTING.md)
 

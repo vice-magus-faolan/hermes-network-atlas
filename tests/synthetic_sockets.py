@@ -27,17 +27,21 @@ class Clock:
 
 class SyntheticSockets:
     """Fixed numeric decisions supplied by tests, not a forwarding fallback."""
-    def __init__(self, response=None, *, icmp_error=None):
+    def __init__(self, response=None, *, icmp_error=None, udp_response=None):
         self.clock = Clock()
         self.response = response or (lambda address, port: 'positive')
         self.icmp_error = icmp_error
+        self.udp_response = udp_response or (lambda address, port: 'positive')
+        self.protocol_calls = []
         self.sockets = []
         self.calls = []
         self.peak = 0
 
     def factory(self, family, kind, protocol):
         assert family == socket.AF_INET
-        assert (kind, protocol) in {(socket.SOCK_STREAM, socket.IPPROTO_TCP), (socket.SOCK_DGRAM, socket.IPPROTO_ICMP)}
+        assert (kind, protocol) in {(socket.SOCK_STREAM, socket.IPPROTO_TCP),
+                                    (socket.SOCK_DGRAM, socket.IPPROTO_ICMP),
+                                    (socket.SOCK_DGRAM, socket.IPPROTO_UDP)}
         if protocol == socket.IPPROTO_ICMP and self.icmp_error is not None:
             raise OSError(self.icmp_error, 'synthetic private diagnostic')
         sock = SyntheticSocket(self, protocol)
@@ -87,12 +91,17 @@ class SyntheticSocket:
         assert str(ip_address(address)) == address
         assert port != 4403
         self.address, self.port = address, port
-        self.state = self.fixture.response(address, port)
+        response = self.fixture.udp_response if self.protocol == socket.IPPROTO_UDP else self.fixture.response
+        self.state = response(address, port)
         self.fixture.calls.append((self.fixture.clock.monotonic(), address, port))
+        self.fixture.protocol_calls.append((self.fixture.clock.monotonic(), address, self.protocol, port))
         self.fixture.peak = max(
             self.fixture.peak, sum(s.address is not None and not s.closed for s in self.fixture.sockets))
 
     def connect_ex(self, target):
+        if self.protocol == socket.IPPROTO_UDP:
+            self.address, self.port = target
+            return 0
         assert self.protocol == socket.IPPROTO_TCP
         self._start(*target)
         return errno.EINPROGRESS
@@ -109,7 +118,22 @@ class SyntheticSocket:
         self._start(target[0], None)
         return 8
 
+    def send(self, packet):
+        assert self.protocol == socket.IPPROTO_UDP and packet == b''
+        assert self.packet is None  # no retries or second datagram
+        self.packet = packet
+        self._start(self.address, self.port)
+        return 0
+
     def recvfrom(self, maximum):
+        if self.protocol == socket.IPPROTO_UDP:
+            codes = {'closed': errno.ECONNREFUSED, 'unreachable': errno.EHOSTUNREACH, 'denied': errno.EACCES}
+            if self.state in codes:
+                raise OSError(codes[self.state], 'synthetic UDP error')
+            packet = b'malformed' if self.state == 'malformed' else b''
+            source = ('192.0.2.99' if self.state == 'wrong_address' else self.address,
+                      self.port + 1 if self.state == 'wrong_port' else self.port)
+            return packet[:maximum], source
         def from_checksum(data):
             return (~sum(struct.unpack('!4H', data))) & 65535
         packet = struct.pack('!BBHHH', 0, 0, 0, self.number, 1)
@@ -130,7 +154,7 @@ class SyntheticSelector:
         self.registered.clear()
 
     def register(self, sock, mask):
-        assert mask == (selectors.EVENT_READ if sock.port is None else selectors.EVENT_WRITE)
+        assert mask == (selectors.EVENT_WRITE if sock.protocol == socket.IPPROTO_TCP else selectors.EVENT_READ)
         self.registered[sock] = mask
 
     def unregister(self, sock):
