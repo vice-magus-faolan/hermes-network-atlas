@@ -69,11 +69,15 @@ def ssh(args: list[str], stage: str) -> str:
     if stage == "collision":
         interfaces = [interface, {**interface, "ifname": "duplicate0"}]
         payloads["ip -j address"] = payloads["ip -j link"] = json.dumps(interfaces)
-    if stage == "uncertainty":
+    if stage in {"uncertainty", "conflicts"}:
         interfaces = [interface]
         interfaces += [{"ifname": f"veth{n:03}", "address": f"02:00:00:00:00:{n:02x}", "operstate": "UP",
                         "addr_info": [{"local": f"198.18.0.{n + 1}", "prefixlen": 24}]} for n in range(40)]
         interfaces.append({"ifname": "collision0", "address": MACS["lab-b"], "operstate": "UP", "addr_info": []})
+        if stage == "conflicts":
+            for n in range(7):
+                interfaces += [{"ifname": f"duplicate{n}_{side}", "address": f"00:22:33:44:55:{n:02x}",
+                                "operstate": "UP", "addr_info": []} for side in (0, 1)]
         payloads["ip -j address"] = json.dumps(interfaces)
         payloads["ip -j link"] = json.dumps([{key: value for key, value in row.items() if key != "addr_info"}
                                             for row in interfaces])
@@ -93,7 +97,7 @@ def main() -> int:
         raise RuntimeError("synthetic scratch fixture required")
     stage = (root / "stage").read_text().strip()
     binary, args = Path(sys.argv[0]).name, sys.argv[1:]
-    assert stage in {"baseline", "changed", "refused", "duplicate", "uncertainty", "collision"}
+    assert stage in {"baseline", "changed", "refused", "duplicate", "uncertainty", "collision", "conflicts"}
     fd = os.open(root / "calls.jsonl", os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
     try:
         os.write(fd, (json.dumps({"binary": binary, "args": args, "stage": stage}) + "\n").encode())
