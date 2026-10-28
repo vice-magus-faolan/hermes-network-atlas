@@ -50,14 +50,16 @@ With a network named `home` enabled in local policy:
 A successful reconciliation atomically writes canonical evidence references,
 assignments, sighting/check clocks, events and an immutable unique application
 result. It returns new/changed/unchanged device IDs, typed missing entries,
-bounded conflicting/unresolved samples with full totals, and audit event IDs.
+complete saved conflicts, bounded unresolved samples with full totals, and audit event IDs.
 The [uncertainty summary and drilldown](unresolved-evidence.md#compact-uncertainty-and-current-state)
 distinguish observations from affected diagnostic subjects without changing identity.
 `missing` explicitly means not_observed_in_this_run, never offline/deleted.
 The explicit batch-ID replay returns the same projection of the saved application,
 including its original applied_at and event IDs, without adding history/events or refreshing
 clocks. An omitted ID is a new selection, not an idempotency key. Smaller output
-limits can refuse an old large result without altering it.
+limits can refuse an old large result without altering it; a lowered observations
+ceiling can also refuse replay's uncertainty projection even when the saved result
+fits the byte limit. See [replay bounds](unresolved-evidence.md#bounds-and-trust).
 
 Reconciliation starts one monotonic operation budget before opening SQLite. The
 same absolute deadline covers schema initialization, every lock wait, SQL work,

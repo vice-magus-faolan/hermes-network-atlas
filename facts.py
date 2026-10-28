@@ -6,12 +6,30 @@ from datetime import datetime, timedelta
 import json
 import sqlite3
 
-from .storage import timestamp
+from .storage import Store, timestamp
 
 OPERATOR_FIELDS = ("canonical_name", "description", "device_type", "retired")
 DEVICE_FIELDS = (*OPERATOR_FIELDS, "hostname", "os", "manufacturer", "ssh_alias")
 INTERFACE_FIELDS = ("name", "interface_type", "state", "mac_address")
 RELATION_TYPES = ("physical", "virtual", "parent", "bridge_member", "routes_via", "hosted_on", "unknown")
+
+# Shared bounded payloads; selection, ordering and row ceilings stay with callers.
+ORIGINAL_EVIDENCE_COLUMNS = (
+    "o.id,o.batch_id,o.probe_id,o.subject_kind,substr(o.subject_anchor,1,?) AS subject_anchor,"
+    "o.entity_id,o.field,substr(o.value_json,1,?) AS value_json,o.source,o.confidence,o.observed_at,"
+    "o.evidence_kind,substr(o.explanation,1,?) AS explanation,o.neighbor_state,o.qualified")
+
+
+def checked_evidence(store: Store, row) -> dict:
+    """Refuse oversized original payloads before decoding; never expose a prefix."""
+    store.check_deadline()
+    for key in ("subject_anchor", "value_json", "explanation"):
+        if row[key] is not None and len(row[key].encode("utf-8")) > store.policy.limits.output_bytes:
+            raise ValueError("stored evidence exceeds configured byte bound")
+    value = evidence(row)
+    if row["subject_kind"] == "address" and not isinstance(value["value"], dict):
+        raise ValueError("invalid stored address evidence")
+    return value
 
 
 def selection_cte(now: datetime, stale_days: int, *, subject: tuple[str, str] | None = None,

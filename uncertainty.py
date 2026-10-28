@@ -8,25 +8,60 @@ from __future__ import annotations
 
 import json
 
+from .facts import ORIGINAL_EVIDENCE_COLUMNS, checked_evidence
 from .storage import Store, encode
 
 
 def original_rows(store: Store, batch_id: str) -> list:
     """Keep summary work within the existing single-batch observation ceiling."""
     rows = store.connection.execute(
-        "SELECT id,batch_id,probe_id,subject_kind,substr(subject_anchor,1,?) AS subject_anchor,entity_id,field,"
-        "substr(value_json,1,?) AS value_json,source,confidence,observed_at,evidence_kind,"
-        "substr(explanation,1,?) AS explanation,neighbor_state,qualified FROM observations "
-        "WHERE batch_id=? AND entity_id IS NULL ORDER BY id LIMIT ?",
+        "SELECT " + ORIGINAL_EVIDENCE_COLUMNS + " FROM observations o "
+        "WHERE o.batch_id=? AND o.entity_id IS NULL ORDER BY o.id LIMIT ?",
         (store.policy.limits.output_bytes + 1,) * 3 + (batch_id, store.policy.limits.observations + 1)).fetchall()
     if len(rows) > store.policy.limits.observations:
         raise ValueError("uncertainty summary exceeds configured observation bound")
     for row in rows:
-        store.check_deadline()
-        for key in ("subject_anchor", "value_json"):
-            if len(row[key].encode("utf-8")) > store.policy.limits.output_bytes:
-                raise ValueError("stored evidence exceeds configured byte bound")
+        checked_evidence(store, row)
     return rows
+
+
+def validate_entry(entry: object, *, evidence_required: bool = True) -> None:
+    """Validate one saved diagnostic; some conflict records have no evidence ID."""
+    if not isinstance(entry, dict):
+        raise ValueError("invalid stored application")
+    if evidence_required or "evidence_id" in entry:
+        if not isinstance(entry.get("evidence_id"), str):
+            raise ValueError("invalid stored application")
+    candidates = entry.get("candidate_device_ids", [])
+    if (not isinstance(entry.get("reason"), str) or not isinstance(candidates, list)
+            or any(not isinstance(candidate, str) for candidate in candidates)):
+        raise ValueError("invalid stored application")
+
+
+def validate_application(store: Store, result: object, batch_id: str) -> None:
+    """Validate shape and exact original membership before diagnostic indexing.
+
+    Indexed ID lookups avoid loading a whole batch for a paginated detail read;
+    the receipt byte ceiling and operation deadline still bound validation work.
+    """
+    if not isinstance(result, dict) or result.get("batch_id", batch_id) != batch_id:
+        raise ValueError("invalid stored application")
+    checked = set()
+    for name in ("unresolved", "conflicting"):
+        entries = result.get(name, [])
+        if not isinstance(entries, list):
+            raise ValueError("invalid stored application")
+        for entry in entries:
+            store.check_deadline()
+            validate_entry(entry, evidence_required=name == "unresolved")
+            evidence_id = entry.get("evidence_id")
+            if evidence_id is None or evidence_id in checked:
+                continue
+            if store.connection.execute(
+                    "SELECT 1 FROM observations WHERE id=? AND batch_id=? AND entity_id IS NULL",
+                    (evidence_id, batch_id)).fetchone() is None:
+                raise ValueError("invalid stored application evidence membership")
+            checked.add(evidence_id)
 
 
 class Subjects:
@@ -99,11 +134,12 @@ def summarize(entries: list[dict], subjects: Subjects, limit: int, temporal_scop
             "omitted_reason_count": max(0, len(reasons) - limit)}
 
 
-def reconciliation_reply(store: Store, result: dict, rows: list | None = None) -> dict:
+def reconciliation_reply(store: Store, batch_id: str, result: dict, rows: list | None = None) -> dict:
     """Project saved application diagnostics without altering its receipt or audit counts."""
+    validate_application(store, result, batch_id)
     if not result.get("unresolved") and not result.get("conflicting"):
         return result
-    rows = original_rows(store, result["batch_id"]) if rows is None else rows
+    rows = original_rows(store, batch_id) if rows is None else rows
     subjects = Subjects(rows)
     entries = result.get("unresolved", [])
     limit = min(5, store.policy.limits.result_count)
@@ -114,13 +150,18 @@ def reconciliation_reply(store: Store, result: dict, rows: list | None = None) -
     conflicts = {}
     for entry in result.get("conflicting", []):
         conflicts.setdefault(entry["reason"], []).append(entry)
-    conflict_sample = [members[0] for members in conflicts.values()]
-    conflict_sample += [entry for members in conflicts.values() for entry in members[1:]]
+    conflict_reasons = [{"reason": reason, "conflict_record_count": len(members)}
+                        for reason, members in sorted(conflicts.items())]
+    # Conflicts need not reference originals: evidence pages cannot recover them.
+    saved_conflicts = result.get("conflicting", [])
     return {**result, "unresolved": ordered[:limit], "unresolved_total_count": len(entries),
             "unresolved_omitted_count": max(0, len(entries) - limit),
-            "conflicting": conflict_sample[:limit],
-            "conflicting_total_count": len(result.get("conflicting", [])),
-            "conflicting_omitted_count": max(0, len(result.get("conflicting", [])) - limit),
-            "uncertainty": summarize(entries, subjects, limit, "at_application"),
-            "evidence_query": {"view": "unresolved", "batch_id": result["batch_id"], "limit": limit},
-            "current_summary_query": {"view": "unresolved", "batch_id": result["batch_id"], "summary": True}}
+            "conflicting": saved_conflicts, "conflicting_total_count": len(saved_conflicts),
+            "conflicting_omitted_count": 0,
+            "uncertainty": {"conflict_record_count": len(saved_conflicts),
+                            "conflict_reasons": conflict_reasons[:limit],
+                            "conflict_reason_count": len(conflict_reasons),
+                            "omitted_conflict_reason_count": max(0, len(conflict_reasons) - limit),
+                            **summarize(entries, subjects, limit, "at_application")},
+            "evidence_query": {"view": "unresolved", "batch_id": batch_id, "limit": limit},
+            "current_summary_query": {"view": "unresolved", "batch_id": batch_id, "summary": True}}

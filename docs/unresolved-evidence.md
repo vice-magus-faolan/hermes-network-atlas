@@ -47,10 +47,21 @@ The serialized byte cap also applies to empty responses.
 ## Compact uncertainty and current state
 
 Reconciliation with uncertainty returns a compact projection of the complete
-immutable application. `unresolved` and `conflicting` are samples of at most five
-entries each (or the lower result_count); their `*_total_count` and
-`*_omitted_count` describe the full saved lists. These are observation/diagnostic
-counts, not counts of devices. `uncertainty` groups unresolved observations by
+immutable application. `unresolved` samples at most five observations (or the
+lower result_count); `unresolved_total_count` and `unresolved_omitted_count`
+describe the full saved list. `conflicting` retains EVERY saved conflict record,
+including duplicate MACs, ambiguous aliases and equal-rank disagreements without
+an evidence ID. Its `conflicting_total_count` counts records and
+`conflicting_omitted_count` is zero; the complete response must still fit the
+configured byte/deadline bounds or it refuses. Conflict records are not device,
+subject or observation counts, and can overlap unresolved observations.
+
+`uncertainty` presents conflict diagnostics separately, before repetitive field
+uncertainty: `conflict_record_count`, `conflict_reason_count`, at most five
+`conflict_reasons` (or the lower result_count), and `omitted_conflict_reason_count`.
+Each conflict reason counts saved records, without inventing evidence IDs or
+subject identities. The complete `conflicting` list remains available even when
+reason examples are omitted. Separately, `uncertainty` groups unresolved observations by
 reason and identity/topology category, reporting `observation_count`, diagnostic
 `subject_count`, and candidate-bearing `conflicting_observation_count` per reason.
 Each reason has at most three example subjects with one original `evidence_id`
@@ -82,7 +93,7 @@ metadata, and superseded/expired route configuration is inactive, not a current
 failure. Unknown outcomes are not silently called unresolved. Identity resolution
 does not establish current reachability or topology support.
 
-The current `uncertainty` uses the same bounded reason/subject shape, marked
+The current `uncertainty` uses the bounded observation reason/subject shape, marked
 `temporal_scope=current` instead of `at_application`. Summary replies intentionally
 return no evidence rows (`omitted_count=total_count`, `has_more=false`); follow
 `detail_query`, removing summary, to page all originals. Summary work is restricted
@@ -178,9 +189,17 @@ payloads and saved receipts are bounded before JSON parsing; oversized payloads
 refuse without returning a truncated value. Saved receipts are bounded
 before JSON parsing by the reader's output_bytes; a lowered byte cap may refuse
 older larger receipts even for limit=1. Final JSON uses that same output cap.
+Reconciliation replay also reads the original batch to project uncertainty: a
+populated saved result that fits output_bytes can still refuse when the current
+limits.observations is lower than its original-row count. It does not reapply or
+truncate the saved application. Restore sufficient configured capacity to replay;
+original evidence pagination remains independent of that summary row ceiling.
 Saved unresolved entries require string evidence_id/reason and an optional list
-of string candidate_device_ids; malformed entries fail with a controlled query
-error, for original applications and subsequent lineage alike. No receipt is
+of string candidate_device_ids; every referenced ID must belong to an original
+observation in that application batch. Malformed/foreign/missing entries fail with
+a controlled public error, including replay, original reads and subsequent lineage.
+Conflict records may omit evidence_id; any supplied ID has the same membership
+requirement. No receipt is
 rewritten or repaired by reading it.
 One operation_timeout_seconds budget covers the read, with SQLite progress
 interruption during long statements, bounded busy waits, Python phase checks and
