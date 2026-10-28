@@ -60,7 +60,8 @@ def ssh(args: list[str], stage: str) -> str:
     number = {"lab-a": 1, "lab-b": 2, "lab-c": 3}[alias]
     interface = {"ifname": "eth0", "address": MACS[alias], "operstate": "UP",
                  "addr_info": [{"local": f"192.0.2.{number}", "prefixlen": 29}]}
-    payloads = {"hostname": alias + "\n", "hostnamectl --static": alias + "\n",
+    hostname = "lab-b" if stage == "duplicate" and alias == "lab-c" else alias
+    payloads = {"hostname": hostname + "\n", "hostnamectl --static": hostname + "\n",
                 "cat /etc/os-release": 'PRETTY_NAME="Fixture Linux $(do-not-execute)"\nID=fixture\n',
                 "ip -j address": json.dumps([interface]), "ip -j link": json.dumps([interface]),
                 "ip -j route": "[]",
@@ -76,7 +77,7 @@ def main() -> int:
         raise RuntimeError("synthetic scratch fixture required")
     stage = (root / "stage").read_text().strip()
     binary, args = Path(sys.argv[0]).name, sys.argv[1:]
-    assert stage in {"baseline", "changed", "refused"}
+    assert stage in {"baseline", "changed", "refused", "duplicate"}
     fd = os.open(root / "calls.jsonl", os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
     try:
         os.write(fd, (json.dumps({"binary": binary, "args": args, "stage": stage}) + "\n").encode())

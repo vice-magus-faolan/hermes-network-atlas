@@ -248,7 +248,10 @@ Only fixed profile-local exports/network_map.md and exports/network_map.mmd are
 written. Rendering uses stored supported edges, stable ID ordering, escaped labels,
 explicit provenance, stale/retired/isolated/uncertain states, and no regeneration
 time. Device labels prefer an unambiguous operator-friendly name, then the selected
-unambiguous hostname, then the stable UUID. Relationship endpoints use the same
+unambiguous hostname, then the stable UUID. A hostname shared by multiple devices
+or matching another device's chosen canonical label falls back to UUID; explicit
+canonical labels retain precedence. Inventory UUIDs are reserved for fallback,
+not hostname-derived labels. Relationship endpoints use the same
 names; Markdown also lists stable IDs and Mermaid node IDs always derive from
 UUIDs, never names. Conflicting names are skipped for labeling but still mark the
 device uncertain; this fallback assigns no canonical name or identity.

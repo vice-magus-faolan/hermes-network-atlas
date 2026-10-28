@@ -200,6 +200,61 @@ def sources_and_failure(atlas: NativeAtlas, root: Path, data: dict) -> None:
     assert not after["access"][0]["last_inspection"]["succeeded"]
     assert "SECRET_FIXTURE_DIAGNOSTIC" not in json.dumps(after)
     atlas.update(device, "relationship", {"target_device": data["ids"]["lab-b"], "relationship_type": "hosted_on"})
+    hostname_collisions(atlas, root, data["ids"])
+
+
+def hostname_collisions(atlas: NativeAtlas, root: Path, ids: dict) -> None:
+    """Distinct inspected identities sharing a hostname stay distinguishable in real maps."""
+    first, second, third = (ids[alias] for alias in ("lab-a", "lab-b", "lab-c"))
+    stage = root / "fixture-bin" / "stage"
+    atlas.update(first, "canonical_name", "Canonical control")
+    stage.write_text("duplicate")
+    receipt = atlas.tool("network_inspect", {"target": "lab-c"})
+    assert receipt["completion"] == "complete", receipt
+    applied = atlas.tool("network_reconcile", {"batch_id": receipt["batch_id"]})
+    assert not applied["new"] and not applied["conflicting"], applied
+    assert_collision_map(atlas, root, {first: "Canonical control", second: second, third: third})
+    stage.write_text("baseline")
+    receipt = atlas.tool("network_inspect", {"target": "lab-c"})
+    assert receipt["completion"] == "complete", receipt
+    applied = atlas.tool("network_reconcile", {"batch_id": receipt["batch_id"]})
+    assert not applied["new"] and not applied["conflicting"], applied
+    atlas.update(first, "canonical_name", "lab-b")
+    assert_collision_map(atlas, root, {first: "lab-b", second: second, third: "lab-c"})
+    atlas.update(first, "canonical_name", 'Fixture "] --> Evil["<script>|')
+    stage.write_text("refused")
+
+
+def assert_collision_map(atlas: NativeAtlas, root: Path, names: dict) -> None:
+    home = Path(os.environ["HERMES_HOME"])
+    database = home / "plugin-data" / "network-atlas" / "atlas.sqlite3"
+    devices = atlas.tool("network_query", {})
+    histories = {device: atlas.tool("network_query", {"view": "history", "device_id": device}) for device in names}
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        history = tuple(connection.iterdump())
+    files = {path.name: path.read_bytes() for path in database.parent.glob("atlas.sqlite3*")}
+    calls = (root / "fixture-bin" / "calls.jsonl").read_bytes()
+    source, target, _ = names
+    line = names[source] + " -- hosted_on [user_supplied] --> " + names[target]
+    for kind in ("text", "markdown", "mermaid"):
+        mapped = atlas.tool("network_map", {"format": kind})
+        assert not mapped["exports"] and not mapped["discovery_performed"], mapped
+        for device, name in names.items():
+            expected = {"text": name + " [", "markdown": f"| {name} ({device}) |",
+                        "mermaid": 'n' + device.replace("-", "") + '["' + name.replace("-", "#45;") + ' #91;'}
+            assert expected[kind] in mapped["content"], mapped
+        edge = {"text": line, "markdown": line.replace("_", "&#95;").replace("[", "&#91;").replace(
+            "]", "&#93;").replace(">", "&#62;"),
+            "mermaid": 'n' + source.replace("-", "") + ' -->|"hosted#95;on #91;user#95;supplied#93;"| n'
+            + target.replace("-", "")}
+        assert edge[kind] in mapped["content"], mapped
+    assert atlas.tool("network_query", {}) == devices
+    assert {device: atlas.tool("network_query", {"view": "history", "device_id": device})
+            for device in names} == histories
+    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+        assert tuple(connection.iterdump()) == history
+    assert {path.name: path.read_bytes() for path in database.parent.glob("atlas.sqlite3*")} == files
+    assert (root / "fixture-bin" / "calls.jsonl").read_bytes() == calls
 
 
 def negatives(atlas: NativeAtlas, home: Path, root: Path) -> None:

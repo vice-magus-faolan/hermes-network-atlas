@@ -2,6 +2,7 @@
 """Deterministic text/Markdown/Mermaid from stored evidence, never fabricated links."""
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 import html
 import os
@@ -44,13 +45,24 @@ def _field(device: dict, field: str, default: str = "unknown") -> str:
     return str(fact["value"]) if fact else default
 
 
-def _device_name(device: dict) -> str:
-    """Choose a display name without promoting conflicted evidence or changing identity."""
-    for field in ("canonical_name", "hostname"):
-        fact = device["fields"].get(field)
-        if fact and not fact["conflict"]:
-            return str(fact["value"])
-    return device["id"]
+def _device_names(devices: list[dict]) -> dict[str, str]:
+    """Resolve hostname collisions once; explicit canonical labels retain precedence."""
+    names = {device["id"]: device["id"] for device in devices}
+    hostname_ids = set()
+    for device in devices:
+        canonical = device["fields"].get("canonical_name")
+        hostname = device["fields"].get("hostname")
+        if canonical and not canonical["conflict"]:
+            names[device["id"]] = str(canonical["value"])
+        elif hostname and not hostname["conflict"]:
+            names[device["id"]] = str(hostname["value"])
+            hostname_ids.add(device["id"])
+    counts = Counter(names.values())
+    for device_id in hostname_ids:
+        # Reserve UUIDs so falling back cannot create another hostname collision.
+        if counts[names[device_id]] > 1 or names[device_id] in names:
+            names[device_id] = device_id
+    return names
 
 
 def _node(device: dict) -> str:
@@ -125,6 +137,7 @@ def _edge_label(edge: dict) -> str:
 
 def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
     by_id = {device["id"]: device for device in devices}
+    names = _device_names(devices)
     edges = _edges(devices)
     linked = {edge[key] for edge in edges for key in ("source_device", "target_device")}
     text = ["Network Atlas — stored knowledge, not live reachability", ""]
@@ -134,7 +147,7 @@ def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
           "| --- | --- | --- | --- | --- | --- |"]
     mm = ["graph TD"]
     for device in devices:
-        name = _device_name(device)
+        name = names[device["id"]]
         state = _state(device)
         state += "; isolated (no supported relations)" if device["id"] not in linked else ""
         label = name + " [" + state + "; " + _provenance(device) + "]"
@@ -149,7 +162,7 @@ def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
     for edge in edges:
         if edge["source_device"] not in by_id or edge["target_device"] not in by_id:
             raise ValueError("incomplete topology snapshot")
-        _edge_lines(md, text, mm, edge, by_id)
+        _edge_lines(md, text, mm, edge, by_id, names)
     if not edges:
         md.append("No supported relationships recorded. All devices are isolated.")
         text.append("No supported relationships recorded.")
@@ -167,10 +180,10 @@ def _interface_lines(md: list, text: list, device: dict) -> None:
         text.append("  " + _plain(line))
 
 
-def _edge_lines(md: list, text: list, mm: list, edge: dict, devices: dict) -> None:
+def _edge_lines(md: list, text: list, mm: list, edge: dict, devices: dict, names: dict[str, str]) -> None:
     source, target = devices[edge["source_device"]], devices[edge["target_device"]]
     label = _edge_label(edge)
-    line = _device_name(source) + " -- " + label + " --> " + _device_name(target)
+    line = names[source["id"]] + " -- " + label + " --> " + names[target["id"]]
     md.append("- " + markdown(line))
     text.append(_plain(line))
     fact = edge["facts"]["relationship"]
