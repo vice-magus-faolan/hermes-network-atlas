@@ -18,7 +18,7 @@ from .discovery import _batch_bound
 from .errors import RequestError
 from .probes import run
 from .ssh_identity import resolve_target
-from .storage import Store, timestamp, utc_now
+from .storage import Store, require_current_schema, timestamp, utc_now
 
 Parser = Callable[[bytes, str, str, Policy], tuple[Observation, ...]]
 ProbeDefinition = tuple[str, tuple[str, ...], Parser]
@@ -88,6 +88,7 @@ def collect(policy: Policy, params: object) -> dict:
         raise ValueError("inspection request invariant failed")
     if len(PROBES) > policy.limits.observations:
         raise RequestError("limits.observations: fixed SSH inspection probes exceed configured record budget")
+    require_current_schema(policy, deadline=deadline)
     started = timestamp(utc_now())
     reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
     host_deadline = min(deadline - reserve, time.monotonic() + policy.limits.host_timeout_seconds)

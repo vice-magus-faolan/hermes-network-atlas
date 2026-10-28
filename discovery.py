@@ -14,7 +14,7 @@ from .errors import RequestError
 from .host_schedule import collect_methods, validate_count
 from .host_transport import excluded
 from .probes import run
-from .storage import Store, timestamp, utc_now
+from .storage import Store, require_current_schema, timestamp, utc_now
 
 PASSIVE = (("ip_addr", ("ip", "-j", "addr"), "local_interface", parse.addresses),
            ("ip_route", ("ip", "-j", "route"), "none", parse.routes),
@@ -115,6 +115,7 @@ def collect(policy: Policy, params: object) -> dict:
     network, mode = validate_request(params, policy)
     started = timestamp(utc_now())
     deadline = time.monotonic() + policy.limits.operation_timeout_seconds
+    require_current_schema(policy, deadline=deadline)
     reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
     transport_deadline = deadline - reserve
     if mode == "passive":

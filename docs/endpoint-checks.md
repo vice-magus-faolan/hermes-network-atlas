@@ -42,13 +42,19 @@ networks:
       udp_ports: [21027, 22000]
 ```
 
-The TCP endpoint list must contain **1..32** distinct strict integer ports in
+Each endpoint list can contain **0..32** distinct strict integer ports in
 1..65535, excluding 4403. The 32-port ceiling gives smaller networks useful
 headroom without permitting an arbitrary port sweep; it is a selection limit,
-not a concurrency setting. Both `enabled: true` and the nonempty list are
-required for TCP. UDP is independently enabled only by an explicit nonempty
-`udp_ports` list; `enabled` continues to control TCP only. Omitted/empty UDP means
-no UDP traffic, even when TCP is enabled. UDP-only policy can omit both TCP keys.
+not a concurrency setting. `enabled` defaults false and is the master switch for
+both protocols. With `enabled: true`, at least one list must be nonempty; each
+protocol is selected only by its own list. UDP-only policy uses `enabled: true`,
+`tcp_ports: []` (or omitted), and a nonempty `udp_ports` list. Omitted/empty UDP
+means no UDP traffic, even when TCP is selected. Set `enabled: false` to pause
+both protocols while retaining valid port lists in native settings; set it true
+to re-enable those selections. Lists are strictly validated even when disabled.
+Status shows effective empty selections while paused, not the retained lists.
+Stop active collectors before changing grants and use a fresh native process or
+session as needed: Hermes owns settings caching/snapshots, not an Atlas watcher.
 UDP accepts up to 32 distinct strict integer ports in 1..65535, excluding 7, 19
 and 4403 (echo/chargen loop/reflection risk and conservative radio protection).
 The same numeric port can appear once in each protocol. These are selection
@@ -62,7 +68,8 @@ must fit `limits.observations` (hard ceiling 4096), including excluded destinati
 and work that may never start. The five-TCP/two-UDP /24 above needs 1792 records.
 A /24 can admit at most 16 protocol/port selections at that ceiling; more require a smaller scope,
 not aliases or overlapping copies of a LAN. A lowered record limit can also
-list errors name `network.endpoints.tcp_ports` or `network.endpoints.udp_ports`; a valid
+require a smaller list or scope. Invalid list errors name
+`network.endpoints.tcp_ports` or `network.endpoints.udp_ports`; a valid
 list whose grid is too large names `limits.observations`. No limit is raised
 automatically, and admission does not promise all endpoints will be checked.
 
@@ -86,8 +93,10 @@ clients. Other sensitive endpoints remain an operator selection risk.
 connected nonblocking IPv4 socket to the selected unicast address/port. Connecting
 only selects the peer; local connect/send success never qualifies as a response.
 Atlas accepts only an empty reply from that exact numeric peer/port on the owned
-socket before its nonrenewing deadline. Nonempty/wrong-peer replies are ignored
-under the shared receive/time budget; late replies lose to expiry. Raw contents
+socket before its nonrenewing deadline. Nonempty data from that exact peer is
+remembered only as a boolean while waiting for a valid empty reply; wrong-peer
+data does not qualify, and late replies lose to expiry. All reads consume the
+shared receive/time budget. Raw contents
 are discarded. No broadcast, multicast, raw ICMP/error queues, caller bytes,
 service payloads or automatic retries are used.
 
@@ -95,7 +104,13 @@ An accepted empty reply is `open` with diagnostic `udp_empty_reply`: historical
 transport response only, not a successful service handshake. After the send,
 connected-socket `ECONNREFUSED` is `closed`/`udp_kernel_rejected`, a kernel-reported
 rejection, not an authenticated remote verdict (a firewall/local stack can reject).
-Unreachable or silence is `no_response`; no conclusion about listening/closed/
+If an on-time exact-peer nonempty reply arrived but no valid empty reply followed,
+expiry is `no_response`/`udp_nonempty_reply_inconclusive` with
+`qualification=unvalidated_udp_reply_only`. Query and status preserve that
+diagnostic, distinct from silence (`effective_transport_deadline`); it is not
+open, validated service evidence or authenticated identity. A later valid empty
+reply before expiry can still win. Receive-budget/local-error diagnostics retain
+their existing precedence. Unreachable or silence is `no_response`; no conclusion about listening/closed/
 filtered service state follows. Other local errors remain `unavailable`.
 Receive failures/receive-budget exhaustion after sending retain attempted coverage;
 budget exhaustion before sending is `not_started`. No unavailable outcome is retried.
@@ -311,17 +326,34 @@ from the shared file. Same-UID/native code remains trusted; SQLite is not an OS
 security boundary.
 
 Store schema 2 adds the endpoint projection; schema 3 adds immutable continuation
-reservations; schema 4 widens endpoint projection constraints to TCP/UDP. A writable
-open transactionally upgrades schema 1..3, copying exact old projection values
-and retaining original batch/probe/application rows and immutable guards. Legacy
+reservations; schema 4 widens endpoint projection constraints to TCP/UDP. Ordinary
+writable opens refuse schema 1..3; new empty stores initialize at schema 4.
+Reads do not migrate, and collection checks the schema before network effects.
+Only the deliberate local operator command upgrades an existing selected store:
+
+```sh
+hermes -p PROFILE network-atlas upgrade-store --writers-stopped
+```
+
+Before this command, make a private consistent SQLite backup (including committed
+WAL data), coordinate compatible versions for every shared reader/writer, and stop
+all writers. The flag is an operator acknowledgment, not process detection. The
+command takes no path or target version: it uses that profile's selected store.
+No model tool, slash command or policy opt-in can perform this upgrade.
+The transaction copies exact old projection values and retains original
+batch/probe/application rows and immutable guards. Legacy
 TCP-only batches retain `tcp_endpoint` provenance; UDP-containing batches use
 `endpoint`, with per-probe `tcp_endpoint`/`udp_endpoint` evidence kinds.
 Batch/application envelope versions remain 1. Read-only opens support schema 1..3
 without migration (schema 1 has no endpoint rows). Upgrade failure rolls back DDL
-and the version together. Schema-4 stores require compatible readers AND writers. Retain backups and update
-all shared-store readers and writers before any writer upgrades the database,
-rather than attempting a downgrade. An older writer may contact endpoints before
-discovering that it cannot persist to the upgraded store.
+and the version together; keep writers stopped and cold-retry the same explicit
+command after addressing the failure. Repeating a completed upgrade is harmless.
+Nonempty unversioned/future schemas still fail closed. Schema-4 stores require
+compatible readers AND writers; no downgrade is provided. After upgrade, verify
+status and historical queries before restarting writers. Restoring a pre-upgrade
+backup after new writes would lose those writes: preserve both histories for
+operator recovery instead. Older binaries can contact endpoints before learning
+they cannot persist, so do not restart them against the upgraded store.
 
 SSH greeting/banner reading is not supported; those inputs fail closed. TCP
 checks send/read no application bytes; UDP replies are bounded and discarded.

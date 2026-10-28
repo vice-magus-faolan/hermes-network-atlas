@@ -844,6 +844,45 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertEqual((reasons["reason_count"], reasons["omitted_reason_count"], len(reasons["reasons"])), (3, 1, 2))
         self.assertEqual(reasons["observation_count"], 206)
 
+    def test_complete_saved_conflicts_survive_noise_and_replay_without_history_changes(self):
+        payloads = self.noisy_interfaces()
+        interfaces = json.loads(payloads["ip -j address"])
+        for n in range(7):
+            interfaces += [{"ifname": f"duplicate{n}_{side}", "address": f"00:22:33:44:55:{n:02x}",
+                            "operstate": "UP", "addr_info": []} for side in (0, 1)]
+        payloads["ip -j address"] = json.dumps(interfaces).encode()
+        payloads["ip -j link"] = json.dumps([{key: value for key, value in row.items() if key != "addr_info"}
+                                            for row in interfaces]).encode()
+        receipt = self.public_collect(payloads)
+        applied = json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]}))
+        self.assertNotIn("error", applied)
+        saved = json.loads(self.store.connection.execute(
+            "SELECT result_json FROM applications WHERE batch_id=?", (receipt["batch_id"],)).fetchone()[0])
+        self.assertEqual(applied["conflicting"], saved["conflicting"])
+        self.assertEqual(len(applied["conflicting"]), 7)
+        self.assertTrue(all("evidence_id" not in entry for entry in applied["conflicting"]))
+        self.assertEqual((applied["conflicting_total_count"], applied["conflicting_omitted_count"]), (7, 0))
+        uncertainty = applied["uncertainty"]
+        self.assertEqual(uncertainty["conflict_record_count"], 7)
+        self.assertEqual(uncertainty["conflict_reasons"], [
+            {"reason": "duplicate_remote_interface_mac", "conflict_record_count": 7}])
+        self.assertEqual(uncertainty["observation_count"], len(saved["unresolved"]))
+        self.assertIn("no_unique_stable_peer", {group["reason"] for group in uncertainty["reasons"]})
+        originals = [row[0] for row in self.store.connection.execute(
+            "SELECT id FROM observations WHERE batch_id=? AND entity_id IS NULL ORDER BY observed_at DESC,id",
+            (receipt["batch_id"],))]
+        before = list(self.store.connection.iterdump())
+        with patch("subprocess.Popen", side_effect=AssertionError("replay must not collect")):
+            self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
+            retained = []
+            for offset in range(0, len(originals), 23):
+                page = json.loads(self.handlers.query({"view": "unresolved", "batch_id": receipt["batch_id"],
+                                                       "limit": 23, "offset": offset}))
+                self.assertNotIn("error", page)
+                retained.extend(row["id"] for row in page["evidence"])
+            self.assertEqual(retained, originals)
+        self.assertEqual(list(self.store.connection.iterdump()), before)
+
     def test_connected_only_retains_evidence_without_unresolved_receipt_or_status_warning(self):
         payloads = self.payloads()
         connected = {"dst": "198.51.100.0/24", "dev": "fixture0", "protocol": "kernel", "scope": "link"}

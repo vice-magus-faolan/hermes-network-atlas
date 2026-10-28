@@ -94,7 +94,14 @@ class EndpointTests(unittest.TestCase):
         with patch.object(transport.socket, 'socket', side_effect=AssertionError('unauthorized socket')):
             with self.assertRaises(ValueError):
                 endpoints.check(legacy, {'network': 'lab'})
-        invalid = [{'enabled': True}, {'tcp_ports': [22]}, {'enabled': False, 'tcp_ports': [22]},
+        for settings in ({'tcp_ports': [22]}, {'enabled': False, 'tcp_ports': [22]}):
+            paused = config.validate_policy(
+                {'networks': {'lab': {'cidr': '192.0.2.8/31', 'endpoints': settings}}}, self.home)
+            self.assertEqual(paused.networks[0].endpoint_methods, ())
+            with patch.object(transport.socket, 'socket', side_effect=AssertionError('paused socket')):
+                with self.assertRaises(ValueError):
+                    endpoints.check(paused, {'network': 'lab'})
+        invalid = [{'enabled': True},
                    {'enabled': 1, 'tcp_ports': [22]}, {'enabled': True, 'tcp_ports': [4403]},
                    *({'enabled': True, 'tcp_ports': ports}
                      for ports in ([True], [0], [-1], [65536], [22, 22], list(range(1, 34)), ['22'], [22.0])),
@@ -622,7 +629,7 @@ class EndpointTests(unittest.TestCase):
             self.assertEqual(policy.database.read_bytes(), before)
         # Add historical v1 rows through the existing native writer without upgrading.
         with patch.object(storage, '_migrate_endpoints', return_value=None):
-            with storage.Store(policy, writable=True) as old:
+            with storage.Store(policy, writable=True, upgrade=True) as old:
                 core.create_device(old, 'historical')
                 at = storage.timestamp(storage.utc_now())
                 observation = batches.Observation(
@@ -637,11 +644,12 @@ class EndpointTests(unittest.TestCase):
             real_migrate(connection)
             raise sqlite3.OperationalError('migration interrupted after DDL')
         with patch.object(storage, '_migrate_endpoints', interrupted), self.assertRaises(sqlite3.Error):
-            storage.Store(policy, writable=True)
+            storage.upgrade_store(policy, writers_stopped=True)
         with storage.Store(policy) as old:
             self.assertEqual(old.schema_version, 1)
             self.assertIsNone(old.connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE name='endpoint_observations'").fetchone())
+        storage.upgrade_store(policy, writers_stopped=True)
         result = self.collect(policy)
         self.assertTrue(result['queryable'])
         with storage.Store(policy, writable=True) as migrated:

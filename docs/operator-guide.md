@@ -130,9 +130,11 @@ render:
 - `discovery.icmp_echo` defaults false and requires `ping: true`. TCP ports default
   to `[80, 443]`; choose at most four distinct ports in 1..65535, excluding 4403.
   ICMP-only uses `tcp_ports: []`. See [host-discovery policy](host-discovery-policy.md).
-- TCP endpoints need `enabled: true` and a nonempty `tcp_ports` list under
-  `networks.NAME.endpoints`, independently of discovery or SSH. UDP needs its own
-  explicit nonempty `udp_ports` list, regardless of TCP enablement. Each list
+- Endpoints need the master `networks.NAME.endpoints.enabled: true`, independently
+  of discovery or SSH, and at least one nonempty protocol list. TCP and UDP use
+  their own `tcp_ports`/`udp_ports` selections; UDP-only uses empty/omitted TCP.
+  `enabled: false` pauses both, retaining valid native settings lists for later
+  re-enable; status shows only effective selections. Each list
   accepts up to 32 distinct integer ports in 1..65535; TCP excludes 4403 and UDP
   excludes 7, 19 and 4403. The full address × (TCP + UDP selections) grid
   must fit `limits.observations` before any traffic (at most 16 protocol/port pairs
@@ -247,6 +249,15 @@ is read only by the explicit converter (bounded to 64 KiB); it is never a runtim
    new database explicitly. Exports keep their original profile-local location.
    An explicit `store.shared_sqlite_path` stays in place, even when it names a
    legacy location: this converts policy only, never makes private shared-store copies.
+
+Conversion preserves the source and destination schema versions; it is not a
+schema upgrade. If the selected converted store is schema 1..3, keep writers
+stopped and deliberately run `hermes -p PROFILE network-atlas upgrade-store --writers-stopped`
+after conversion finishes, before restarting writers. Upgrade changes only the
+selected destination (or deliberately selected shared file), not retained originals.
+Do not replay conversion after upgrading the destination: its schema now differs
+from the original, so the exact-copy retry correctly refuses. See
+[shared-store upgrade procedure](endpoint-checks.md#sharing-and-upgrades).
 
 The flag attests that you stopped writers; it is not a process detector. Originals
 are retained, not renamed/deleted. Existing nonempty native settings and an existing
@@ -571,8 +582,9 @@ resume a saved batch after repairing the reported category, rather than rescanni
   permissions. Reduce the configured scope or enabled methods if work cannot fit
   the budget. Endpoint recovery uses its stored ID rather than another scan.
 - Store or version failure: preserve the database and use a compatible Atlas version;
-  make a consistent backup before changing versions. Writable opens upgrade
-  schema 1..3 to 4 transactionally; read-only access does not migrate.
+  make a consistent backup before changing versions. Ordinary writes to schema
+  1..3 refuse before collection; reads remain available without migration. The
+  explicit local `upgrade-store --writers-stopped` command upgrades to 4 transactionally.
   Older binaries cannot read/write schema 4. See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
 
 Older readers may also reject additive configuration keys or `not_started` probe

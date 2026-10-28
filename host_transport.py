@@ -27,6 +27,7 @@ class Attempt:
     identifier: int = 0
     sequence: int = 1
     protocol: str = 'tcp'
+    nonempty_reply: bool = False
 
 
 def checksum(packet: bytes) -> int:
@@ -114,24 +115,32 @@ def _open_udp(address: str, port: int, deadline: float) -> tuple[Attempt | None,
         raise
 
 
+def expired(attempt: Attempt) -> Outcome:
+    """Retain only bounded exact-peer response evidence, never packet contents."""
+    code = 'udp_nonempty_reply_inconclusive' if attempt.nonempty_reply else 'effective_transport_deadline'
+    return 'timeout', code, False
+
+
 def _udp_ready(attempt: Attempt, remaining_bytes: int) -> tuple[Outcome | None, int]:
     """Validate the empty-reply method, not a QUIC/application service identity."""
     if time.monotonic() >= attempt.deadline:
-        return ('timeout', 'effective_transport_deadline', False), 0
+        return expired(attempt), 0
     try:
         packet, source = attempt.sock.recvfrom(min(65536, remaining_bytes + 1))
         if len(packet) > remaining_bytes:
             return ('output_limit', 'shared_receive_limit', False), len(packet)
         if time.monotonic() >= attempt.deadline:
-            return ('timeout', 'effective_transport_deadline', False), len(packet)
-        if packet == b'' and source == (attempt.address, attempt.port):
-            return ('success', 'udp_empty_reply', True), 0
+            return expired(attempt), len(packet)
+        if source == (attempt.address, attempt.port):
+            if packet == b'':
+                return ('success', 'udp_empty_reply', True), 0
+            attempt.nonempty_reply = True
         return None, len(packet)
     except BlockingIOError:
         return None, 0
     except OSError as error:
         if time.monotonic() >= attempt.deadline:
-            return ('timeout', 'effective_transport_deadline', False), 0
+            return expired(attempt), 0
         if error.errno == errno.ECONNREFUSED:
             return ('success', 'udp_kernel_rejected', True), 0
         if error.errno in {errno.EHOSTUNREACH, errno.ENETUNREACH}:

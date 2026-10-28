@@ -153,7 +153,7 @@ class Scheduler:
             if self.remaining_bytes <= 0:
                 self._finish(selector, sock, ('output_limit', 'shared_receive_limit', False))
             elif time.monotonic() >= attempt.deadline:
-                self._finish(selector, sock, ('timeout', 'effective_transport_deadline', False))
+                self._finish(selector, sock, transport.expired(attempt))
 
     def _step(self, selector):
         self._expire(selector)
@@ -171,7 +171,7 @@ class Scheduler:
             attempt, _, _ = self.active[key.fileobj]
             # Expiry wins over late readiness: never fabricate a response at timeout.
             if time.monotonic() >= attempt.deadline:
-                self._finish(selector, key.fileobj, ('timeout', 'effective_transport_deadline', False))
+                self._finish(selector, key.fileobj, transport.expired(attempt))
                 continue
             result, size = transport.ready(attempt, self.remaining_bytes)
             self.remaining_bytes -= size

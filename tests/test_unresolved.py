@@ -534,6 +534,56 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                 })
                 self.assertEqual(self.snapshot(), before)
 
+    def test_saved_replay_validates_entries_and_batch_membership_before_projection(self):
+        healthy = self.batch([self.observation()])
+        self.apply(healthy)
+        saved = json.loads(self.store.connection.execute(
+            "SELECT result_json FROM applications WHERE batch_id=?", (healthy,)).fetchone()[0])
+        foreign_id = saved["unresolved"][0]["evidence_id"]
+        entries = ({"evidence_id": "valid-looking-missing-id", "reason": "synthetic"},
+                   {"evidence_id": foreign_id, "reason": "synthetic"}, None,
+                   {"evidence_id": foreign_id, "reason": [], "candidate_device_ids": []})
+        handler = fixture_handlers(self.home)
+        for entry in entries:
+            with self.subTest(entry=entry):
+                batch = self.batch([self.observation()])
+                result = {**saved, "id": "receipt-" + batch, "batch_id": batch, "unresolved": [entry]}
+                with self.store.transaction():
+                    self.store.connection.execute("INSERT INTO applications VALUES (?,?,?,?,?)",
+                        (result["id"], batch, 1, result["applied_at"], storage.encode(result)))
+                before = self.snapshot()
+                for action, params in (
+                        (handler.reconcile, {"batch_id": batch}),
+                        (handler.query, {"view": "unresolved", "batch_id": batch, "summary": True}),
+                        (handler.query, {"view": "unresolved", "batch_id": batch})):
+                    self.assertEqual(json.loads(action(params)), {
+                        "error": "atlas state or bounds: operation failed; check stored evidence and configured limits",
+                        "applied": False,
+                    })
+                self.assertEqual(self.snapshot(), before)
+        self.assertNotIn("error", json.loads(handler.reconcile({"batch_id": healthy})))
+
+    def test_saved_replay_lowered_observation_and_byte_limits_refuse_without_mutation(self):
+        batch = self.batch([self.observation() for _ in range(7)])
+        applied = self.apply(batch)
+        saved = self.store.connection.execute(
+            "SELECT result_json FROM applications WHERE batch_id=?", (batch,)).fetchone()[0]
+        self.assertLess(len(saved.encode()), self.policy.limits.output_bytes)
+        before = self.snapshot()
+        for limits in (replace(self.policy.limits, observations=6), replace(self.policy.limits, output_bytes=128)):
+            small = replace(self.policy, limits=limits)
+            with self.subTest(limits=limits):
+                answer = json.loads(tools.Handlers(lambda small=small: small).reconcile({"batch_id": batch}))
+                self.assertEqual(answer, {
+                    "error": "atlas state or bounds: operation failed; check stored evidence and configured limits",
+                    "applied": False,
+                })
+                self.assertEqual(self.snapshot(), before)
+        small = replace(self.policy, limits=replace(self.policy.limits, observations=6))
+        self.assertEqual(len(self.read(policy=small, batch_id=batch)["evidence"]), 7)
+        self.assertEqual(self.apply(batch), applied)
+        self.assertEqual(self.snapshot(), before)
+
     def test_malformed_later_receipt_refuses_original_lineage_read_only(self):
         anchor = batches.Anchor("mac", MAC)
         first = self.batch([self.observation(anchor=anchor)])

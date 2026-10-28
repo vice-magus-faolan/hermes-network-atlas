@@ -14,10 +14,10 @@ import time
 
 from .config import Policy
 from .errors import RequestError
-from .facts import evidence
+from .facts import ORIGINAL_EVIDENCE_COLUMNS, checked_evidence
 from .storage import Store, response_json, timestamp
-from .uncertainty import Subjects, original_rows, summarize
-from .topology import TopologySnapshot, _route_answer
+from .uncertainty import Subjects, original_rows, summarize, validate_application
+from .topology import TopologySnapshot, route_answer
 
 
 def _bounded(store: Store, sql: str, bindings: tuple) -> list:
@@ -42,25 +42,13 @@ def _application(store: Store, batch: str, cache: dict) -> dict | None:
     if len(row["result_json"].encode("utf-8")) > maximum:
         raise ValueError("stored application exceeds configured byte bound")
     result = json.loads(row["result_json"])
-    if not isinstance(result, dict) or not isinstance(result.get("unresolved", []), list):
-        raise ValueError("invalid stored application")
+    validate_application(store, result, batch)
     reasons = {}
     for entry in result.get("unresolved", []):
         store.check_deadline()
-        _validate_entry(entry)
         reasons.setdefault(entry["evidence_id"], []).append(entry)
     cache[batch] = {**dict(row), "result": result, "reasons": reasons}
     return cache[batch]
-
-
-def _validate_entry(entry: object) -> None:
-    """Reject malformed saved identity data before original or later aggregation."""
-    if not isinstance(entry, dict) or not isinstance(entry.get("evidence_id"), str):
-        raise ValueError("invalid stored application")
-    candidates = entry.get("candidate_device_ids", [])
-    if (not isinstance(entry.get("reason"), str) or not isinstance(candidates, list)
-            or any(not isinstance(candidate, str) for candidate in candidates)):
-        raise ValueError("invalid stored application")
 
 
 def _reason(store: Store, application: dict | None, ids: set[str]) -> tuple[str | None, list[str]]:
@@ -196,7 +184,7 @@ def _detail(store: Store, row, now: datetime, batches: dict, applications: dict)
         batches[batch_id] = {"record": batch, "summary": _batch_summary(store, batch)}
         _application(store, batch_id, applications)
     batch = batches[batch_id]["record"]
-    value = _checked_evidence(store, row)
+    value = checked_evidence(store, row)
     address = value["value"].get("address") if row["subject_kind"] == "address" else None
     candidates = _address_candidates(store, address)
     probe = store.connection.execute("SELECT id,probe_name,outcome,diagnostic_code,coverage_kind,coverage_value,"
@@ -208,16 +196,6 @@ def _detail(store: Store, row, now: datetime, batches: dict, applications: dict)
             "historical_responder_evidence": _responder(row),
             "current_address_candidate_device_ids": candidates, "address_ownership_conflict": len(candidates) > 1,
             **_identity(store, row, batch, applications[batch_id], applications)}
-
-
-def _checked_evidence(store: Store, row) -> dict:
-    for key in ("subject_anchor", "value_json", "explanation"):
-        if row[key] is not None and len(row[key].encode("utf-8")) > store.policy.limits.output_bytes:
-            raise ValueError("stored evidence exceeds configured byte bound")
-    value = evidence(row)
-    if row["subject_kind"] == "address" and not isinstance(value["value"], dict):
-        raise ValueError("invalid stored address evidence")
-    return value
 
 
 def _page(store: Store, params: dict, now: datetime) -> dict:
@@ -232,10 +210,8 @@ def _page(store: Store, params: dict, now: datetime) -> dict:
     total = store.connection.execute("SELECT COUNT(*) FROM observations o JOIN batches b ON b.id=o.batch_id WHERE "
                                      + " AND ".join(clauses), bindings).fetchone()[0]
     rows = store.connection.execute(
-        "SELECT o.id,o.batch_id,o.probe_id,o.subject_kind,substr(o.subject_anchor,1,?) AS subject_anchor,"
-        "o.entity_id,o.field,substr(o.value_json,1,?) AS value_json,o.source,o.confidence,o.observed_at,"
-        "o.evidence_kind,substr(o.explanation,1,?) AS explanation,o.neighbor_state,o.qualified "
-        "FROM observations o JOIN batches b ON b.id=o.batch_id WHERE " + " AND ".join(clauses) +
+        "SELECT " + ORIGINAL_EVIDENCE_COLUMNS + " FROM observations o JOIN batches b ON b.id=o.batch_id WHERE "
+        + " AND ".join(clauses) +
         " ORDER BY o.observed_at DESC,o.id LIMIT ? OFFSET ?",
         (store.policy.limits.output_bytes + 1,) * 3 + (*bindings, params["limit"] + 1, params["offset"])).fetchall()
     batches, applications = {}, {}
@@ -251,7 +227,7 @@ def _current_identity(store: Store, row, batch, application, applications: dict)
     identity = _identity(store, row, batch, application, applications)
     state = identity["identity_state"]
     current = identity["lineage"] or identity
-    value = _checked_evidence(store, row)["value"]
+    value = checked_evidence(store, row)["value"]
     candidates = _address_candidates(store, value["address"]) if row["subject_kind"] == "address" else []
     if len(candidates) > 1:
         return "current_unresolved", {"evidence_id": row["id"], "reason": "address_ownership",
@@ -271,7 +247,7 @@ def _current_identity(store: Store, row, batch, application, applications: dict)
 def _current_topology(snapshot: TopologySnapshot, row, application: dict | None) -> tuple[str, dict | None]:
     if row["subject_kind"] == "neighbor":
         return "supporting", None
-    resolution = _route_answer(snapshot, row)
+    resolution = route_answer(snapshot, row)
     reason = resolution["reason"]
     if reason in {"supported", "no_next_hop"}:
         return "resolved", None
@@ -289,16 +265,16 @@ def _summary(store: Store, params: dict, now: datetime) -> dict:
     batch = store.connection.execute("SELECT *,rowid AS sequence FROM batches WHERE id=?",
                                      (params["batch_id"],)).fetchone()
     rows = original_rows(store, batch["id"])
-    subjects = Subjects(rows)
     applications = {}
     application = _application(store, batch["id"], applications)
+    subjects = Subjects(rows)
     topology = TopologySnapshot(store, now)
     counts: dict[str, int] = dict.fromkeys(
         ("current_unresolved", "resolved", "supporting", "unapplied", "unknown", "inactive"), 0)
     entries = []
     for row in rows:
         store.check_deadline()
-        value = _checked_evidence(store, row)["value"]
+        value = checked_evidence(store, row)["value"]
         if "address" in params and (row["subject_kind"] != "address" or value.get("address") != params["address"]):
             continue
         state, entry = (_current_topology(topology, row, application) if row["subject_kind"] in {"route", "neighbor"}

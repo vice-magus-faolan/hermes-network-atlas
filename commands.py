@@ -13,7 +13,7 @@ from .errors import RequestError, error_message
 from .tools import Handlers, status, update_receipt
 from .updates import Update, operator_update
 from .core import add_address, add_interface, apply_update, create_device, end_address
-from .storage import Store, response_json
+from .storage import Store, response_json, upgrade_store
 
 if TYPE_CHECKING:
     from .conversion import WritableSettings
@@ -29,6 +29,9 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     conversion = commands.add_parser("convert-legacy", allow_abbrev=False,
                                      help="Explicit one-time conversion; stop all Atlas writers first")
     conversion.add_argument("--writers-stopped", required=True, action="store_true")
+    upgrade = commands.add_parser("upgrade-store", allow_abbrev=False,
+                                  help="Explicit schema upgrade; back up and stop all Atlas writers first")
+    upgrade.add_argument("--writers-stopped", required=True, action="store_true")
     create = commands.add_parser("create", allow_abbrev=False, help="Create a known device (not an observation)")
     create.add_argument("--name", required=True)
     for action in ("update", "validate-update"):
@@ -131,6 +134,8 @@ def _read_command(args: argparse.Namespace, policy: Policy) -> dict | None:
 
 
 def _write_command(args: argparse.Namespace, policy: Policy) -> dict:
+    if args.atlas_action == "upgrade-store":
+        return upgrade_store(policy, writers_stopped=args.writers_stopped)
     # Validate proposals before creating a store; only create may initialize an
     # empty atlas. All other mutations require existing entity references.
     update = None

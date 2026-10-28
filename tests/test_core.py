@@ -78,8 +78,8 @@ class PersistenceTests(AtlasFixture):
     def test_initial_schema_creation_failure_rolls_back_and_reopens(self):
         policy = config.validate_policy({}, self.home / "initialization-failure")
         original = storage._initialize_locked
-        def interrupted(connection):
-            original(connection)
+        def interrupted(connection, *, upgrade=False):
+            original(connection, upgrade=upgrade)
             raise RuntimeError("synthetic schema interruption")
         with patch.object(storage, "_initialize_locked", interrupted), self.assertRaises(RuntimeError):
             storage.Store(policy, writable=True)
@@ -149,6 +149,9 @@ class PersistenceTests(AtlasFixture):
             self.assertEqual(policy.database.read_bytes(), before)
             with self.assertRaises(ValueError):
                 storage.Store(policy)
+            with self.assertRaises(ValueError):
+                storage.upgrade_store(policy, writers_stopped=True)
+            self.assertEqual(policy.database.read_bytes(), before)
 
     def test_immutable_observation_history_and_audit(self):
         old = self.update("description", "Original operator fact")

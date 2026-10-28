@@ -9,6 +9,13 @@ class StoreError(ValueError):
     """Local store layout/schema is unusable; never an invalid caller argument."""
 
 
+class UpgradeRequiredError(StoreError):
+    """Supported historical store requires a deliberate local operator upgrade."""
+
+    diagnostic = ("store: schema upgrade required; back up the database, coordinate compatible readers/writers, "
+                  "stop all writers, then run hermes network-atlas upgrade-store --writers-stopped")
+
+
 class RequestError(ValueError):
     """A code-authored field/reason, never exception text or a caller's value.
 
@@ -24,6 +31,8 @@ class RequestError(ValueError):
 def error_message(error: BaseException) -> str:
     """Keep infrastructure/state failures distinct from correctable request errors."""
     if isinstance(error, RequestError):
+        return error.diagnostic
+    if isinstance(error, UpgradeRequiredError):
         return error.diagnostic
     if isinstance(error, (sqlite3.Error, StoreError)):
         return "store: database operation failed; check availability and compatible schema"

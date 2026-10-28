@@ -86,13 +86,16 @@ def eligibility(atlas, home):
         ('192.0.2.0/31', True, False, [], False),
         ('192.0.2.0/31', False, True, [], True),
         ('192.0.2.0/31', False, False, [22000], True),
+        ('192.0.2.0/31', False, False, [22000], False),
+        ('192.0.2.0/31', False, True, [22000], False),
         ('192.168.1.0/31', False, False, [], False),
     )
     for cidr, ping, tcp, udp, endpoints in cases:
         atlas.ctx.set_config('policy', {'networks': {'lab': {
             'cidr': cidr, 'allow_public': False,
             'discovery': {'passive': True, 'ping': ping, 'icmp_echo': False, 'tcp_ports': [80, 443]},
-            'endpoints': {'enabled': tcp, 'tcp_ports': [2222] if tcp else [], 'udp_ports': udp}}}})
+            # Master pause retains selections but cannot recommend public opt-in.
+            'endpoints': {'enabled': endpoints, 'tcp_ports': [2222] if tcp else [], 'udp_ports': udp}}}})
         config_before = (home / 'config.yaml').read_bytes()
         results = statuses(atlas)
         for status in results:

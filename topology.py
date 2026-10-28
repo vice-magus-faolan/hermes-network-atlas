@@ -399,7 +399,8 @@ def _candidate_relations(snapshot: TopologySnapshot) -> list:
                  (snapshot.current, snapshot.cutoff))
 
 
-def _route_answer(snapshot: TopologySnapshot, row) -> dict:
+def route_answer(snapshot: TopologySnapshot, row) -> dict:
+    """Explain current route support against its immutable application membership."""
     answer = snapshot.resolve(row)
     membership = snapshot.relationship_for(row)
     if answer["reason"] != "supported":
@@ -436,7 +437,7 @@ def query_topology(policy, params: dict, now: datetime) -> dict:
                   "local_policy_context": row["policy_context"] == str(policy.home),
                   "origin_device": snapshot.origin(row),
                   "stale": row["observed_at"] < timestamp(now - timedelta(days=policy.stale_after_days)),
-                  "resolution": _route_answer(snapshot, row) if row["subject_kind"] == "route"
+                  "resolution": route_answer(snapshot, row) if row["subject_kind"] == "route"
                                 else {"reason": "support_only_not_owned_inventory"}}
                  for row in rows[:params["limit"]]]
     return {"observations": items, "has_more": len(rows) > params["limit"], "limit": params["limit"],

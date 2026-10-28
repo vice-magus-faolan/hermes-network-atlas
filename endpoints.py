@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING
 
 from .batches import Probe, _scope, _validate_probes, store_batch
 from .config import ActiveScopeError, ConfigError, Limits, NAME_PATTERN, Network, Policy, validate_network
-from .errors import RequestError, StoreError
+from .errors import RequestError, StoreError, UpgradeRequiredError
 from .host_schedule import Scheduler
-from .storage import Store, encode, identifier, response_json, timestamp, utc_now
+from .storage import Store, encode, identifier, require_current_schema, response_json, timestamp, utc_now
 
 if TYPE_CHECKING:
     from .endpoint_continuation import Reservation
@@ -29,6 +29,7 @@ RECOVERY_ERRORS = {
                      'restore sufficient limits and resume this batch'),
     'policy': 'endpoint policy: check current network/port authorization and resume this batch',
     'store': 'endpoint store: check database availability and compatible schema; resume this batch',
+    'upgrade': UpgradeRequiredError.diagnostic,
     'io': 'endpoint local I/O: check store access and available space; resume this batch',
     'state': 'endpoint state or bounds: check stored evidence and configured limits; resume this batch',
 }
@@ -40,6 +41,7 @@ RESULTS = {
     ('timeout', 'effective_transport_deadline'): ('no_response', False),
     ('timeout', 'tcp_host_unreachable'): ('no_response', False),
     ('timeout', 'udp_host_unreachable'): ('no_response', False),
+    ('timeout', 'udp_nonempty_reply_inconclusive'): ('no_response', False),
     ('output_limit', 'shared_receive_limit'): ('unavailable', False),
     ('not_started', 'effective_deadline_before_start'): ('not_started', False),
     ('not_started', 'operation_deadline_exceeded'): ('not_started', False),
@@ -82,7 +84,7 @@ def _authorized_network(policy: Policy, name: str) -> Network:
     if network is None:
         raise RequestError('network: select a configured endpoint network')
     if not network.endpoint_methods:
-        raise RequestError('network.endpoints: enabled nonempty tcp_ports or explicit nonempty udp_ports required')
+        raise RequestError('network.endpoints: enabled and nonempty tcp_ports or udp_ports required')
     validate_network(network, active=True)
     return network
 
@@ -223,6 +225,7 @@ def check(policy: Policy, params: object) -> dict:
     receipt = _receipt()
     if key == 'network':
         network = network_policy(policy, value)
+        require_current_schema(policy, deadline=deadline)
         started = timestamp(utc_now())
         reserve = min(policy.limits.busy_timeout_ms / 1000, policy.limits.operation_timeout_seconds / 4)
         probes = Scheduler(network, policy, deadline - reserve, endpoints=True).run()
@@ -270,7 +273,8 @@ def _finish(policy: Policy, receipt: dict, deadline: float, *, reservation: Rese
     except (OSError, ValueError, sqlite3.Error) as exc:
         # Do not erase a durable ID, claim rolled-back work applied, or retry a
         # probe just because projection/query/output failed after persistence.
-        category = ('observations' if isinstance(exc, EndpointObservationLimitError) else
+        category = ('upgrade' if isinstance(exc, UpgradeRequiredError) else
+                    'observations' if isinstance(exc, EndpointObservationLimitError) else
                     'policy' if isinstance(exc, (ConfigError, RequestError)) else
                     'store' if isinstance(exc, (sqlite3.Error, StoreError)) else
                     'io' if isinstance(exc, OSError) else 'state')
@@ -328,6 +332,8 @@ def query_endpoints(policy: Policy, args: dict, *, deadline: float | None = None
             ' ORDER BY p.ended_at,e.probe_id LIMIT ? OFFSET ?', (*bindings, limit + 1, offset)).fetchall()
         result = {**empty, 'endpoints': [{**dict(row), 'qualified': bool(row['qualified']),
                     'qualification': ('historical_' + row['protocol'] + '_response_only' if row['qualified']
+                                      else 'unvalidated_udp_reply_only'
+                                      if row['diagnostic_code'] == 'udp_nonempty_reply_inconclusive'
                                       else 'no_response_or_no_check'),
                     'probe_method': 'udp_empty_datagram_v1' if row['protocol'] == 'udp' else 'tcp_connect',
                     'coverage': ('attempted_address_port_only' if attempted(row['outcome'], row['diagnostic_code'])
