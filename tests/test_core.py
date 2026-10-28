@@ -498,9 +498,11 @@ class QueryUpdateMapTests(AtlasFixture):
                 self.assertEqual(tuple(self.store.connection.iterdump()), history)
 
     def test_map_hostname_collisions_preserve_canonical_labels_and_endpoints(self):
-        cases = (("Shared hostname", None, False), ("Canonical collision", "Canonical collision", False),
-                 ("Fallback collision", None, True))
-        for hostname, canonical, uuid_collision in cases:
+        cases = (("Shared hostname", None, False, None),
+                 ("Canonical collision", "Canonical collision", False, None),
+                 ("Fallback collision", None, True, None),
+                 ("lab-b", "Friendly A", False, "lab-b"))
+        for hostname, canonical, uuid_collision, second_label in cases:
             with self.subTest(hostname=hostname, canonical=canonical, uuid_collision=uuid_collision):
                 first, second = storage.identifier(), storage.identifier()
                 with self.store.transaction():
@@ -516,7 +518,7 @@ class QueryUpdateMapTests(AtlasFixture):
                             device=first)
                 self.update("relationship", {"target_device": self.device, "relationship_type": "hosted_on"},
                             device=second)
-                names = {first: canonical or first, second: second}
+                names = {first: canonical or first, second: second_label or second}
                 if uuid_collision:
                     third = storage.identifier()
                     with self.store.transaction():
