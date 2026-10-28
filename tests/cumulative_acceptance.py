@@ -145,6 +145,20 @@ def collect(atlas: NativeAtlas, root: Path) -> dict:
     queried = atlas.tool("network_query", {"access_method": "ssh"})
     assert {row["id"] for row in queried["devices"]} == set(ids.values()) and not queried["has_more"]
     assert all(row["access"][0]["last_inspection"]["succeeded"] for row in queried["devices"])
+    before_maps = counts(Path(os.environ["HERMES_HOME"]))
+    calls = (root / "fixture-bin" / "calls.jsonl").read_bytes()
+    for kind in ("text", "markdown", "mermaid"):
+        mapped = atlas.tool("network_map", {"format": kind})
+        assert not mapped["exports"], mapped
+        for alias, device in ids.items():
+            row = next(row for row in queried["devices"] if row["id"] == device)
+            assert "canonical_name" not in row["fields"] and row["fields"]["hostname"]["value"] == alias, row
+            expected = {"text": alias + " [", "markdown": f"| {alias} ({device}) |",
+                        "mermaid": 'n' + device.replace("-", "") + '["' + alias.replace("-", "#45;") + ' #91;'}
+            assert expected[kind] in mapped["content"], mapped
+    assert atlas.tool("network_query", {"access_method": "ssh"}) == queried
+    assert counts(Path(os.environ["HERMES_HOME"])) == before_maps
+    assert (root / "fixture-bin" / "calls.jsonl").read_bytes() == calls
     assert not atlas.tool("network_query", {"address": "198.51.100.99"})["devices"]
     pair = atlas.slash("discover pair ping")
     assert pair["completion"] == "complete", pair
@@ -214,6 +228,7 @@ def snapshot(atlas: NativeAtlas, home: Path) -> dict:
                  for row in devices["devices"]}
     maps = {kind: atlas.tool("network_map", {"format": kind}) for kind in ("text", "markdown", "mermaid")}
     assert maps["mermaid"]["content"].count(" -->|") == 1
+    assert 'Fixture "] --> Evil["<script>| -- hosted_on [user_supplied] --> lab-b' in maps["text"]["content"]
     assert '<script>' not in maps["markdown"]["content"] and 'Evil["' not in maps["mermaid"]["content"]
     assert "isolated" in maps["text"]["content"]
     assert atlas.slash("map mermaid")["content"] == maps["mermaid"]["content"]

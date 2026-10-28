@@ -44,6 +44,15 @@ def _field(device: dict, field: str, default: str = "unknown") -> str:
     return str(fact["value"]) if fact else default
 
 
+def _device_name(device: dict) -> str:
+    """Choose a display name without promoting conflicted evidence or changing identity."""
+    for field in ("canonical_name", "hostname"):
+        fact = device["fields"].get(field)
+        if fact and not fact["conflict"]:
+            return str(fact["value"])
+    return device["id"]
+
+
 def _node(device: dict) -> str:
     # IDs originate in native code. Do not use names, hostnames, or source text as identifiers.
     return "n" + device["id"].replace("-", "")
@@ -125,7 +134,7 @@ def _render(devices: list[dict], policy: Policy) -> dict[str, str]:
           "| --- | --- | --- | --- | --- | --- |"]
     mm = ["graph TD"]
     for device in devices:
-        name = _field(device, "canonical_name", device["id"])
+        name = _device_name(device)
         state = _state(device)
         state += "; isolated (no supported relations)" if device["id"] not in linked else ""
         label = name + " [" + state + "; " + _provenance(device) + "]"
@@ -161,8 +170,7 @@ def _interface_lines(md: list, text: list, device: dict) -> None:
 def _edge_lines(md: list, text: list, mm: list, edge: dict, devices: dict) -> None:
     source, target = devices[edge["source_device"]], devices[edge["target_device"]]
     label = _edge_label(edge)
-    line = (_field(source, "canonical_name", source["id"]) + " -- " + label + " --> "
-            + _field(target, "canonical_name", target["id"]))
+    line = _device_name(source) + " -- " + label + " --> " + _device_name(target)
     md.append("- " + markdown(line))
     text.append(_plain(line))
     fact = edge["facts"]["relationship"]

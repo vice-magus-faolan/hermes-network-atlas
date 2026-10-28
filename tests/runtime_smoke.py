@@ -289,7 +289,12 @@ def _inspection_smoke(mode, home, manager, dispatch, command):
             assert guidance["inventory_state"] == "recorded" and guidance["devices_without_relationships"] == 1
             assert guidance["reconcilable_batches"]["total_count"] == 0
             topology = dispatch("network_map", {"format": "text"})
-            assert device in topology["content"] and "198.51.100.7" in topology["content"]
+            assert "fixture-ssh-host [" in topology["content"] and "198.51.100.7" in topology["content"]
+            assert "canonical_name" not in detail["fields"]
+            markdown = dispatch("network_map", {"format": "markdown"})["content"]
+            assert f"| fixture-ssh-host ({device}) |" in markdown
+            mermaid = dispatch("network_map", {"format": "mermaid"})["content"]
+            assert 'n' + device.replace("-", "") + '["fixture#45;ssh#45;host #91;' in mermaid
             assert not topology["discovery_performed"] and not topology["exports"]
             transport.assert_not_called()
         assert _database_dump(database) == applied and (home / "config.yaml").read_bytes() == policy_before
