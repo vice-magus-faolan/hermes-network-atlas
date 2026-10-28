@@ -33,25 +33,39 @@ have explicit `networks.NAME.allow_public: true`; see
 version: 1
 networks:
   home:
-    cidr: 192.168.1.8/31
+    cidr: 192.168.1.0/24
     discovery:
       ping: false
     endpoints:
       enabled: true
-      tcp_ports: [22, 2222]
+      tcp_ports: [22, 2222, 8006, 8384, 22000]
 ```
 
-The list must contain one to four distinct integer ports in 1..65535, excluding
-4403. Both `enabled: true` and the nonempty list are required; omitted endpoints
-are disabled. IPv4 ranges have at most 256 addresses. Network/broadcast and
-special destinations are recorded as excluded, not contacted. Host-discovery
-TCP defaults remain unchanged. Older Atlas versions reject these new policy keys.
+The endpoint list must contain **1..32** distinct strict integer ports in
+1..65535, excluding 4403. The 32-port ceiling gives smaller networks useful
+headroom without permitting an arbitrary port sweep; it is a selection limit,
+not a concurrency setting. Both `enabled: true` and the nonempty list are
+required; omitted endpoints are disabled. IPv4 ranges have at most 256 addresses.
+Network/broadcast and special destinations are recorded as excluded, not contacted.
+Host-discovery TCP defaults `[80, 443]` and its separate four-port ceiling remain
+unchanged. Older Atlas versions reject endpoint lists longer than four ports.
+
+Before planning or traffic, the **full address count × selected TCP port count**
+must fit `limits.observations` (hard ceiling 4096), including excluded destinations
+and work that may never start. The five-port /24 above needs 1280 records. A /24
+can admit at most 16 ports at that ceiling; 17..32 ports require a smaller scope,
+not aliases or overlapping copies of a LAN. A lowered record limit can also
+refuse a smaller list. List errors name `network.endpoints.tcp_ports`; a valid
+list whose grid is too large names `limits.observations`. No limit is raised
+automatically, and admission does not promise all endpoints will be checked.
 
 Callers select a configured name, never addresses, ports, commands or bounds.
 Operator limits can only lower V1 ceilings. Checks share one operation deadline,
 concurrency/rate limit (at most 32 starts/second) and nonrenewing per-host budget;
 fair reduced attempt deadlines leave time for later ports and durable storage.
-There are no retries, helper processes, DNS/ICMP prerequisites or raw sockets.
+There are no retries, helper processes, DNS/ICMP prerequisites or raw sockets. The
+four-probe concurrency, operation/host deadlines, output cap and persistence
+reserve do not grow with the selected list; later ports may remain `not_started`.
 Owned sockets close on completion or interruption.
 
 The TCP handshake itself may consume connection slots or cause remote logs and
@@ -260,5 +274,9 @@ discovering that it cannot persist to the upgraded store.
 
 SSH greeting/banner reading is not supported; those inputs fail closed. No
 application bytes are sent/read, no credentials or host keys are touched, and an
-open customary port does not grant SSH access. Service/version/OS/NSE/UDP and
+open customary port does not grant SSH access. Service/version/OS/NSE and
 vulnerability scanning or external scan imports are outside this feature.
+Native UDP evidence is the separate outstanding portion of
+[issue #48](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/48).
+This larger-TCP-list change does not deliver UDP 22000/21027 probing, QUIC or
+broadcast/multicast discovery and does not complete that issue.

@@ -131,8 +131,11 @@ render:
   to `[80, 443]`; choose at most four distinct ports in 1..65535, excluding 4403.
   ICMP-only uses `tcp_ports: []`. See [host-discovery policy](host-discovery-policy.md).
 - Endpoint checks need `enabled: true` and a nonempty `tcp_ports` list under
-  `networks.NAME.endpoints`, independently of discovery or SSH. The same port
-  limits apply; see [endpoint policy](endpoint-checks.md#operator-policy).
+  `networks.NAME.endpoints`, independently of discovery or SSH. Select up to 32
+  distinct integer ports in 1..65535, excluding 4403; the full address/port grid
+  must still fit `limits.observations` before any traffic (at most 16 ports on a
+  /24 with the hard 4096-record ceiling). For a standing five-port LAN example
+  and unchanged runtime budgets, see [endpoint policy](endpoint-checks.md#operator-policy).
 - SSH needs `ssh.enabled: true` and a host entry such as
   `lab-a: {alias: lab-a, inspect: true}` under `ssh.hosts`, referencing an existing
   OpenSSH alias. Stored knowledge or a previous success cannot grant access.

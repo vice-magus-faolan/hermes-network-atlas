@@ -16,6 +16,7 @@ MAX_POLICY_ENTRIES = 32
 NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
 LEGACY_TCP_PORTS = (80, 443)
 MAX_TCP_DISCOVERY_PORTS = 4
+MAX_TCP_ENDPOINT_PORTS = 32
 EXCLUDED_TCP_PORTS = frozenset({4403})
 LAN_SCOPES = tuple(IPv4Network(cidr) for cidr in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"))
@@ -152,9 +153,10 @@ def _scope(cidr: object) -> IPv4Network | IPv6Network:
     return network
 
 
-def _tcp_ports(value: object, label: str = "network.discovery.tcp_ports") -> tuple[int, ...]:
-    if type(value) is not list or len(value) > MAX_TCP_DISCOVERY_PORTS:
-        raise ConfigError(f"{label}: list of at most four ports required")
+def _tcp_ports(value: object, label: str = "network.discovery.tcp_ports", *,
+               ceiling: int = MAX_TCP_DISCOVERY_PORTS) -> tuple[int, ...]:
+    if type(value) is not list or len(value) > ceiling:
+        raise ConfigError(f"{label}: list of at most {ceiling} ports required")
     ports = tuple(_integer(port, 65535, label) for port in value)
     if len(set(ports)) != len(ports) or EXCLUDED_TCP_PORTS.intersection(ports):
         raise ConfigError(f"{label}: ports must be distinct and must not include excluded port 4403")
@@ -178,7 +180,8 @@ def _network(name: str, raw: object) -> Network:
         raise ConfigError("network.discovery.ping: requires icmp_echo or nonempty tcp_ports")
     endpoints = _object(data.get("endpoints", {}), {"enabled", "tcp_ports"}, "network.endpoints")
     enabled = _bool(endpoints.get("enabled", False), "endpoints.enabled")
-    endpoint_ports = _tcp_ports(endpoints.get("tcp_ports", []), "network.endpoints.tcp_ports")
+    endpoint_ports = _tcp_ports(endpoints.get("tcp_ports", []), "network.endpoints.tcp_ports",
+                                ceiling=MAX_TCP_ENDPOINT_PORTS)
     if enabled != bool(endpoint_ports):
         raise ConfigError("network.endpoints: enabled must match a nonempty tcp_ports list")
     if enabled and network.version != 4:

@@ -21,7 +21,7 @@ from .host_transport import excluded
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 
 # Retain the structural traversal bound, not a cumulative probe-row quota.
-# A strictly progressing <=1024-tuple grid fits even at one new outcome per run.
+# This bounds ancestry separately from the per-batch observation/grid ceiling.
 LINEAGE_BATCH_LIMIT = 4096
 LINEAGE_LIMIT_ERROR = ('endpoint continuation: lineage batch limit (4096) reached; '
                        'retain saved IDs and history for operator review; no new collection')
