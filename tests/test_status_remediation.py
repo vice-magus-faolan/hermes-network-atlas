@@ -116,21 +116,23 @@ class StatusBatchBoundsTests(unittest.TestCase):
             self.assertEqual(argv[:4], ("nmap", "-sn", "-n", "-PS80,443"))
             if completion == "failed" or completion == "partial" and ip_address(last) in ip_network(argv[-1]):
                 return runner.CommandResult("timeout", diagnostic_code="command_deadline_exceeded")
-            return runner.CommandResult("success", xml(argv[-1], up=False))
+            from test_discovery import exclusions
+            return runner.CommandResult("success", xml(argv[-1], up=False, excluded=exclusions(argv)))
         with storage.Store(self.policy, writable=True) as store:
             core.create_device(store, "Synthetic known host", now=NOW)
         with patch.object(discovery, "run", transport):
             receipt = json.loads(fixture_handlers(self.home).discover({"network": "lab", "mode": "ping"}))
         self.assertTrue(receipt["persisted"], receipt)
-        self.assertEqual(receipt["completion"], completion)
+        expected = "partial" if prefix < 31 and completion == "complete" else completion
+        self.assertEqual(receipt["completion"], expected)
         self.assertEqual(len(receipt["probes"]), size + 1)
         results = self.assert_public_reopen(receipt, limit)
         summary = results["direct"]["last_discovery"]
         self.assertEqual(summary, results["direct"]["last_collection"])
         self.assertEqual(summary["scope_value"], self.policy.networks[0].cidr)
-        self.assertEqual(summary["probe_summary"]["coverage_counts"]["exact_network"], int(completion == "complete"))
+        self.assertEqual(summary["probe_summary"]["coverage_counts"]["exact_network"], int(expected == "complete"))
         self.assertEqual(summary["probe_summary"]["outcome_counts"]["timeout"],
-                         size if completion == "failed" else 16 * int(completion == "partial"))
+                         size - 2 if completion == "failed" else 15 * int(completion == "partial"))
         self.assertEqual(summary["probe_summary"]["address_count"], size)
         self.assertEqual(sum(summary["probe_summary"]["address_outcome_counts"].values()), size)
         self.assertIsNone(results["direct"]["last_inspection"])
@@ -140,6 +142,9 @@ class StatusBatchBoundsTests(unittest.TestCase):
             for completion in ("complete", "partial", "failed"):
                 with self.subTest(prefix=prefix, completion=completion):
                     self.ping_scenario(prefix, completion, 100)
+        for prefix in (31, 32):
+            with self.subTest(prefix=prefix):
+                self.ping_scenario(prefix, "complete", 100)
 
     def test_full_size_ping_lowered_detail_limits_do_not_change_whole_batch_evidence(self):
         for prefix in (24, 25):

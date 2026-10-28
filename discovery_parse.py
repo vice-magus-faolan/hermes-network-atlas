@@ -2,6 +2,7 @@
 """Small bounded iproute2 JSON / Nmap XML parsers; source text is data only."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from ipaddress import ip_address, ip_network
 import json
 from xml.etree import ElementTree
@@ -12,6 +13,21 @@ from .identity import mac_address
 from .updates import _text
 
 NEIGHBOR_STATES = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT", "NOARP", "INCOMPLETE", "FAILED", "NONE"}
+
+
+class NmapCoverageError(ValueError):
+    """Well-formed Nmap output that cannot attest completed discovery."""
+
+    def __init__(self, diagnostic_code: str):
+        super().__init__(diagnostic_code)
+        self.diagnostic_code = diagnostic_code
+
+
+@dataclass(frozen=True)
+class NmapScan:
+    """Fully validated chunk evidence; unavailable reasons belong to addresses."""
+    observations: tuple[Observation, ...]
+    unavailable: tuple[tuple[str, str], ...]
 
 
 def _pairs(pairs: list) -> dict:
@@ -137,11 +153,14 @@ def _bounded(observations: list[Observation], policy: Policy) -> tuple[Observati
     return tuple(observations)
 
 
-def nmap(data: bytes, target: str, at: str, policy: Policy) -> tuple[Observation, ...]:
+def nmap(data: bytes, target: str, at: str, policy: Policy, *,
+         excluded: tuple[str, ...] = ()) -> NmapScan:
     """Require successful complete numeric chunk XML; no entity expansion.
 
     Only Nmap's literal empty DOCTYPE is accepted; other declarations are refused.
-    Prefix /32 records a host address, not a claimed interface subnet mask.
+    Verbose XML must account for each non-excluded target, including down-host
+    reasons: summary totals alone also count local route failures. Prefix /32
+    records a host address, not a claimed interface subnet mask.
     """
     network = ip_network(target, strict=True)
     if network.version != 4 or network.num_addresses > 16:
@@ -152,21 +171,27 @@ def nmap(data: bytes, target: str, at: str, policy: Policy) -> tuple[Observation
     stats = root.findall("runstats")
     if len(stats) != 1:
         raise ValueError("incomplete scan")
-    up, down = _scan_stats(stats[0], network.num_addresses)
+    expected = {str(address) for address in network} - set(excluded)
+    up, down = _scan_stats(stats[0], len(expected))
     hosts = root.findall("host")
-    if len(hosts) > network.num_addresses:
+    if len(hosts) > len(expected):
         raise ValueError("unexpected target count")
     observations = []
+    unavailable = []
     seen = set()
     for host in hosts:
-        address, parsed = _nmap_host(host, network, at)
-        if address in seen:
-            raise ValueError("duplicate host address")
+        address, parsed, diagnostic = _nmap_host(host, network, at)
+        if address in seen or address not in expected:
+            raise ValueError("duplicate or excluded host address")
         seen.add(address)
         observations.extend(parsed)
+        if diagnostic is not None:
+            unavailable.append((address, diagnostic))
     if len(observations) != up or len(hosts) - up > down:
         raise ValueError("host evidence disagrees with coverage summary")
-    return _bounded(observations, policy)
+    if seen != expected:
+        raise NmapCoverageError("nmap_incomplete_coverage")
+    return NmapScan(_bounded(observations, policy), tuple(unavailable))
 
 
 def _nmap_xml(data: bytes, policy: Policy):
@@ -186,12 +211,16 @@ def _scan_stats(stats, expected: int) -> tuple[int, int]:
     if len(finished) != 1 or len(hosts) != 1 or finished[0].get("exit") != "success":
         raise ValueError("unsuccessful scan")
     up, down, total = (int(hosts[0].get(key, "-1")) for key in ("up", "down", "total"))
-    if total != expected or not 0 <= up <= total or down != total - up:
+    if not 0 <= up <= total or down != total - up:
+        raise ValueError("inconsistent coverage")
+    if total < expected:
+        raise NmapCoverageError("nmap_incomplete_coverage")
+    if total != expected:
         raise ValueError("inconsistent coverage")
     return up, down
 
 
-def _nmap_host(host, network, at: str) -> tuple[str, list[Observation]]:
+def _nmap_host(host, network, at: str) -> tuple[str, list[Observation], str | None]:
     if host.get("timedout", "false") != "false":
         raise ValueError("timed out host")
     statuses = host.findall("status")
@@ -208,6 +237,9 @@ def _nmap_host(host, network, at: str) -> tuple[str, list[Observation]]:
     if _ip(target) not in network:
         raise ValueError("out-of-chunk address")
     if statuses[0].get("state") == "down":
-        return target, []
+        reason = statuses[0].get("reason")
+        if reason in {"net-unreach", "no-route", "reject-route"}:
+            return target, [], "nmap_route_unavailable"
+        return target, [], None if reason == "no-response" else "nmap_discovery_unavailable"
     anchor = _anchor(macs[0] if macs else None, "ping_" + target.replace(".", "_"))
-    return target, [_address(anchor, target, 32, at)]
+    return target, [_address(anchor, target, 32, at)], None

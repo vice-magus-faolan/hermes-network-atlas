@@ -118,15 +118,19 @@ def saved_work(atlas, modules, database):
     assert saved['queryable'] and saved['state_counts']['not_started'] > 0, saved
 
     def nmap(argv, *args, **kwargs):
-        count = ip_network(argv[-1]).num_addresses
-        xml = ('<nmaprun><runstats><finished exit="success"/>'
+        excluded = argv[argv.index('--exclude') + 1].split(',') if '--exclude' in argv else ()
+        targets = [str(ip) for ip in ip_network(argv[-1]) if str(ip) not in excluded]
+        hosts = ''.join('<host><status state="down" reason="no-response"/>'
+                        f'<address addr="{ip}" addrtype="ipv4"/></host>' for ip in targets)
+        count = len(targets)
+        xml = ('<nmaprun>' + hosts + '<runstats><finished exit="success"/>'
                f'<hosts up="0" down="{count}" total="{count}"/></runstats></nmaprun>')
         return runner.CommandResult('success', xml.encode())
 
     # Exercise legacy Nmap admission as well as sockets, with synthetic output.
     with patch.object(discovery, 'run', nmap):
         ping = atlas.slash('discover lab ping')
-    assert ping['persisted'] and ping['completion'] == 'complete', ping
+    assert ping['persisted'] and ping['completion'] == 'partial', ping
     page = atlas.tool('network_query', {'view': 'endpoints', 'batch_id': saved['batch_id']})
     raw['networks']['lab']['allow_public'] = False
     atlas.ctx.set_config('policy', raw)

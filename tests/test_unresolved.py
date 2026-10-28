@@ -516,7 +516,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
 
     def collect_chunks(self, *, partial, mac=""):
-        from test_discovery import discovery, runner, xml
+        from test_discovery import discovery, runner, xml, exclusions
         clock, calls = [0.0], []
         def transport(argv, limits, deadline, **kwargs):
             calls.append(argv[-1])
@@ -524,7 +524,7 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                 clock[0] = deadline
                 return runner.CommandResult("timeout", diagnostic_code="deadline_exceeded")
             clock[0] += 1
-            return runner.CommandResult("success", xml(argv[-1], mac=mac))
+            return runner.CommandResult("success", xml(argv[-1], mac=mac, excluded=exclusions(argv)))
         with (patch.object(discovery.time, "monotonic", side_effect=lambda: clock[0]),
               patch.object(discovery, "utc_now", return_value=NOW), patch.object(discovery, "run", transport)):
             receipt = discovery.collect(self.policy, {"network": "lab", "mode": "ping"})
@@ -543,11 +543,12 @@ class UnresolvedEvidenceTests(unittest.TestCase):
                 totals = row["batch"]["probe_summary"]
                 self.assertEqual(totals["total_count"], 257)
                 self.assertEqual(totals["address_count"], 256)
-                self.assertEqual(totals["address_outcome_counts"]["success"], 16 if partial else 256)
+                self.assertEqual(totals["address_outcome_counts"]["success"], 15 if partial else 254)
                 self.assertEqual(totals["address_outcome_counts"]["timeout"], 16 if partial else 0)
-                self.assertEqual(totals["address_outcome_counts"]["not_started"], 224 if partial else 0)
-                self.assertEqual(totals["failure_count"], 241 if partial else 0)
-                self.assertEqual(row["batch"]["scope_absence_eligible"], not partial)
+                self.assertEqual(totals["address_outcome_counts"]["not_started"], 223 if partial else 0)
+                self.assertEqual(totals["address_outcome_counts"]["unavailable"], 2)
+                self.assertEqual(totals["failure_count"], 242 if partial else 3)
+                self.assertFalse(row["batch"]["scope_absence_eligible"])
                 self.assertTrue(row["historical_responder_evidence"])
                 self.assertEqual(row["probe"]["outcome"], "success")
                 self.assertEqual(row["probe"]["coverage_kind"], "none")

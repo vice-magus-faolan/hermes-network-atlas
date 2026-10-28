@@ -112,14 +112,14 @@ def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:
-    """Two scope-complete synthetic scans; exactly three authorized SSH aliases."""
+    """Two synthetic scans with excluded scope edges; three authorized SSH aliases."""
     status = atlas.slash("status")
     assert status["known_devices"] == 0 and status["last_discovery"] is None, status
     passive = atlas.slash("discover lab passive")
     assert passive["completion"] == "complete" and not passive["applied"], passive
     assert not atlas.tool("network_reconcile", {"batch_id": passive["batch_id"]})["new"]
     first = atlas.tool("network_discover", {"network": "lab", "mode": "ping"})
-    assert first["completion"] == "complete" and not first["applied"], first
+    assert first["completion"] == "partial" and not first["applied"], first
     assert not atlas.tool("network_query", {})["devices"]
     original = atlas.tool("network_query", {"view": "unresolved", "batch_id": first["batch_id"]})
     assert len(original["evidence"]) == 5 and not original["has_more"], original
@@ -146,14 +146,20 @@ def collect(atlas: NativeAtlas, root: Path) -> dict:
     assert {row["id"] for row in queried["devices"]} == set(ids.values()) and not queried["has_more"]
     assert all(row["access"][0]["last_inspection"]["succeeded"] for row in queried["devices"])
     assert not atlas.tool("network_query", {"address": "198.51.100.99"})["devices"]
+    pair = atlas.slash("discover pair ping")
+    assert pair["completion"] == "complete", pair
+    missing = atlas.tool("network_reconcile", {"batch_id": pair["batch_id"]})
+    assert {row["device_id"] for row in missing["missing"]} == {ids["lab-b"], ids["lab-c"]}, missing
+    assert {row["meaning"] for row in missing["missing"]} == {"not_observed_in_this_run"}, missing
+    assert atlas.tool("network_reconcile", {"batch_id": pair["batch_id"]}) == missing
     (root / "fixture-bin" / "stage").write_text("changed")
     second = atlas.cli(["discover", "--network", "lab", "--mode", "ping"])
     change = atlas.tool("network_reconcile", {"batch_id": second["batch_id"]})
     assert (change["new"] and ids["lab-a"] in change["changed"]
             and change["conflicting"] and change["unresolved"]), change
-    assert {row["meaning"] for row in change["missing"]} == {"not_observed_in_this_run"}, change
-    assert ids["lab-c"] in {row["device_id"] for row in change["missing"]}, change
-    return {"ids": ids, "initial": initial, "change": change}
+    # Completed eligible hosts cannot turn excluded scope edges into exact coverage.
+    assert second["completion"] == "partial" and not change["missing"], change
+    return {"ids": ids, "initial": initial, "change": change, "missing": missing}
 
 
 def sources_and_failure(atlas: NativeAtlas, root: Path, data: dict) -> None:
@@ -250,6 +256,7 @@ def main() -> int:
         data = json.loads(saved.read_text())
         before = counts(home)
         assert atlas.tool("network_reconcile", {"batch_id": data["change"]["batch_id"]}) == data["change"]
+        assert atlas.tool("network_reconcile", {"batch_id": data["missing"]["batch_id"]}) == data["missing"]
         assert snapshot(atlas, home) == data["snapshot"]
         assert counts(home) == before
         for kind, name in (("markdown", "network_map.md"), ("mermaid", "network_map.mmd")):
