@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from collections.abc import Callable
 import json
+import shutil
 import sqlite3
 
 from .config import Policy
@@ -33,12 +34,27 @@ def update_receipt(update: Update) -> str:
 def status(policy: Policy) -> str:
     """Summarize stored knowledge separately from profile-local authorization."""
     return response_json({**query(policy, {"view": "status"}), "stage": "v1", "persistence_available": True,
-                          "collection_available": True, "ssh_transport_available": True,
+                          "availability": _availability(),
                           "configured_networks": [network.name for network in policy.networks],
                           "configured_scopes": [asdict(network) for network in policy.networks],
                           "authorized_for_atlas_ssh_inspection": list(policy.authorized_aliases),
                           "operator_update_route": "hermes network-atlas update"},
                          policy.limits.output_bytes)
+
+
+def _availability() -> dict:
+    """Check PATH only; neither executable presence nor native sockets prove access.
+
+    Legacy ping uses Nmap; opt-in ICMP/custom TCP and endpoint methods use native
+    sockets instead. Do not execute helpers or open sockets on this read path.
+    """
+    present = {name: shutil.which(name) is not None for name in ("ip", "nmap", "ssh")}
+    return {"executable_presence": present,
+            "methods": {"passive": "unverified" if present["ip"] else "missing_executable",
+                        "legacy_ping": "unverified" if present["nmap"] else "missing_executable",
+                        "socket_ping": "unverified", "tcp_endpoints": "unverified", "udp_endpoints": "unverified",
+                        "ssh_inspection": "unverified" if present["ssh"] else "missing_executable"},
+            "runtime": "unverified"}
 
 
 class Handlers:

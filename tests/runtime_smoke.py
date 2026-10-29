@@ -381,6 +381,9 @@ def main() -> int:
     if mode == "active_scopes":
         from native_active_scopes import run
         return run(home, root)
+    if mode in {"status_availability", "status_eligibility"}:
+        from native_status import run
+        return run(home, root, mode)
     # This uses installed native plugin APIs directly; not hermes_bootstrap/PM,
     # so it cannot activate/repair/install a dependency generation as a side effect.
     from hermes_constants import get_hermes_home

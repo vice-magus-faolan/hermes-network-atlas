@@ -403,10 +403,16 @@ def snapshot(atlas: NativeAtlas, home: Path) -> dict:
     originals = atlas.tool("network_query", {"view": "unresolved", "address": "192.0.2.1"})
     assert originals["evidence"] and any(row["identity_state"] == "subsequently_resolved"
                                          for row in originals["evidence"])
+    status = atlas.slash("status")
+    # Restart removes helper files: live PATH diagnostics change, stored knowledge does not.
+    availability = status.pop("availability")
+    assert availability["executable_presence"] == {
+        name: (home.parent / "fixture-bin" / name).is_file() for name in ("ip", "nmap", "ssh")}
+    assert availability["runtime"] == "unverified"
     return {"devices": devices, "histories": histories, "maps": maps,
             "unresolved": unresolved, "original_evidence": originals,
             "ssh": atlas.tool("network_query", {"access_method": "ssh"}),
-            "status": atlas.slash("status"), "counts": counts(home)}
+            "status": status, "counts": counts(home)}
 
 
 def main() -> int:
