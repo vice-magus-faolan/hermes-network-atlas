@@ -121,7 +121,11 @@ def _read_command(args: argparse.Namespace, policy: Policy) -> dict | None:
     if args.atlas_action == "reconcile":
         return json.loads(handlers.reconcile({"batch_id": args.batch_id} if args.batch_id else {}))
     if args.atlas_action == "status":
-        return json.loads(status(policy))
+        result = json.loads(status(policy))
+        # Selected filesystem paths belong only on the local operator surface,
+        # not the shared model/slash status response.
+        result["database_binding"] = {"profile_home": str(policy.home), "database_path": str(policy.database)}
+        return result
     if args.atlas_action == "query":
         return json.loads(handlers.query(_decode(args.query_json, policy, "query-json")))
     if args.atlas_action == "map":

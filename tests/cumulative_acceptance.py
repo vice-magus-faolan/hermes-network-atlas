@@ -108,7 +108,9 @@ def invalid_policy_refusal(atlas: NativeAtlas, home: Path, root: Path) -> None:
         assert atlas.ctx.get_config("policy", None) == original
         assert atlas.slash("status") == healthy_status
         assert atlas.tool("network_query", {"view": "status"}) == healthy_status
-        assert atlas.cli(["status"]) == healthy_status
+        operator = atlas.cli(["status"])
+        assert operator.pop("database_binding") == {"profile_home": str(home), "database_path": str(database)}
+        assert operator == healthy_status
 
 
 def collect(atlas: NativeAtlas, root: Path) -> dict:

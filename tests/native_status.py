@@ -10,7 +10,11 @@ from cumulative_acceptance import NativeAtlas
 
 
 def statuses(atlas):
-    return (atlas.tool('network_query', {'view': 'status'}), atlas.slash('status'), atlas.cli(['status']))
+    operator = atlas.cli(['status'])
+    home = os.environ['HERMES_HOME']
+    assert operator.pop('database_binding') == {
+        'profile_home': home, 'database_path': home + '/plugin-data/network-atlas/atlas.sqlite3'}
+    return (atlas.tool('network_query', {'view': 'status'}), atlas.slash('status'), operator)
 
 
 def availability(atlas, home):
