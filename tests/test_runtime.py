@@ -158,7 +158,9 @@ class NativeRuntimeTests(unittest.TestCase):
                 self.assertTrue(self.run_smoke(mode)["owned_backup_reset"])
 
     def test_native_backup_reset_converted_stop_and_empty_policy_recovery(self):
-        self.assertTrue(self.run_smoke("native_stop_converted")["converted_stop_no_grants"])
+        receipt = self.run_smoke("native_stop_converted")
+        self.assertTrue(receipt["converted_stop_no_grants"])
+        self.assertTrue(receipt["retained_reinstall_no_grants"])
 
     def test_native_privacy_records_native_directory_and_database_modes(self):
         for mask in (0o022, 0o077):

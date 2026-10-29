@@ -255,6 +255,57 @@ def _privacy(atlas, home, config, storage, mask):
     return {'umask': oct(mask), 'directory_modes': modes, 'database_mode': oct(0o600), 'uid': os.getuid()}
 
 
+def _retained_reinstall(atlas, home, config, database):
+    """Exercise native removal/selection offline, not the network-dependent installer."""
+    from hermes_cli.config import load_config
+    from hermes_cli.plugins_cmd import cmd_remove
+    from hermes_constants import profile_name_for_home
+    from plugins.plugin_storage import plugin_data_dir
+    from helpers import copy_plugin
+
+    cmd_remove('network-atlas')
+    plugins = load_config()['plugins']
+    assert 'network-atlas' not in plugins.get('entries', {})
+    assert 'network-atlas' not in plugins.get('enabled', [])
+    assert atlas.ctx.get_config('policy', None) is None
+    plugin = home / 'plugins' / 'network-atlas'
+    assert not plugin.exists()
+    # Restore only fixture plugin files; no online install/PM resync is claimed.
+    copy_plugin(plugin)
+    # Missing notes: derive the unchanged conversion selection without converting
+    # or importing its legacy grants into native settings.
+    conversion = importlib.import_module(config.__package__ + '.conversion')
+    recovered = config.validate_policy(conversion.read_legacy(home), home,
+                                       data_dir=plugin_data_dir('network-atlas').resolve())
+    assert recovered.database == database
+    hermes = shutil.which('hermes')
+    assert hermes is not None
+    profile = profile_name_for_home(home)
+    assert profile is not None
+    guide = (Path(__file__).resolve().parents[1] / 'docs' / 'operator-guide.md').read_text()
+    section = guide.split('### Re-enable or reinstall with retained data', 1)[1].split('### ', 1)[0]
+    snippet = section.split('```sh\n')[2].split('```', 1)[0]
+    snippet = snippet.replace('/absolute/selected/atlas.sqlite3', shlex.quote(str(recovered.database)))
+    restored = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
+                              env=os.environ.copy(), capture_output=True, text=True, timeout=90)
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    assert 'network-atlas' not in load_config()['plugins'].get('enabled', [])
+    assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(database)}}
+    # Only the native offline config selection is exercised here, not PM enable,
+    # capability consent, gateway reload or dependency/environment resolution.
+    selected = subprocess.run([hermes, 'config', 'set', 'plugins.enabled', '["network-atlas"]'],
+                              cwd=home.parent, env=os.environ.copy(), input='', capture_output=True,
+                              text=True, timeout=45)
+    assert selected.returncode == 0, selected.stdout + selected.stderr
+    cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                          input='', capture_output=True, text=True, timeout=45)
+    assert cold.returncode == 0, cold.stdout + cold.stderr
+    status = json.loads(cold.stdout)
+    assert status['database_binding']['database_path'] == str(database)
+    assert status['configured_networks'] == status['authorized_for_atlas_ssh_inspection'] == []
+    assert status['known_devices'] == 1
+
+
 def _converted_stop(atlas, home, config, storage, batches):
     """Retained legacy data must not turn a stopped profile into conversion guidance."""
     conversion = importlib.import_module(config.__package__ + '.conversion')
@@ -266,11 +317,16 @@ def _converted_stop(atlas, home, config, storage, batches):
     _pending_batch(storage, batches, legacy)
     assert atlas.cli(['convert-legacy', '--writers-stopped'])['converted']
     policy = config.load_policy(atlas.ctx)
+    atlas.cli(['map', '--format', 'markdown', '--export'])
+    exports = {path: path.read_bytes() for path in policy.exports.iterdir()}
     history = _history(storage, policy)
     legacy_bytes = legacy.database.read_bytes()
     legacy_config = (home / 'network-atlas' / 'config.yaml').read_bytes()
     (home / 'config.yaml').chmod(0o644)
     _documented_stop(atlas, home, policy.database, home.parent / 'converted-backup')
+    backup = _documented_backup(policy.database, home.parent / 'converted-backup')
+    assert _history(storage, replace(policy, database=backup)) == history
+    backup_bytes = backup.read_bytes()
     assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(policy.database)}}
     assert atlas.cli(['status'])['known_devices'] == 1
     # Recovery from the former empty-policy stop must not re-import the old grants.
@@ -283,10 +339,17 @@ def _converted_stop(atlas, home, config, storage, batches):
     with patch('subprocess.Popen', side_effect=AssertionError('stopped converted profile collected')):
         assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
         assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
+    _retained_reinstall(atlas, home, config, policy.database)
+    _binding_status(atlas, config, storage, home, policy.database, 1)
+    with patch('subprocess.Popen', side_effect=AssertionError('reinstalled profile attempted collection')):
+        assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
+        assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
     assert _history(storage, policy) == history
+    assert {path: path.read_bytes() for path in policy.exports.iterdir()} == exports
+    assert backup.read_bytes() == backup_bytes
     assert legacy.database.read_bytes() == legacy_bytes
     assert (home / 'network-atlas' / 'config.yaml').read_bytes() == legacy_config
-    return {'converted_stop_no_grants': True}
+    return {'converted_stop_no_grants': True, 'retained_reinstall_no_grants': True}
 
 
 def _reset_walkthrough(atlas, home, config, storage, batches, *, custom):

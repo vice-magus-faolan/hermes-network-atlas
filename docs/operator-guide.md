@@ -22,6 +22,15 @@ for current main, or copy the full commit from a revision reviewed on GitHub.
 hermes profile list
 git ls-remote https://github.com/vice-magus-faolan/hermes-network-atlas.git refs/heads/main
 hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
+```
+
+If this profile retains Atlas data after removal, **before enabling** follow
+[Re-enable or reinstall with retained data](#re-enable-or-reinstall-with-retained-data)
+to restore only its database binding. Do not follow a conversion hint or restore
+an old full-grant config: either can reintroduce revoked collection grants.
+For a first installation, continue with:
+
+```sh
 hermes -p PROFILE plugins enable network-atlas
 hermes -p PROFILE plugins show network-atlas
 hermes -p PROFILE network-atlas --help
@@ -193,9 +202,11 @@ or resume permissions. Keep the shared file private. See
 
 A native config-only profile clone copies Atlas's policy, including its grants
 and any absolute `store.shared_sqlite_path`; it does not rebind that path to the
-clone's home. Conversion writes such an explicit path even for a formerly local
-store. The converted clone therefore reads AND writes the source's database,
-not an independent copy. In contrast, a config-only clone with no explicit store
+clone's home. Conversion and the binding-only stop both write such an explicit
+path, even for a default profile's local store. A later `--clone` of that stopped
+profile therefore shares the parent's database too, although its policy has no
+collection grants. A clone retaining an absolute binding reads AND writes the
+source's database, not an independent copy. In contrast, a config-only clone with no explicit store
 binding starts with its own empty default store; it does not copy local history.
 This behavior is exercised with the real native clone and public Atlas actions,
 not inferred only from the copied config.
@@ -587,11 +598,11 @@ authorizes stopping another user's processes or deleting a shared store.
    local status, not an assumed default. Set ATLAS_HOME and ATLAS_DB below to those
    exact absolute paths, and BACKUP to a new private directory outside the profile
    and all reset targets. If an earlier `{}` stop already causes `legacy store
-   present`, use the previously recorded binding (or privately inspect the saved
-   native config) to recover ATLAS_DB. Do not guess a new store, restore the old
-   full-grant config, or rerun `convert-legacy`: conversion can restore old grants.
-   Stop here if the selected binding cannot be established. Preserve the current
-   native config, then replace the policy with only that store binding:
+   present`, or removal forgot the binding, use
+   [Recover the selected binding](#recover-the-selected-binding) below. Do not
+   restore the old full-grant config or rerun `convert-legacy`: conversion can
+   restore old grants. Preserve the current native config, then replace the policy
+   with only that store binding:
 
    ```sh
    ATLAS_HOME=/absolute/selected/profile-home
@@ -622,6 +633,26 @@ authorizes stopping another user's processes or deleting a shared store.
    state or verify an already-stopped profile. Stored history grants no authority.
    Removing a custom/shared binding is a separate deliberate detachment, not a stop
    requirement or evidence that the previously selected store was erased.
+
+### Recover the selected binding
+
+Use the privately recorded binding or inspect the saved native config without
+restoring it. Missing handwritten notes alone need not block recovery of a
+converted profile: if the legacy inputs are unchanged, conversion's selection is
+deterministic. Privately inspect `network-atlas/config.yaml` beneath the resolved
+ATLAS_HOME. If its `store.shared_sqlite_path` is present, it must be an absolute
+path ending in `.sqlite3`; resolve filesystem symlinks in that path for ATLAS_DB.
+Treat the value as a literal path: do not expand `~` or environment variables;
+relative paths are rejected. If the key is absent (including when the legacy
+config is absent), resolve ATLAS_HOME's `plugin-data/network-atlas` directory,
+including any directory symlinks, then append `atlas.sqlite3`. That is the managed
+conversion destination, not the retained legacy `network-atlas/atlas.sqlite3`.
+
+This derives the path only; do not execute conversion or import legacy grants.
+If the legacy inputs, symlinks or later native store selection changed, establish
+the actual selected binding from saved native config/backup or other private
+records instead. Stop if it remains uncertain; do not guess a new store or move
+shared data. Use the established ATLAS_DB in the binding-only replacement.
 
 ### Back up retained data before removal or reset
 
@@ -676,10 +707,10 @@ hermes -p PROFILE plugins remove network-atlas
 hermes -p PROFILE plugins list
 ```
 
-In stock v0.21.7 and v0.22.5 source, disable changes selection through native PM
-admission: `PluginSelection` updates `plugins.enabled`/`plugins.disabled`, retaining
-`plugins.entries` and its Atlas settings. Remove deletes the installed plugin and
-`_forget_plugin_config` clears its config entry. Neither is an inventory reset.
+In stock v0.21.7 and v0.22.5, disable marks Atlas disabled in the selected profile
+but retains its settings, including the database binding. Remove deletes the
+installed plugin code and its config entry, including that binding. Neither
+erases inventory or exports.
 After disable, privately inspect the actual native config:
 
 ```sh
@@ -691,22 +722,63 @@ merely a disabled listing. If grants remain, repeat the offline replacing stop a
 verify the saved config before any enable. Do not delete a converted profile's
 binding just to make the entry absent. After remove, verify its config entry is
 absent; inspect the saved native file if the config command reports a missing key.
-Check again before enabling or reinstalling: restoring an old entry restores grants.
-Status is available only while the plugin is enabled; after enable, require a fresh
-no-grants status before starting workers.
+Before any enable or reinstall, follow the retained-data procedure below, or
+complete an intentional empty reset first. Restoring an old entry restores grants.
 
 The maintainer's [issue #34 UAT](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/34)
 reported running disable/remove with Hermes still running, retained data/exports,
 and old inventory on reinstall. Its claim that disable removed the policy is not
 supported by either release's source; do not rely on it. This source inspection is
 not a new online lifecycle trial. Treat lifecycle changes as online operations:
-disable's native dependency/environment resync can reach PyPI; the reported
-offline disable failed with a traceback. Remove's source clears code/config
-without that selection resync; it still is not the offline stop procedure.
+disable's dependency/environment resync can reach PyPI; the reported
+offline disable failed with a traceback. Remove clears code/config without that
+resync; it still is not the offline stop procedure.
 Use the replacing-policy stop above while offline, not repeated uninstall attempts.
 After any failure, inspect actual native selection/config and retained files.
 Follow native session/restart hints; a successful command is not proof that an
 old loaded session or in-flight operation has stopped. No live restart is implied.
+
+### Re-enable or reinstall with retained data
+
+Keep workers stopped and retain the selected/shared database, legacy files,
+exports and private backups. If disabled but still installed, no reinstall is
+needed. If removed, first install the reviewed revision **without enabling**:
+
+```sh
+hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
+```
+
+Removal forgot the binding. **Before enabling**, establish ATLAS_DB using
+[Recover the selected binding](#recover-the-selected-binding), then replace the
+complete policy with only that binding, even if the new entry looks empty:
+
+```sh
+ATLAS_DB=/absolute/selected/atlas.sqlite3
+hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy \
+  "$(python3 -c 'import json, sys; print(json.dumps({"store": {"shared_sqlite_path": sys.argv[1]}}))' "$ATLAS_DB")" &&
+hermes -p PROFILE config get plugins.entries.network-atlas.settings.policy
+```
+
+Require exactly the intended store binding and no network or SSH grants in that
+readback. **Do not follow `run network-atlas convert-legacy first`, reconvert, or
+restore the old full-grant config**: those can bring back revoked grants. If already
+enabled and seeing that hint, keep workers stopped and apply this same replacing
+config command, not conversion. Runtime conversion safeguards are tracked in
+[issue #61](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/61);
+do not assume they are present.
+
+Only after verifying the binding-only policy, enable and read back in fresh
+processes:
+
+```sh
+hermes -p PROFILE plugins enable network-atlas
+hermes -p PROFILE network-atlas status
+```
+
+Require the intended `database_binding` and empty `configured_networks` and
+`authorized_for_atlas_ssh_inspection` before starting workers. Retained history
+should still be readable; zero inventory is not required. These config commands
+work offline, but installation and enable's dependency resync may need network.
 
 ### Intentional clean reset and readback
 
@@ -745,12 +817,14 @@ exact targets confirmed **exclusively yours**. There is no Atlas reset command.
 
 Before re-enabling writers, check the recorded old store and exports are absent
 from their active paths (and not dangling links), not merely that status succeeds.
-If the plugin remains enabled, use fresh processes. If disabled but still installed,
-verify the native config has no collection grants and run only
-`hermes -p PROFILE plugins enable network-atlas`; no reinstall is needed. If removed,
-install the reviewed revision with `--no-enable`, verify no old policy was restored,
-then enable using the installation steps. For an empty reset, retain legacy files
-outside active paths before removing an old binding. Before re-enabling writers run:
+For this intentional empty reset only, retain legacy files outside active paths
+before removing an old binding, then verify the native config has no collection
+grants. If the plugin remains enabled, use fresh processes. If disabled but still
+installed, run only `hermes -p PROFILE plugins enable network-atlas`; no reinstall
+is needed. If removed, install the reviewed revision with `--no-enable`, verify
+the config has no grants, then enable. Do not use this empty-reset path for retained
+data: use the binding-only pre-enable recovery above instead. Before re-enabling
+writers run:
 
 ```sh
 hermes -p PROFILE network-atlas status
