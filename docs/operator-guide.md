@@ -196,12 +196,21 @@ binding starts with its own empty default store; it does not copy local history.
 This behavior is exercised with the real native clone and public Atlas actions,
 not inferred only from the copied config.
 
-Before running collection or making inventory changes in a clone, inspect its
-complete native policy in that profile's `config.yaml`, especially the absolute
-store binding (or its absence). Fresh `hermes -p CLONE network-atlas status` and
-`query` calls verify grants and inventory, but do not report the resolved database
-path; they cannot by themselves prove isolation. Sharing is intentional when the
-inherited path is retained. Each caller still owns evidence by its own
+Before running collection or making inventory changes in a clone, run
+`hermes -p CLONE network-atlas status`. Its `database_binding` contains the selected
+resolved `profile_home` and `database_path`, including managed-directory symlinks
+and explicit shared paths. Compare the source and clone's `database_path`: equal
+paths select the same store, even when their `profile_home` values differ. Different
+paths do not prove physical isolation (for example, hard links can alias a file).
+An absent store still reports its selected path without initializing it. Status
+does not copy, migrate, rebind, repair or collect; native managed directories can
+still be created as described above. Model-tool status, `/network status` and
+CLI `query` omit this filesystem binding; use the local operator `status` command
+to inspect it, and keep its output private. This is a disclosure boundary, not
+isolation from other same-UID tools or processes.
+
+Also inspect the complete native policy for copied grants before collection.
+Sharing is intentional when the inherited path is retained. Each caller still owns evidence by its own
 resolved home and keeps local exports; copied grants do not authorize applying
 the source profile's saved batches. A clone does, however, inherit the configured
 grants for NEW collection until you explicitly replace them.

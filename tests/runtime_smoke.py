@@ -126,6 +126,11 @@ def _symlink_profiles_smoke(home, ctx, manager, dispatch, command):
     database = plugin_data_dir("network-atlas").resolve() / "atlas.sqlite3"
     policy = config.load_policy(ctx)
     assert policy.home == home and policy.database == database
+    operator = _registered_cli(manager, ["status"])
+    assert operator.pop("database_binding") == {"profile_home": str(home), "database_path": str(database)}
+    assert operator == dispatch("network_query", {"view": "status"}) == json.loads(command("status"))
+    assert str(home) not in json.dumps(operator) and str(database) not in json.dumps(operator)
+    assert not database.exists()
     receipt = dispatch("network_discover", {"network": "lab", "mode": "passive"})
     assert receipt["completion"] == "complete", receipt
     assert "error" not in dispatch("network_reconcile", {"batch_id": receipt["batch_id"]})
@@ -150,6 +155,11 @@ def _symlink_profiles_smoke(home, ctx, manager, dispatch, command):
         assert policy.home == other
         assert policy.database == plugin_data_dir("network-atlas").resolve() / "atlas.sqlite3"
         assert policy.database == other_data / "atlas.sqlite3" and policy.database != database
+        operator = _registered_cli(manager, ["status"])
+        assert operator.pop("database_binding") == {"profile_home": str(other), "database_path": str(policy.database)}
+        assert operator == dispatch("network_query", {"view": "status"}) == json.loads(command("status"))
+        assert str(other) not in json.dumps(operator) and str(policy.database) not in json.dumps(operator)
+        assert not policy.database.exists()
         assert dispatch("network_query", {})["devices"] == []
         device = _registered_cli(manager, ["create", "--name", "Separate profile inventory"])["device_id"]
         assert [row["id"] for row in dispatch("network_query", {})["devices"]] == [device]

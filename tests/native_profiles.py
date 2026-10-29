@@ -37,6 +37,42 @@ def _pending_batch(storage, batches, policy):
             batches.Probe('ip_neigh', 'unavailable', at, at, 'none', '', 'none', 'missing_executable'),))
 
 
+def _binding_status(atlas, config, storage, home, database, known_devices):
+    """Observe the selected binding without writes, contact or model-path disclosure."""
+    policy = config.load_policy(atlas.ctx)
+    assert policy.home == home and policy.database == database
+    history = _history(storage, policy) if database.exists() else None
+    parent_exists = database.parent.exists()
+    before = {path: path.read_bytes() for path in database.parent.glob('*') if path.is_file()}
+    native_config = (home / 'config.yaml').read_bytes()
+    original = storage.Store.__init__
+
+    def read_only_store(self, selected, **kwargs):
+        assert not kwargs.get('writable', False), 'status attempted a writable store'
+        return original(self, selected, **kwargs)
+
+    with (patch.object(storage.Store, '__init__', read_only_store),
+          patch.object(type(atlas.ctx), 'set_config', side_effect=AssertionError('status changed settings')),
+          patch('subprocess.Popen', side_effect=AssertionError('status executed a process')),
+          patch('socket.socket', side_effect=AssertionError('status opened a socket'))):
+        operator = atlas.cli(['status'])
+        assert operator.pop('database_binding') == {'profile_home': str(home), 'database_path': str(database)}
+        assert operator['known_devices'] == known_devices
+        # Slash provenance is not attested; only the separate local operator
+        # status adapter may add binding paths. Existing batch policy_context
+        # provenance remains unchanged on the model/slash/query views.
+        for result in (atlas.tool('network_query', {'view': 'status'}), atlas.slash('status'),
+                       atlas.cli(['query', '--query-json', '{"view":"status"}'])):
+            assert result == operator
+            assert str(database) not in json.dumps(result)
+        refused = atlas.tool('network_query', {'view': 'status', 'database_path': str(database)})
+        assert 'error' in refused and str(database) not in json.dumps(refused)
+    assert database.parent.exists() == parent_exists
+    assert {path: path.read_bytes() for path in database.parent.glob('*') if path.is_file()} == before
+    assert (home / 'config.yaml').read_bytes() == native_config
+    assert (_history(storage, policy) if database.exists() else None) == history
+
+
 def _clone_binding(atlas, home, config, storage, batches):
     from hermes_cli.profiles import create_profile, get_profile_dir
 
@@ -53,6 +89,7 @@ def _clone_binding(atlas, home, config, storage, batches):
     assert _history(storage, policy) == history
     converted = atlas.ctx.get_config('policy', None)
     assert converted == {**raw, 'store': {'shared_sqlite_path': str(policy.database)}}
+    _binding_status(atlas, config, storage, home, policy.database, 1)
     assert get_profile_dir('atlas-clone').is_relative_to(home)
     clone = create_profile('atlas-clone', clone_config=True, no_alias=True)
     assert clone == home / 'profiles' / 'atlas-clone'
@@ -64,6 +101,7 @@ def _clone_binding(atlas, home, config, storage, batches):
         inherited = config.load_policy(atlas.ctx)
         assert inherited.home == clone.resolve() and inherited.database == policy.database
         assert inherited.exports == clone / 'network-atlas' / 'exports'
+        _binding_status(atlas, config, storage, clone, policy.database, 1)
         assert atlas.tool('network_query', {})['devices'][0]['id'] == device
         status = atlas.cli(['status'])
         assert status['configured_networks'] == ['lab']
@@ -77,6 +115,7 @@ def _clone_binding(atlas, home, config, storage, batches):
             assert owners == {str(home), str(clone)}
         # Explicit sharing with no grants remains usable; stored evidence grants nothing.
         _replace_policy(atlas, {'store': converted['store']})
+        _binding_status(atlas, config, storage, clone, policy.database, 2)
         assert len(atlas.tool('network_query', {})['devices']) == 2
         assert atlas.cli(['status'])['configured_networks'] == []
         assert atlas.cli(['status'])['authorized_for_atlas_ssh_inspection'] == []
@@ -86,8 +125,11 @@ def _clone_binding(atlas, home, config, storage, batches):
         _replace_policy(atlas, raw)
         rebound = config.load_policy(atlas.ctx)
         assert rebound.home == clone and rebound.database == local_database
+        _binding_status(atlas, config, storage, clone, local_database, 0)
+        assert not local_database.exists()
         assert atlas.tool('network_query', {})['devices'] == []
         local_device = atlas.cli(['create', '--name', 'Deliberately independent clone'])['device_id']
+        _binding_status(atlas, config, storage, clone, local_database, 1)
         assert atlas.cli(['query'])['devices'][0]['id'] == local_device
         assert _history(storage, policy) == shared_history
         # Ordinary config-only clones of a no-store profile do not copy its populated local DB.
@@ -97,10 +139,26 @@ def _clone_binding(atlas, home, config, storage, batches):
             ordinary_policy = config.load_policy(atlas.ctx)
             assert ordinary_policy.home == ordinary
             assert ordinary_policy.database == ordinary / 'plugin-data' / 'network-atlas' / 'atlas.sqlite3'
+            _binding_status(atlas, config, storage, ordinary, ordinary_policy.database, 0)
+            assert not ordinary_policy.database.exists()
             assert atlas.cli(['query'])['devices'] == []
             independent = atlas.cli(['create', '--name', 'Ordinary local clone'])['device_id']
+            _binding_status(atlas, config, storage, ordinary, ordinary_policy.database, 1)
             assert atlas.tool('network_query', {})['devices'][0]['id'] == independent
+            ordinary_config = (ordinary / 'config.yaml').read_bytes()
+            ordinary_bytes = ordinary_policy.database.read_bytes()
+        # Deliberate explicit binding to an absent external target is visible,
+        # but status must neither create it nor disturb either existing store.
+        absent = home.parent / 'absent-shared' / 'atlas.sqlite3'
+        _replace_policy(atlas, {'store': {'shared_sqlite_path': str(absent)}})
+        # Native managed storage exists; the selected external parent need not.
+        assert not absent.parent.exists()
+        _binding_status(atlas, config, storage, clone, absent, 0)
+        assert not absent.parent.exists()
+        _replace_policy(atlas, raw)
         assert atlas.cli(['query'])['devices'][0]['id'] == local_device
+        assert (ordinary / 'config.yaml').read_bytes() == ordinary_config
+        assert ordinary_policy.database.read_bytes() == ordinary_bytes
         assert _history(storage, policy) == shared_history
     assert {item['id'] for item in atlas.cli(['query'])['devices']} == {device, shared_device}
     assert not atlas.cli(['reconcile', '--batch-id', clone_batch], expected_code=2)['applied']
