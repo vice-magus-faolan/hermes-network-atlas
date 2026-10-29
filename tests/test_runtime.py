@@ -41,7 +41,8 @@ class NativeRuntimeTests(unittest.TestCase):
             policy = synthetic_policy() if mode != "invalid" else {"ssh": {"command": "bad"}}
             if mode in {"status_availability", "status_eligibility"}:
                 policy = {}
-            if mode in {"conversion", "conversion_overlap", "conversion_hardkill", "native_clone"}:
+            if mode in {"conversion", "conversion_overlap", "conversion_hardkill", "native_clone",
+                        "native_stop_converted", "native_stop_converted_shared"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy))
                 policy = {}
             # Explicit native opt-in selection. No production configuration is copied.
@@ -75,9 +76,13 @@ class NativeRuntimeTests(unittest.TestCase):
                     (fixture_bin / "ip").chmod(0o700)
             # Revocation also launches the documented installed config CLI;
             # each native subprocess retains its own bounded timeout.
-            timeout = 180 if mode in {"revocation", "native_clone"} else 60
+            timeout = 180 if mode in {"revocation", "native_clone", "native_reset", "native_reset_custom",
+                                     "native_stop_converted", "native_stop_converted_shared"} else 60
             script = ("native_store_upgrade.py" if mode == "store_upgrade" else
-                      "native_profiles.py" if mode in {"native_clone", "native_privacy"} else "runtime_smoke.py")
+                      "native_profiles.py" if mode in {"native_clone", "native_privacy", "native_reset",
+                                                       "native_reset_custom", "native_stop_converted",
+                                                       "native_stop_converted_shared"}
+                      else "runtime_smoke.py")
             child = subprocess.run([sys.executable, str(ROOT / "tests" / script), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=timeout)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
@@ -147,6 +152,21 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_clone_converted_binding_sharing_ownership_and_explicit_rebinding(self):
         self.assertTrue(self.run_smoke("native_clone")["native_clone_binding"])
+
+    def test_native_backup_reset_default_custom_and_retained_shared_inventory(self):
+        for mode in ("native_reset", "native_reset_custom"):
+            with self.subTest(mode=mode):
+                self.assertTrue(self.run_smoke(mode)["owned_backup_reset"])
+
+    def test_native_backup_reset_converted_stop_and_empty_policy_recovery(self):
+        receipt = self.run_smoke("native_stop_converted")
+        self.assertTrue(receipt["converted_stop_no_grants"])
+        self.assertTrue(receipt["retained_reinstall_no_grants"])
+
+    def test_native_backup_reset_converted_symlink_binding_and_retained_reinstall(self):
+        receipt = self.run_smoke("native_stop_converted_shared")
+        self.assertTrue(receipt["converted_stop_no_grants"])
+        self.assertTrue(receipt["retained_reinstall_no_grants"])
 
     def test_native_privacy_records_native_directory_and_database_modes(self):
         for mask in (0o022, 0o077):
