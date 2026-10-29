@@ -138,7 +138,7 @@ def _clone_binding(atlas, home, config, storage, batches):
         device = core.create_device(store, 'Converted source')['device_id']
     batch = _pending_batch(storage, batches, legacy)
     history = _history(storage, legacy)
-    assert atlas.cli(['convert-legacy', '--writers-stopped'])['converted']
+    assert atlas.cli(['convert-legacy', '--writers-stopped', '--accept-legacy-policy'])['converted']
     policy = config.load_policy(atlas.ctx)
     assert _history(storage, policy) == history
     converted = atlas.ctx.get_config('policy', None)
@@ -258,7 +258,24 @@ def _privacy(atlas, home, config, storage, mask):
     return {'umask': oct(mask), 'directory_modes': modes, 'database_mode': oct(0o600), 'uid': os.getuid()}
 
 
-def _retained_reinstall(atlas, home, config, database):
+def _refuse_legacy_regrant(atlas, home, storage, policy):
+    """Missing native policy is not consent, even with a valid retained copy."""
+    conversion = importlib.import_module(storage.__package__ + '.conversion')
+    native = (home / 'config.yaml').read_bytes()
+    history = _history(storage, policy)
+    with (patch.object(conversion, '_copy_store', side_effect=AssertionError('copy before legacy consent')),
+          patch.object(type(atlas.ctx), 'set_config', side_effect=AssertionError('settings before legacy consent'))):
+        refused = atlas.cli(['convert-legacy', '--writers-stopped'], expected_code=2)
+    assert not refused['persisted'] and not refused['applied']
+    assert '--accept-legacy-policy' in refused['error'] and 'revoked collection grants' in refused['error']
+    for result in (atlas.cli(['status'], expected_code=2), atlas.tool('network_query', {'view': 'status'}),
+                   atlas.slash('status')):
+        assert 'binding-only recovery' in result['error'] and 'revoked collection grants' in result['error']
+    assert (home / 'config.yaml').read_bytes() == native
+    assert _history(storage, policy) == history
+
+
+def _retained_reinstall(atlas, home, config, storage, policy):
     """Exercise native removal/selection offline, not the network-dependent installer."""
     from hermes_cli.config import load_config
     from hermes_cli.plugins_cmd import cmd_remove
@@ -275,19 +292,35 @@ def _retained_reinstall(atlas, home, config, database):
     assert not plugin.exists()
     # Restore only fixture plugin files; no online install/PM resync is claimed.
     copy_plugin(plugin)
+    _refuse_legacy_regrant(atlas, home, storage, policy)
     # Missing notes: derive the unchanged conversion selection without converting
     # or importing its legacy grants into native settings.
     conversion = importlib.import_module(config.__package__ + '.conversion')
     raw = conversion.read_legacy(home)
     data = plugin_data_dir('network-atlas').resolve()
     recovered = config.validate_policy(raw, home, data_dir=data)
-    assert recovered.database == database
+    assert recovered.database == policy.database
     binding = Path(raw.get('store', {}).get('shared_sqlite_path', str(data / 'atlas.sqlite3')))
-    assert binding.suffix == '.sqlite3' and binding.resolve() == database
+    assert binding.suffix == '.sqlite3' and binding.resolve() == policy.database
     hermes = shutil.which('hermes')
     assert hermes is not None
     profile = profile_name_for_home(home)
     assert profile is not None
+    # Only offline native selection, not PM enable, dependency resolution or
+    # gateway reload. Exercise the cold CLI before repairing the missing binding.
+    selected = subprocess.run([hermes, 'config', 'set', 'plugins.enabled', '["network-atlas"]'],
+                              cwd=home.parent, env=os.environ.copy(), input='', capture_output=True,
+                              text=True, timeout=45)
+    assert selected.returncode == 0, selected.stdout + selected.stderr
+    native = (home / 'config.yaml').read_bytes()
+    cold = subprocess.run([hermes, 'network-atlas', 'convert-legacy', '--writers-stopped'],
+                          cwd=home.parent, env=os.environ.copy(), input='', capture_output=True,
+                          text=True, timeout=45)
+    assert cold.returncode == 2, cold.stdout + cold.stderr
+    refused = json.loads(cold.stdout)
+    assert '--accept-legacy-policy' in refused['error'] and 'revoked collection grants' in refused['error']
+    assert not refused['persisted'] and not refused['applied']
+    assert (home / 'config.yaml').read_bytes() == native
     guide = (Path(__file__).resolve().parents[1] / 'docs' / 'operator-guide.md').read_text()
     section = guide.split('### Re-enable or reinstall with retained data', 1)[1].split('### ', 1)[0]
     snippet = section.split('```sh\n')[2].split('```', 1)[0]
@@ -295,25 +328,19 @@ def _retained_reinstall(atlas, home, config, database):
     restored = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
                               env=os.environ.copy(), capture_output=True, text=True, timeout=90)
     assert restored.returncode == 0, restored.stdout + restored.stderr
-    assert 'network-atlas' not in load_config()['plugins'].get('enabled', [])
+    assert 'network-atlas' in load_config()['plugins'].get('enabled', [])
     assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(binding)}}
-    # Only the native offline config selection is exercised here, not PM enable,
-    # capability consent, gateway reload or dependency/environment resolution.
-    selected = subprocess.run([hermes, 'config', 'set', 'plugins.enabled', '["network-atlas"]'],
-                              cwd=home.parent, env=os.environ.copy(), input='', capture_output=True,
-                              text=True, timeout=45)
-    assert selected.returncode == 0, selected.stdout + selected.stderr
     cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
                           input='', capture_output=True, text=True, timeout=45)
     assert cold.returncode == 0, cold.stdout + cold.stderr
     status = json.loads(cold.stdout)
-    assert status['database_binding']['database_path'] == str(database)
+    assert status['database_binding']['database_path'] == str(policy.database)
     assert status['configured_networks'] == status['authorized_for_atlas_ssh_inspection'] == []
     assert status['known_devices'] == 1
 
 
 def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
-    """Retained legacy data must not turn a stopped profile into conversion guidance."""
+    """Reconversion after native revocation/removal must not silently restore grants."""
     conversion = importlib.import_module(config.__package__ + '.conversion')
     core = importlib.import_module(config.__package__ + '.core')
     raw = conversion.read_legacy(home)
@@ -334,7 +361,7 @@ def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
         with (closing(sqlite3.connect(legacy.database)) as source,
               closing(sqlite3.connect(shared.database)) as destination):
             source.backup(destination)
-    assert atlas.cli(['convert-legacy', '--writers-stopped'])['converted']
+    assert atlas.cli(['convert-legacy', '--writers-stopped', '--accept-legacy-policy'])['converted']
     policy = config.load_policy(atlas.ctx)
     binding = Path(raw.get('store', {}).get('shared_sqlite_path', str(policy.database)))
     assert binding.suffix == '.sqlite3' and binding.resolve() == policy.database
@@ -352,6 +379,7 @@ def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
     assert atlas.cli(['status'])['known_devices'] == 1
     # Recovery from the former empty-policy stop must not re-import the old grants.
     _replace_policy(atlas, {})
+    _refuse_legacy_regrant(atlas, home, storage, policy)
     assert 'legacy store present' in atlas.cli(['status'], expected_code=2)['error']
     _documented_stop(atlas, home, binding, home.parent / 'converted-recovery-backup')
     # Repeating the stop on an already valid, grant-free policy stays harmless.
@@ -360,7 +388,7 @@ def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
     with patch('subprocess.Popen', side_effect=AssertionError('stopped converted profile collected')):
         assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
         assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
-    _retained_reinstall(atlas, home, config, policy.database)
+    _retained_reinstall(atlas, home, config, storage, policy)
     _binding_status(atlas, config, storage, home, policy.database, 1)
     with patch('subprocess.Popen', side_effect=AssertionError('reinstalled profile attempted collection')):
         assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})

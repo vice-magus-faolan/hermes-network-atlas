@@ -117,7 +117,8 @@ def _copy_store(source: Path, destination: Path, home: Path) -> bool:
     return True
 
 
-def convert_legacy(ctx: WritableSettings | None, *, writers_stopped: bool) -> dict:
+def convert_legacy(ctx: WritableSettings | None, *, writers_stopped: bool,
+                   accept_legacy_policy: bool = False) -> dict:
     """Convert policy and default store explicitly, preserving sharing and history.
 
     No multi-file transaction is claimed. Publish the complete DB before the one
@@ -141,6 +142,16 @@ def convert_legacy(ctx: WritableSettings | None, *, writers_stopped: bool) -> di
     current = ctx.get_config("policy", None)
     if current not in (None, {}, converted):
         raise ConfigError("legacy conversion: native policy conflicts; preserve both configurations")
+    # Missing settings cannot distinguish first migration, revoked grants or an
+    # interrupted settings commit. Accept the import explicitly before any copy
+    # or settings write; an already-equal policy needs no renewed acceptance.
+    if current != converted and not accept_legacy_policy:
+        raise ConfigError(
+            "legacy conversion: retained legacy policy may restore revoked collection grants; "
+            "no database copy or settings write attempted. For retained-data recovery, use binding-only recovery "
+            "in docs/operator-guide.md#recover-the-selected-binding, not conversion. "
+            "For an intended first migration or interrupted retry, inspect the complete legacy policy "
+            "and pass --accept-legacy-policy only if all its settings and grants are still intended")
     copied = False
     if not shared and legacy.exists():
         copied = _copy_store(legacy, policy.database, home)

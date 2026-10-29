@@ -303,5 +303,10 @@ def load_policy(ctx: Settings) -> Policy:
     policy = validate_policy(raw, get_hermes_home(), data_dir=data)
     legacy = policy.home / "network-atlas" / "atlas.sqlite3"
     if isinstance(raw, dict) and "shared_sqlite_path" not in raw.get("store", {}) and legacy.exists():
-        raise ConfigError("legacy store present; stop writers and run network-atlas convert-legacy first")
+        raise ConfigError(
+            "legacy store present without a native store binding; stop writers. "
+            "Conversion may restore revoked collection grants. For previously converted or uncertain history, "
+            "use binding-only recovery in docs/operator-guide.md#recover-the-selected-binding; "
+            "only a genuine first migration should follow "
+            "docs/operator-guide.md#convert-legacy-policy-and-storage")
     return policy

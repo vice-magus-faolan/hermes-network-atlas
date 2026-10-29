@@ -26,8 +26,9 @@ hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-ne
 If the profile retains Atlas data after removal, **before enabling** follow
 [retained-data recovery](docs/operator-guide.md#re-enable-or-reinstall-with-retained-data)
 to restore only its database binding and verify no collection grants. Do not
-reconvert or restore an old full-grant config, even if status suggests conversion:
-that can resurrect revoked grants. A deliberate empty reset is a separate
+reconvert or restore an old full-grant config: that can resurrect revoked grants.
+Conversion refuses policy import without explicit acceptance of the legacy settings;
+that acceptance is not binding-only recovery. A deliberate empty reset is a separate
 [procedure](docs/operator-guide.md#intentional-clean-reset-and-readback).
 For a first installation, continue with:
 

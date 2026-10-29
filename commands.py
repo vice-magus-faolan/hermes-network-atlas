@@ -29,6 +29,9 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     conversion = commands.add_parser("convert-legacy", allow_abbrev=False,
                                      help="Explicit one-time conversion; stop all Atlas writers first")
     conversion.add_argument("--writers-stopped", required=True, action="store_true")
+    conversion.add_argument("--accept-legacy-policy", action="store_true",
+                            help="Accept all legacy settings, which may restore revoked collection grants; "
+                                 "not for retained-data binding recovery")
     upgrade = commands.add_parser("upgrade-store", allow_abbrev=False,
                                   help="Explicit schema upgrade; back up and stop all Atlas writers first")
     upgrade.add_argument("--writers-stopped", required=True, action="store_true")
@@ -80,7 +83,8 @@ def run_command(args: argparse.Namespace, policy_loader: Callable[[], Policy], *
     try:
         if args.atlas_action == "convert-legacy":
             from .conversion import convert_legacy
-            result = convert_legacy(ctx, writers_stopped=args.writers_stopped)
+            result = convert_legacy(ctx, writers_stopped=args.writers_stopped,
+                                    accept_legacy_policy=args.accept_legacy_policy)
             print(json.dumps(result, sort_keys=True))
             return 0
         policy = policy_loader()
