@@ -25,7 +25,7 @@ def _history(storage, policy):
 
 def _writer_overlap(cli, conversion, storage, core, policy, destination):
     """Commit real producer history after copy validation, not a fabricated dump."""
-    action = ['convert-legacy', '--writers-stopped']
+    action = ['convert-legacy', '--writers-stopped', '--accept-legacy-policy']
     before = _history(storage, policy)
     real_fsync = conversion.os.fsync
     written = []
@@ -148,7 +148,7 @@ def run_conversion(mode, home, manager):
         assert result == code, output.getvalue()
         return json.loads(output.getvalue())
 
-    action = ['convert-legacy', '--writers-stopped']
+    action = ['convert-legacy', '--writers-stopped', '--accept-legacy-policy']
     legacy = home / 'network-atlas' / 'atlas.sqlite3'
     destination = plugin_data_dir('network-atlas').resolve() / 'atlas.sqlite3'
     saved = home.parent / 'conversion.json'
@@ -185,6 +185,12 @@ def run_conversion(mode, home, manager):
             original = {path.name: path.read_bytes() for path in legacy.parent.iterdir()
                         if path.is_file() and not path.name.endswith('-shm')}
             assert 'legacy store' in cli(['query'], 2)['error']
+            with (patch.object(conversion, '_copy_store', side_effect=AssertionError('copy before consent')),
+                  patch.object(type(ctx), 'set_config', side_effect=AssertionError('settings before consent'))):
+                refused = cli(['convert-legacy', '--writers-stopped'], 2)
+            assert '--accept-legacy-policy' in refused['error']
+            assert (home / 'config.yaml').read_bytes() == native_config
+            assert not destination.exists()
             if mode != 'conversion':
                 if mode == 'conversion_overlap':
                     data = _writer_overlap(cli, conversion, storage, core, policy, destination)
@@ -221,13 +227,8 @@ def run_conversion(mode, home, manager):
                 # complete synthetic input, not a mocked settings result.
                 (home / 'config.yaml').write_bytes(native_config)
             assert ctx.get_config('policy', None) == {}
-            real_copy = conversion._copy_store
-            def publish_then_interrupt(*args):
-                real_copy(*args)
-                raise OSError('synthetic interruption before settings commit')
-            with patch.object(conversion, '_copy_store', side_effect=publish_then_interrupt) as copy_store:
+            with patch.object(type(ctx), 'set_config', side_effect=OSError('synthetic settings-write interruption')):
                 assert not cli(action, 2)['persisted']
-            copy_store.assert_called_once()
             assert destination.exists(), 'interruption must follow DB publication'
             assert ctx.get_config('policy', None) == {}, 'interruption must precede native settings commit'
             assert original == {path.name: path.read_bytes() for path in legacy.parent.iterdir()
@@ -251,6 +252,10 @@ def run_conversion(mode, home, manager):
             manager.unload()
             print(json.dumps({'mode': mode, 'fresh_native_process_persistence': True}))
             return 0
+        # A completed DB copy is not evidence that its grants remain intended.
+        native_config = (home / 'config.yaml').read_bytes()
+        assert '--accept-legacy-policy' in cli(['convert-legacy', '--writers-stopped'], 2)['error']
+        assert (home / 'config.yaml').read_bytes() == native_config
         result = cli(action)
         assert result['converted'] and result['originals_retained']
         assert result['copied'] == (mode == 'conversion_hardkill_reopen')
@@ -263,7 +268,7 @@ def run_conversion(mode, home, manager):
         assert cli(['query'])['devices'][0]['id'] == data['device']
         assert cli(['status'])['authorized_for_atlas_ssh_inspection'] == ['lab-router']
         assert cli(['reconcile', '--batch-id', data['batch']]) == data['application']
-        assert not cli(action)['copied']
+        assert not cli(['convert-legacy', '--writers-stopped'])['copied']
         policy = config.load_policy(ctx)
         assert policy.home == home
         assert policy.database == destination

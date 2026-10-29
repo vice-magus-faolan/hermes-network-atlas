@@ -117,7 +117,10 @@ both after interruption. See the [operator runbook](docs/operator-guide.md).
 Default storage uses the public per-call `plugin_data_dir` API, which can create
 Hermes-managed directories even for a read. This is not database initialization
 or collection. The explicit legacy converter requires stopped writers and no
-concurrent settings edits; it uses SQLite backup (including committed WAL),
+concurrent settings edits and explicit acceptance before importing legacy policy
+that is not already the current native policy. Missing settings are not proof of
+first use: legacy grants may have been revoked. Retained-data recovery must restore
+only the database binding, not import old grants. The converter uses SQLite backup (including committed WAL),
 refuses divergent destinations/settings, and retains originals. It does not
 claim a database/settings cross-file transaction or automatically delete backups.
 
