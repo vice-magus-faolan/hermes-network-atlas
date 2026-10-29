@@ -46,6 +46,10 @@ fallback and worker snapshots. Existing users must explicitly
 [convert legacy policy and storage](docs/operator-guide.md#convert-legacy-policy-and-storage)
 before using the new default; registration and reads never move a database.
 
+To stop collection offline, uninstall, or deliberately start with empty history,
+follow [stop, uninstall and clean reset](docs/operator-guide.md#stop-uninstall-and-clean-reset).
+Disable/remove retain the database and exports; reinstall can reuse old inventory.
+
 ## Read existing inventory — no scan
 
 With Atlas installed and enabled in PROFILE, these commands only read stored data:

@@ -560,6 +560,170 @@ a symlink. Restore regular generated-file destinations without modifying the
 symlink targets or database, then retry. Symlink-destination refusals retain a
 `map_export_requested` audit event but no `map_exported` completion event.
 
+## Stop, uninstall and clean reset
+
+Stopping collection, removing plugin code and erasing inventory are different
+operations. Atlas has no background collector of its own. None of the steps below
+authorizes stopping another user's processes or deleting a shared store.
+
+### Stop collection offline
+
+1. Stop issuing collection actions. Finish or cancel in-flight Atlas work and stop
+   affected sessions/workers/gateways using your normal operator procedure. Include
+   every writer to a shared database; a config change cannot cancel running work
+   or revoke an already loaded worker snapshot.
+2. **Before changing settings**, record privately:
+
+   ```sh
+   hermes profile show PROFILE
+   hermes -p PROFILE network-atlas status
+   ```
+
+   Read `database_binding.profile_home` and `database_binding.database_path` from
+   local status, not an assumed default. Set ATLAS_HOME and ATLAS_DB below to those
+   exact absolute paths, and BACKUP to a new private directory outside the profile
+   and all reset targets. Preserve the original native config before grants or a
+   custom store binding disappear:
+
+   ```sh
+   ATLAS_HOME=/absolute/selected/profile-home
+   ATLAS_DB=/absolute/selected/atlas.sqlite3
+   BACKUP=/absolute/private/atlas-backup-UNIQUE
+   umask 077
+   mkdir "$BACKUP" &&
+   cp -p "$ATLAS_HOME/config.yaml" "$BACKUP/config.yaml" &&
+   hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy '{}' &&
+   hermes -p PROFILE network-atlas status
+   ```
+
+   Use the native **replacing** config CLI, not the merging Desktop settings writer
+   or `ctx.set_config`: an empty merge can retain grants. In the fresh status,
+   `configured_networks` and `authorized_for_atlas_ssh_inspection` must both be empty.
+   This needs no network or dependency resync, leaves the plugin available for
+   reads, and retains stored history. Investigate a failed write or unexpected
+   grants rather than assuming collection stopped.
+
+   `{}` also removes `store.shared_sqlite_path`, selecting the profile's default
+   database. Keep the **previously recorded** ATLAS_DB for backup/reset: a newly
+   empty default is not evidence that the old custom/shared store was erased.
+   To keep reading that store without collection grants, replace the complete
+   policy with only `{"store":{"shared_sqlite_path":"/absolute/selected/atlas.sqlite3"}}`.
+   Do not restore old grants merely to read inventory.
+
+### Back up retained data before removal or reset
+
+Keep all writers stopped until backup and any reset finish. Protect BACKUP and
+its files as carefully as the original config/history. Confirm path ownership,
+symlinks, hard links and other users before changing files; distinct path strings
+do not prove independent storage. Exports can also be redirected or shared by
+filesystem links. If ownership or use is uncertain, retain the files and stop.
+
+For an existing ATLAS_DB, Python's standard SQLite backup API creates a complete
+standalone copy, including committed WAL data. Run this only with a new backup
+filename; it refuses to overwrite one. An absent database needs no SQLite backup.
+
+```sh
+python3 - "$ATLAS_DB" "$BACKUP/atlas.sqlite3" <<'PY'
+from contextlib import closing
+from pathlib import Path
+import os
+import sqlite3
+import sys
+
+source_path, backup_path = map(Path, sys.argv[1:])
+with closing(sqlite3.connect(source_path.as_uri() + "?mode=ro", uri=True)) as source:
+    fd = os.open(backup_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(fd)
+    with closing(sqlite3.connect(backup_path)) as backup:
+        source.backup(backup)
+        if backup.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+            raise RuntimeError("Backup integrity check failed; retain the original")
+PY
+```
+
+Also copy any existing regular `network-atlas/exports/network_map.md` and
+`network_map.mmd` beneath ATLAS_HOME into a private `exports/` directory in BACKUP.
+Save any older owned legacy config/database and their SQLite sidecars separately,
+without overwriting this backup. Verify the backup opens and retains expected
+device IDs and history before touching originals; `integrity_check` alone does
+not establish that you selected the right store. Exports are useful copies, not
+a replacement for SQLite history. Never copy only the main file of an active
+WAL database, discard a WAL to make a store open, or overwrite a good backup after
+a failed attempt.
+
+### Disable or uninstall — network required
+
+After the offline stop and backup, choose one native operation:
+
+```sh
+hermes -p PROFILE plugins disable network-atlas
+# Or remove the installed plugin code:
+hermes -p PROFILE plugins remove network-atlas
+hermes -p PROFILE plugins list
+```
+
+Disable changes plugin selection; remove deletes the installed plugin and its
+config entry. Neither is an inventory reset. In the maintainer's
+[issue #34 UAT](https://github.com/vice-magus-faolan/hermes-network-atlas/issues/34)
+on stock v0.21.7 and v0.22.5, both operations worked while Hermes kept running,
+removed the Atlas policy from `config.yaml`, and retained the database and exports;
+reinstall reattached old inventory without warning. These are maintainer-reported
+results; do not assume every installation/cache behaves identically.
+Treat both commands as requiring internet access: native dependency/environment
+resync can reach PyPI; the reported offline disable failed with a traceback.
+Use the replacing-policy stop above while offline, not repeated uninstall attempts.
+After any failure, inspect actual native selection/config and retained files.
+Follow native session/restart hints; a successful command is not proof that an
+old loaded session or in-flight operation has stopped. No live restart is implied.
+
+### Intentional clean reset and readback
+
+Only proceed after the verified backup, with all writers/readers closed and the
+exact targets confirmed **exclusively yours**. There is no Atlas reset command.
+
+- For an owned unshared store, remove or privately quarantine the recorded ATLAS_DB
+  and any adjacent `ATLAS_DB-wal`, `ATLAS_DB-shm`, `ATLAS_DB-journal`. These suffixes
+  append to the full filename (for example `atlas.sqlite3-wal`). Handle the set
+  only after closing all connections; never move/delete an in-use SQLite store.
+- If ATLAS_DB was custom, inspect the default `plugin-data/network-atlas/atlas.sqlite3`
+  beneath ATLAS_HOME as well. An earlier default inventory can become active when
+  the binding is removed. Back up each owned populated store separately, using
+  distinct backup names, before resetting it; stop if any target is shared/unknown.
+- Remove/quarantine the two generated export files listed above. Inspect other
+  files individually; do not recursively delete a profile, `plugin-data/`, a shared
+  directory or BACKUP. Preserve unrelated plugin and foreign-profile data.
+- If the selected store is shared, **do not delete it**. Leave other users' history
+  intact and detach this profile with the replacing `{}` policy. Inspect its default
+  store too: it may already contain earlier inventory. Detachment gives an empty
+  active selection only when that default is empty; it is not erasure of shared data.
+- For a fully empty profile, also inventory and privately relocate any exclusively
+  owned legacy `network-atlas/atlas.sqlite3` plus sidecars and
+  `network-atlas/config.yaml`, and other known retained Atlas copies. A legacy DB
+  left in place can cause conversion guidance instead of an empty read. Do not
+  rerun conversion or restore the old binding/config on reinstall. Shared/unknown
+  originals and backups are retained intentionally, not claimed erased.
+
+Before re-enabling writers, check the recorded old store and exports are absent
+from their active paths (and not dangling links), not merely that status succeeds.
+If the plugin remains enabled, use fresh processes; if removed/disabled, install
+the reviewed revision and enable it using the installation steps, with no restored
+collection grants or old store binding, then run:
+
+```sh
+hermes -p PROFILE network-atlas status
+hermes -p PROFILE network-atlas query --query-json '{"limit":10}'
+hermes -p PROFILE network-atlas map --format markdown
+```
+
+Confirm the intended `database_binding`, no grants, `known_devices: 0`,
+`last_collection: null`, no endpoint history, an empty device list with
+`has_more: false`, and no generated exports. An absent selected database should
+remain absent after these reads; native managed directories may still be created.
+An empty device list alone can hide saved evidence. Keep backups/retired copies
+outside active paths; reinstall does not erase them or ask before using a database
+still at its selected path. Restoring an old config can reattach history **and
+restore collection authority**: recovery is a separate deliberate operator action.
+
 ## Troubleshooting and data care
 
 Application errors name the responsible field or policy setting without echoing

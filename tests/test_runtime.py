@@ -75,9 +75,10 @@ class NativeRuntimeTests(unittest.TestCase):
                     (fixture_bin / "ip").chmod(0o700)
             # Revocation also launches the documented installed config CLI;
             # each native subprocess retains its own bounded timeout.
-            timeout = 180 if mode in {"revocation", "native_clone"} else 60
+            timeout = 180 if mode in {"revocation", "native_clone", "native_reset", "native_reset_custom"} else 60
             script = ("native_store_upgrade.py" if mode == "store_upgrade" else
-                      "native_profiles.py" if mode in {"native_clone", "native_privacy"} else "runtime_smoke.py")
+                      "native_profiles.py" if mode in {"native_clone", "native_privacy", "native_reset",
+                                                       "native_reset_custom"} else "runtime_smoke.py")
             child = subprocess.run([sys.executable, str(ROOT / "tests" / script), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=timeout)
             self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
@@ -147,6 +148,11 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_clone_converted_binding_sharing_ownership_and_explicit_rebinding(self):
         self.assertTrue(self.run_smoke("native_clone")["native_clone_binding"])
+
+    def test_native_backup_reset_default_custom_and_retained_shared_inventory(self):
+        for mode in ("native_reset", "native_reset_custom"):
+            with self.subTest(mode=mode):
+                self.assertTrue(self.run_smoke(mode)["owned_backup_reset"])
 
     def test_native_privacy_records_native_directory_and_database_modes(self):
         for mask in (0o022, 0o077):
