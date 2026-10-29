@@ -21,6 +21,17 @@ Use the first column from `git ls-remote` below as COMMIT_SHA, or copy the full
 ```sh
 git ls-remote https://github.com/vice-magus-faolan/hermes-network-atlas.git refs/heads/main
 hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
+```
+
+If the profile retains Atlas data after removal, **before enabling** follow
+[retained-data recovery](docs/operator-guide.md#re-enable-or-reinstall-with-retained-data)
+to restore only its database binding and verify no collection grants. Do not
+reconvert or restore an old full-grant config, even if status suggests conversion:
+that can resurrect revoked grants. A deliberate empty reset is a separate
+[procedure](docs/operator-guide.md#intentional-clean-reset-and-readback).
+For a first installation, continue with:
+
+```sh
 hermes -p PROFILE plugins enable network-atlas
 hermes -p PROFILE plugins show network-atlas
 ```
@@ -42,9 +53,11 @@ before editing anything. Profiles can share a database; each keeps its own polic
 
 Keep the profile and its native config private. Missing settings grant nothing;
 Atlas validates the policy returned by Hermes. Hermes owns settings caching,
-fallback and worker snapshots. Existing users must explicitly
+fallback and worker snapshots. Users migrating legacy data for the first time must explicitly
 [convert legacy policy and storage](docs/operator-guide.md#convert-legacy-policy-and-storage)
 before using the new default; registration and reads never move a database.
+An already-converted profile with a forgotten binding needs the retained-data
+recovery above, not conversion; uncertainty is a reason to stop and inspect.
 
 To stop collection offline, uninstall, or deliberately start with empty history,
 follow [stop, uninstall and clean reset](docs/operator-guide.md#stop-uninstall-and-clean-reset).

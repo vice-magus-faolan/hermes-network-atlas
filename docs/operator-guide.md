@@ -249,6 +249,13 @@ populated history between owners is not provided by this clone procedure.
 
 ### Convert legacy policy and storage
 
+Use this procedure for the **first migration**, not recovery after stop, removal
+or reinstall. If conversion already occurred, or that history is uncertain, keep
+workers stopped and follow
+[retained-data recovery](#re-enable-or-reinstall-with-retained-data) instead.
+A missing binding can produce the same conversion hint; repeating conversion
+can restore revoked legacy grants. Do not use that hint alone to authorize it.
+
 Upgrading source does not move data. If `network-atlas/atlas.sqlite3` exists and
 no native store binding was chosen, normal actions refuse with conversion guidance
 instead of silently showing a new empty inventory. Legacy `network-atlas/config.yaml`
@@ -596,7 +603,14 @@ authorizes stopping another user's processes or deleting a shared store.
 
    Read `database_binding.profile_home` and `database_binding.database_path` from
    local status, not an assumed default. Set ATLAS_HOME and ATLAS_DB below to those
-   exact absolute paths, and BACKUP to a new private directory outside the profile
+   exact absolute paths. Privately inspect the native policy with
+   `hermes -p PROFILE config get plugins.entries.network-atlas.settings.policy`.
+   Set ATLAS_BINDING to its validated absolute `.sqlite3` store binding, preserving
+   that spelling even if it is a symlink to a differently named file. Without an
+   explicit binding, use the resolved managed `plugin-data/network-atlas` directory
+   plus `atlas.sqlite3`. Verify ATLAS_BINDING resolves to ATLAS_DB; use the binding
+   in config and the resolved target for inventory, ownership and backups.
+   Set BACKUP to a new private directory outside the profile
    and all reset targets. If an earlier `{}` stop already causes `legacy store
    present`, or removal forgot the binding, use
    [Recover the selected binding](#recover-the-selected-binding) below. Do not
@@ -606,13 +620,14 @@ authorizes stopping another user's processes or deleting a shared store.
 
    ```sh
    ATLAS_HOME=/absolute/selected/profile-home
-   ATLAS_DB=/absolute/selected/atlas.sqlite3
+   ATLAS_BINDING=/absolute/configured/atlas.sqlite3
+   ATLAS_DB=/absolute/selected/database-file
    BACKUP=/absolute/private/atlas-backup-UNIQUE
    umask 077
    mkdir "$BACKUP" &&
    cp "$ATLAS_HOME/config.yaml" "$BACKUP/config.yaml" &&
    hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy \
-     "$(python3 -c 'import json, sys; print(json.dumps({"store": {"shared_sqlite_path": sys.argv[1]}}))' "$ATLAS_DB")" &&
+     "$(python3 -c 'import json, sys; print(json.dumps({"store": {"shared_sqlite_path": sys.argv[1]}}))' "$ATLAS_BINDING")" &&
    hermes -p PROFILE network-atlas status
    ```
 
@@ -625,8 +640,8 @@ authorizes stopping another user's processes or deleting a shared store.
    reads, and retains stored history. Investigate a failed write or unexpected
    grants rather than assuming collection stopped.
 
-   The binding-only policy deliberately retains ATLAS_DB for reads and backup,
-   including after conversion. Conversion leaves the legacy database in place;
+   The binding-only policy retains ATLAS_DB through ATLAS_BINDING for reads and
+   backup, including after conversion. Conversion leaves the legacy database in place;
    removing `store.shared_sqlite_path` with `{}` then makes status demand conversion
    instead of reporting no grants. **Do not rerun conversion as stop recovery.**
    Repeat the binding-only replacement above, with a new BACKUP, to repair that
@@ -637,22 +652,29 @@ authorizes stopping another user's processes or deleting a shared store.
 ### Recover the selected binding
 
 Use the privately recorded binding or inspect the saved native config without
-restoring it. Missing handwritten notes alone need not block recovery of a
-converted profile: if the legacy inputs are unchanged, conversion's selection is
+restoring it; a saved native selection takes precedence over legacy inputs.
+Keep the accepted configuration spelling (ATLAS_BINDING) distinct from the
+resolved database target (ATLAS_DB). Missing handwritten notes alone need not block
+recovery of a converted profile: if the legacy inputs are unchanged, conversion's selection is
 deterministic. Privately inspect `network-atlas/config.yaml` beneath the resolved
-ATLAS_HOME. If its `store.shared_sqlite_path` is present, it must be an absolute
-path ending in `.sqlite3`; resolve filesystem symlinks in that path for ATLAS_DB.
+ATLAS_HOME. If its `store.shared_sqlite_path` is present, it must be a validated
+absolute path ending in `.sqlite3`; preserve that literal value as ATLAS_BINDING.
+Resolve filesystem symlinks in it to establish ATLAS_DB. For example,
+`/owned/atlas.sqlite3` pointing to `/owned/inventory.db` remains a valid binding;
+putting the resolved `inventory.db` in config would fail the `.sqlite3` requirement.
 Treat the value as a literal path: do not expand `~` or environment variables;
 relative paths are rejected. If the key is absent (including when the legacy
 config is absent), resolve ATLAS_HOME's `plugin-data/network-atlas` directory,
-including any directory symlinks, then append `atlas.sqlite3`. That is the managed
+including any directory symlinks, then append `atlas.sqlite3` for ATLAS_BINDING.
+Resolve that full path for ATLAS_DB as well. That is the managed
 conversion destination, not the retained legacy `network-atlas/atlas.sqlite3`.
 
 This derives the path only; do not execute conversion or import legacy grants.
 If the legacy inputs, symlinks or later native store selection changed, establish
 the actual selected binding from saved native config/backup or other private
 records instead. Stop if it remains uncertain; do not guess a new store or move
-shared data. Use the established ATLAS_DB in the binding-only replacement.
+shared data. Verify ATLAS_BINDING resolves to the established ATLAS_DB, then use
+only ATLAS_BINDING in the binding-only replacement, never the old grants.
 
 ### Back up retained data before removal or reset
 
@@ -748,19 +770,20 @@ needed. If removed, first install the reviewed revision **without enabling**:
 hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
 ```
 
-Removal forgot the binding. **Before enabling**, establish ATLAS_DB using
+Removal forgot the binding. **Before enabling**, establish ATLAS_BINDING and ATLAS_DB using
 [Recover the selected binding](#recover-the-selected-binding), then replace the
 complete policy with only that binding, even if the new entry looks empty:
 
 ```sh
-ATLAS_DB=/absolute/selected/atlas.sqlite3
+ATLAS_BINDING=/absolute/configured/atlas.sqlite3
 hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy \
-  "$(python3 -c 'import json, sys; print(json.dumps({"store": {"shared_sqlite_path": sys.argv[1]}}))' "$ATLAS_DB")" &&
+  "$(python3 -c 'import json, sys; print(json.dumps({"store": {"shared_sqlite_path": sys.argv[1]}}))' "$ATLAS_BINDING")" &&
 hermes -p PROFILE config get plugins.entries.network-atlas.settings.policy
 ```
 
-Require exactly the intended store binding and no network or SSH grants in that
-readback. **Do not follow `run network-atlas convert-legacy first`, reconvert, or
+Require exactly the intended validated binding spelling, resolving to ATLAS_DB,
+and no network or SSH grants in that readback.
+**Do not follow `run network-atlas convert-legacy first`, reconvert, or
 restore the old full-grant config**: those can bring back revoked grants. If already
 enabled and seeing that hint, keep workers stopped and apply this same replacing
 config command, not conversion. Runtime conversion safeguards are tracked in
