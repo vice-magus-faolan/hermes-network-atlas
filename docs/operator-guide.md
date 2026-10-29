@@ -63,9 +63,13 @@ a second Atlas config file. Include every grant and setting you intend to retain
 hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy '{"networks":{}}'
 ```
 
-This replacement removes omitted network and SSH-host grants. To revoke all
-collection grants, replace the value with `{}` using the same command. Verify
-with `hermes -p PROFILE network-atlas status` in a fresh process.
+This replacement removes omitted network and SSH-host grants, but also drops any
+omitted store binding. To revoke all collection grants, follow
+[Stop collection offline](#stop-collection-offline): preserve the recorded database
+binding and verify no grants in a fresh status, including on converted profiles.
+If an earlier empty-policy replacement produces legacy-conversion guidance, use
+that procedure's binding-only recovery; do not rerun conversion or restore the old
+full-grant config.
 Do not use the Desktop settings JSON editor or `ctx.set_config` for grant removal:
 their merging writer retains omitted keys, and writing `{}` there does not clear
 existing grants.
