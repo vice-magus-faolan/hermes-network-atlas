@@ -20,7 +20,7 @@ from collections.abc import Iterator
 from .config import Policy
 from .errors import RequestError, StoreError, UpgradeRequiredError
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 IMMUTABLE_TABLES = ("batches", "probes", "observations", "applications", "audit_events", "access_evidence")
 
 
@@ -103,7 +103,7 @@ def _initialize_locked(connection: sqlite3.Connection, *, upgrade: bool = False)
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
-    if version in (1, 2, 3) and not upgrade:
+    if version in (1, 2, 3, 4) and not upgrade:
         raise UpgradeRequiredError()
     if version == 1:
         _migrate_endpoints(connection)
@@ -113,6 +113,9 @@ def _initialize_locked(connection: sqlite3.Connection, *, upgrade: bool = False)
         return
     if version == 3:
         _migrate_endpoint_protocols(connection)
+        return
+    if version == 4:
+        _migrate_relation_indexes(connection)
         return
     if version != 0 or connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
         raise StoreError("unsupported or unversioned atlas schema; no automatic downgrade")
@@ -160,6 +163,15 @@ def _migrate_endpoint_protocols(connection: sqlite3.Connection) -> None:
     for action in ("UPDATE", "DELETE"):
         connection.execute(f"CREATE TRIGGER immutable_endpoint_observations_{action} BEFORE {action} "
                            "ON endpoint_observations BEGIN SELECT RAISE(ABORT,'immutable evidence'); END;")
+    _migrate_relation_indexes(connection)
+
+
+def _migrate_relation_indexes(connection: sqlite3.Connection) -> None:
+    """Index both incident endpoints without changing projection or evidence rows."""
+    schema = Path(__file__).with_name("storage_relation_indexes.sql").read_text(encoding="utf-8")
+    for statement in schema.split(";"):
+        if statement.strip():
+            connection.execute(statement)
 
 
 class _DeadlineConnection(sqlite3.Connection):
@@ -226,7 +238,7 @@ class Store:
                 _initialize(self.connection, upgrade=upgrade)
                 os.chmod(policy.database, 0o600)
                 self.connection.execute("PRAGMA journal_mode=WAL")
-            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, SCHEMA_VERSION):
+            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, SCHEMA_VERSION):
                 raise StoreError("unsupported atlas schema")
             else:
                 self.connection.execute("PRAGMA query_only=ON")
@@ -309,7 +321,7 @@ def require_current_schema(policy: Policy, *, deadline: float) -> None:
         version = connection.execute('PRAGMA user_version').fetchone()[0]
         if version == SCHEMA_VERSION:
             return
-        if version in (1, 2, 3):
+        if version in (1, 2, 3, 4):
             raise UpgradeRequiredError()
         if version != 0 or connection.execute('SELECT 1 FROM sqlite_master LIMIT 1').fetchone():
             raise StoreError('unsupported or unversioned atlas schema')
