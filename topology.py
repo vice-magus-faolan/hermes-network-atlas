@@ -101,12 +101,14 @@ class BatchIndex:
 class TopologySnapshot:
     """Disposable read indexes; construct after inventory writes or inside a snapshot.
 
-    Explicitly shared by query filters/details/status and map devices. Never kept
-    across requests: later evidence, identity and authority changes must be visible.
+    Explicitly shared by query filters/details/status and map devices. A device
+    scope restricts candidate edges at SQL selection, not after materialization.
+    Never kept across requests: later evidence and identity changes must be visible.
     """
 
-    def __init__(self, store: Store, now: datetime):
+    def __init__(self, store: Store, now: datetime, *, device: str | None = None):
         self.store = store
+        self.device = device
         self.current = timestamp(now)
         self.cutoff = timestamp(now - timedelta(days=store.policy.stale_after_days))
         self.batches, self.origins, self.sources, self.peers = {}, {}, {}, {}
@@ -394,9 +396,13 @@ def _candidate_relations(snapshot: TopologySnapshot) -> list:
     # Assertions bypass collector eligibility in relation_condition. They must
     # not consume its route-evidence bound, even when attached to an old edge.
     where = "o.evidence_kind='configured_route' AND NOT " + ASSERTED_RELATION + " AND (" + where + ")"
+    bindings = [snapshot.current, snapshot.cutoff]
+    if snapshot.device is not None:
+        where += " AND (r.source_device=? OR r.target_device=?)"
+        bindings.extend((snapshot.device, snapshot.device))
     return _rows(snapshot.store, "SELECT r.* FROM relations r JOIN observations o ON o.id=r.observation_id "
                  "JOIN batches b ON b.id=o.batch_id WHERE " + where + " ORDER BY r.id",
-                 (snapshot.current, snapshot.cutoff))
+                 tuple(bindings))
 
 
 def route_answer(snapshot: TopologySnapshot, row) -> dict:

@@ -205,7 +205,8 @@ def device_detail(store: Store, row, now: datetime, topology: TopologySnapshot |
             "SELECT COUNT(*) FROM interfaces WHERE mac_address=?", (interface["mac_address"],)).fetchone()[0]
         item["identity_uncertain"] = not interface["stable_mac"] or count > 1
         result["interfaces"].append(item)
-    result["relationships"] = relationships(store, row["id"], now, topology or TopologySnapshot(store, now))
+    result["relationships"] = relationships(
+        store, row["id"], now, topology or TopologySnapshot(store, now, device=row["id"]))
     return result
 
 
@@ -248,7 +249,7 @@ def relationships(store: Store, device: str, now: datetime, topology: TopologySn
 
 
 def _inventory(store: Store, params: dict, now: datetime) -> dict:
-    topology = TopologySnapshot(store, now)
+    topology = TopologySnapshot(store, now, device=params.get("device_id"))
     cte, bindings = selection_cte(now, store.policy.stale_after_days)
     first, values = _filters(params, store.policy, now)
     second, extra = _additional_filters(params, topology)

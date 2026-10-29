@@ -292,7 +292,13 @@ evidence and superseded relations grow with inspections; stale_after_days marks
 age, not eviction. History/topology pages remain available; excessive current
 relationship detail refuses explicitly under existing per-device result bounds.
 Unrelated operator relationships do not consume route-evidence bounds; manual
-assertions remain visible in details, filters, status and maps. Keep SQLite/WAL,
+assertions remain visible in details, filters, status and maps. Queries selecting
+`device_id` check only collector edges incident to that device, at either endpoint;
+unrelated collector volume cannot exhaust that detail query's evidence bound.
+Global inventory, relationship filters without `device_id`, status and maps still
+refuse when current collector candidates exceed `limits.observations`; pagination
+does not bypass that global evidence bound. Per-device detail and map byte/device
+bounds also remain in force, without silently omitting relationships. Keep SQLite/WAL,
 backups and exports private: retained routes/caches reveal additional topology.
 Foreign profile evidence remains read-only knowledge, never local collection authority.
 
