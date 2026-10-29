@@ -7,6 +7,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import sqlite3
 import stat
@@ -28,6 +29,54 @@ def _replace_policy(atlas, raw):
                             text=True, timeout=45)
     assert result.returncode == 0, result.stdout + result.stderr
     assert atlas.ctx.get_config('policy', None) == raw
+
+
+def _documented_stop(atlas, home, database, backup):
+    """Run the guide's private-copy and replacing-stop commands in this owned home."""
+    from hermes_constants import profile_name_for_home
+    from hermes_cli.profiles import get_profile_dir
+
+    profile = profile_name_for_home(home)
+    assert profile is not None and get_profile_dir(profile).resolve() == home.resolve()
+    guide = (Path(__file__).resolve().parents[1] / 'docs' / 'operator-guide.md').read_text()
+    section = guide.split('### Stop collection offline', 1)[1].split('### ', 1)[0]
+    snippet = section.split('```sh\n')[2].split('```', 1)[0]
+    for template, path in (('/absolute/selected/profile-home', home),
+                           ('/absolute/selected/atlas.sqlite3', database),
+                           ('/absolute/private/atlas-backup-UNIQUE', backup)):
+        snippet = snippet.replace(template, shlex.quote(str(path)))
+    # Verify the copy before the subsequent native policy replacement changes config.
+    copy, stop = snippet.split('hermes -p PROFILE config set', 1)
+    original = (home / 'config.yaml').read_bytes()
+    mode = stat.S_IMODE((home / 'config.yaml').stat().st_mode)
+    env = {**os.environ, 'ATLAS_HOME': str(home), 'ATLAS_DB': str(database), 'BACKUP': str(backup)}
+    result = subprocess.run(['sh', '-ec', copy.rstrip().removesuffix('&&')],
+                            cwd=home.parent, env=env, capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / 'config.yaml').read_bytes() == original
+    assert stat.S_IMODE((home / 'config.yaml').stat().st_mode) == mode
+    assert (backup / 'config.yaml').read_bytes() == original
+    assert stat.S_IMODE((backup / 'config.yaml').stat().st_mode) == 0o600
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o700
+    result = subprocess.run(['sh', '-ec', ('hermes -p PROFILE config set' + stop).replace('PROFILE', profile)],
+                            cwd=home.parent, env=env, capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stdout + result.stderr
+    stopped = atlas.cli(['status'])
+    assert stopped['configured_networks'] == stopped['authorized_for_atlas_ssh_inspection'] == []
+
+
+def _documented_backup(database, backup):
+    """Execute the maintained SQLite backup snippet, not a second implementation."""
+    guide = (Path(__file__).resolve().parents[1] / 'docs' / 'operator-guide.md').read_text()
+    section = guide.split('### Back up retained data before removal or reset', 1)[1]
+    snippet = section.split('```sh\n', 1)[1].split('```', 1)[0]
+    result = subprocess.run(['sh', '-ec', snippet], cwd=backup.parent,
+                            env={**os.environ, 'ATLAS_DB': str(database), 'BACKUP': str(backup)},
+                            capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stdout + result.stderr
+    destination = backup / 'atlas.sqlite3'
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    return destination
 
 
 def _pending_batch(storage, batches, policy):
@@ -92,6 +141,8 @@ def _clone_binding(atlas, home, config, storage, batches):
     converted = atlas.ctx.get_config('policy', None)
     assert converted == {**raw, 'store': {'shared_sqlite_path': str(policy.database)}}
     _binding_status(atlas, config, storage, home, policy.database, 1)
+    atlas.cli(['map', '--format', 'markdown', '--export'])
+    source_exports = {path: path.read_bytes() for path in policy.exports.iterdir()}
     assert get_profile_dir('atlas-clone').is_relative_to(home)
     clone = create_profile('atlas-clone', clone_config=True, no_alias=True)
     assert clone == home / 'profiles' / 'atlas-clone'
@@ -115,14 +166,29 @@ def _clone_binding(atlas, home, config, storage, batches):
         with storage.Store(inherited) as store:
             owners = {row[0] for row in store.connection.execute('SELECT DISTINCT policy_context FROM batches')}
             assert owners == {str(home), str(clone)}
-        # Explicit sharing with no grants remains usable; stored evidence grants nothing.
-        _replace_policy(atlas, {'store': converted['store']})
+        # A real clone's external selection is the parent's store, never a reset target.
+        shared_history = _history(storage, policy)
+        shared_bytes = policy.database.read_bytes()
+        assert not policy.database.is_relative_to(clone.resolve())
+        (clone / 'config.yaml').chmod(0o644)
+        _documented_stop(atlas, clone, policy.database, home.parent / 'clone-stop-backup')
+        assert atlas.ctx.get_config('policy', None) == {'store': converted['store']}
         _binding_status(atlas, config, storage, clone, policy.database, 2)
         assert len(atlas.tool('network_query', {})['devices']) == 2
         assert atlas.cli(['status'])['configured_networks'] == []
         assert atlas.cli(['status'])['authorized_for_atlas_ssh_inspection'] == []
-        assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
-        shared_history = _history(storage, policy)
+        with patch('subprocess.Popen', side_effect=AssertionError('stopped clone attempted collection')):
+            assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
+            assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
+        _replace_policy(atlas, {})
+        _binding_status(atlas, config, storage, clone, local_database, 0)
+        assert atlas.cli(['status'])['configured_networks'] == []
+        assert atlas.cli(['status'])['authorized_for_atlas_ssh_inspection'] == []
+        assert atlas.cli(['query'])['devices'] == []
+        assert (home / 'config.yaml').read_bytes() == source_config
+        assert policy.database.read_bytes() == shared_bytes
+        assert _history(storage, policy) == shared_history
+        assert {path: path.read_bytes() for path in policy.exports.iterdir()} == source_exports
         # Omit store through the replacing writer: this deliberately selects NEW empty local history.
         _replace_policy(atlas, raw)
         rebound = config.load_policy(atlas.ctx)
@@ -165,6 +231,7 @@ def _clone_binding(atlas, home, config, storage, batches):
     assert {item['id'] for item in atlas.cli(['query'])['devices']} == {device, shared_device}
     assert not atlas.cli(['reconcile', '--batch-id', clone_batch], expected_code=2)['applied']
     assert (home / 'config.yaml').read_bytes() == source_config
+    assert {path: path.read_bytes() for path in policy.exports.iterdir()} == source_exports
     assert _history(storage, legacy) == history
     return {'native_clone_binding': True, 'source_home': str(home), 'clone_home': str(clone),
             'shared_database': str(policy.database), 'rebound_database': str(local_database)}
@@ -188,6 +255,40 @@ def _privacy(atlas, home, config, storage, mask):
     return {'umask': oct(mask), 'directory_modes': modes, 'database_mode': oct(0o600), 'uid': os.getuid()}
 
 
+def _converted_stop(atlas, home, config, storage, batches):
+    """Retained legacy data must not turn a stopped profile into conversion guidance."""
+    conversion = importlib.import_module(config.__package__ + '.conversion')
+    core = importlib.import_module(config.__package__ + '.core')
+    raw = conversion.read_legacy(home)
+    legacy = replace(config.validate_policy(raw, home), database=home / 'network-atlas' / 'atlas.sqlite3')
+    with storage.Store(legacy, writable=True) as store:
+        core.create_device(store, 'Converted stop inventory')
+    _pending_batch(storage, batches, legacy)
+    assert atlas.cli(['convert-legacy', '--writers-stopped'])['converted']
+    policy = config.load_policy(atlas.ctx)
+    history = _history(storage, policy)
+    legacy_bytes = legacy.database.read_bytes()
+    legacy_config = (home / 'network-atlas' / 'config.yaml').read_bytes()
+    (home / 'config.yaml').chmod(0o644)
+    _documented_stop(atlas, home, policy.database, home.parent / 'converted-backup')
+    assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(policy.database)}}
+    assert atlas.cli(['status'])['known_devices'] == 1
+    # Recovery from the former empty-policy stop must not re-import the old grants.
+    _replace_policy(atlas, {})
+    assert 'legacy store present' in atlas.cli(['status'], expected_code=2)['error']
+    _documented_stop(atlas, home, policy.database, home.parent / 'converted-recovery-backup')
+    # Repeating the stop on an already valid, grant-free policy stays harmless.
+    _documented_stop(atlas, home, policy.database, home.parent / 'converted-stopped-backup')
+    assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(policy.database)}}
+    with patch('subprocess.Popen', side_effect=AssertionError('stopped converted profile collected')):
+        assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
+        assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
+    assert _history(storage, policy) == history
+    assert legacy.database.read_bytes() == legacy_bytes
+    assert (home / 'network-atlas' / 'config.yaml').read_bytes() == legacy_config
+    return {'converted_stop_no_grants': True}
+
+
 def _reset_walkthrough(atlas, home, config, storage, batches, *, custom):
     """Back up populated native state, then reset only this owned, unshared selection."""
     from hermes_cli.profiles import create_profile
@@ -207,42 +308,44 @@ def _reset_walkthrough(atlas, home, config, storage, batches, *, custom):
     # Detaching this profile must preserve the shared store, not call it erased.
     _replace_policy(atlas, {'store': {'shared_sqlite_path': str(shared)}})
     assert atlas.cli(['query'])['devices'][0]['id'] == foreign_device
-    selected = {**raw, 'store': {'shared_sqlite_path': str(home.parent / 'custom.sqlite3')}} if custom else raw
+    selected = {**raw, 'store': {'shared_sqlite_path': str(home / 'custom.sqlite3')}} if custom else raw
     _replace_policy(atlas, selected)
     policy = config.load_policy(atlas.ctx)
     assert policy.database != shared and not policy.database.exists()
     atlas.cli(['create', '--name', 'Owned reset inventory'])
     backup = home.parent / 'private-backup'
-    backup.mkdir(mode=0o700)
-    shutil.copy2(home / 'config.yaml', backup / 'config.yaml')
     original_config = (home / 'config.yaml').read_bytes()
-    # An idle native Store retains committed WAL while real CLI writers finish.
-    # Copying the main file alone here would miss the later device/batch/audit rows.
+    # Separate robustness contrast: deliberately pin a read snapshot while real
+    # native writers commit WAL-only rows. This is NOT the stopped-writer walkthrough.
+    wal_backup = home.parent / 'wal-robustness'
+    wal_backup.mkdir(mode=0o700)
     with (storage.Store(policy, writable=True) as anchor,
           closing(sqlite3.connect(policy.database.as_uri() + '?mode=ro', uri=True)) as source):
         anchor.connection.execute('PRAGMA wal_autocheckpoint=0')
+        source.execute('BEGIN')
+        source.execute('SELECT COUNT(*) FROM devices').fetchone()
         device = atlas.cli(['create', '--name', 'Committed WAL inventory'])['device_id']
         batch = _pending_batch(storage, batches, policy)
         atlas.cli(['map', '--format', 'mermaid', '--export'])
         assert Path(str(policy.database) + '-wal').stat().st_size > 0
         history = _history(storage, policy)
-        database = backup / 'atlas.sqlite3'
-        fd = os.open(database, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(fd)
-        with closing(sqlite3.connect(database)) as destination:
-            source.backup(destination)
-            assert destination.execute('PRAGMA integrity_check').fetchall() == [('ok',)]
+        wal_database = _documented_backup(policy.database, wal_backup)
+        assert _history(storage, replace(policy, database=wal_database)) == history
+    # All reader/writer contexts above are now closed. Follow the operator stop,
+    # private config copy and maintained backup snippet with no live connections.
+    (home / 'config.yaml').chmod(0o644)
+    _documented_stop(atlas, home, policy.database, backup)
+    database = _documented_backup(policy.database, backup)
     assert _history(storage, replace(policy, database=database)) == history
     exports = {path.name: path.read_bytes() for path in policy.exports.iterdir()}
     assert set(exports) == {'network_map.md', 'network_map.mmd'}
     shutil.copytree(policy.exports, backup / 'exports')
     backup_bytes = database.read_bytes()
-    # The documented replacing CLI really clears grants AND the custom binding.
-    _replace_policy(atlas, {})
+    # Stop revokes grants without detaching the selection, including custom stores.
     stopped = atlas.cli(['status'])
     assert stopped['configured_networks'] == stopped['authorized_for_atlas_ssh_inspection'] == []
-    assert stopped['known_devices'] == (0 if custom else 2)
-    assert stopped['database_binding']['database_path'] == str(home / 'plugin-data/network-atlas/atlas.sqlite3')
+    assert stopped['known_devices'] == 2
+    assert stopped['database_binding']['database_path'] == str(policy.database)
     with patch('subprocess.Popen', side_effect=AssertionError('stopped policy attempted collection')):
         for name, arguments in (('network_discover', {'network': 'lab', 'mode': 'passive'}),
                                 ('network_inspect', {'target': 'lab-router'})):
@@ -251,6 +354,7 @@ def _reset_walkthrough(atlas, home, config, storage, batches, *, custom):
     assert _history(storage, policy) == history, 'revocation/detachment is not deletion'
     # All connections are closed. Only known fixture-owned regular files go;
     # never recurse over a profile, shared directory or the backup.
+    assert policy.database.is_relative_to(home.resolve())
     for suffix in ('', '-wal', '-shm', '-journal'):
         path = Path(str(policy.database) + suffix)
         assert not path.is_symlink()
@@ -309,6 +413,8 @@ def main():
             receipt = _clone_binding(atlas, home, config, storage, batches)
         elif mode in {'native_reset', 'native_reset_custom'}:
             receipt = _reset_walkthrough(atlas, home, config, storage, batches, custom=mode == 'native_reset_custom')
+        elif mode == 'native_stop_converted':
+            receipt = _converted_stop(atlas, home, config, storage, batches)
         else:
             assert mode == 'native_privacy'
             receipt = _privacy(atlas, home, config, storage, mask)
