@@ -299,9 +299,22 @@ After the explicit schema-5 upgrade, both incident endpoint lookups use indexes;
 native assertions and isolated devices avoid scanning unrelated relationships or
 enumerating all configured-route observation IDs. This is not a constant-time
 whole-query guarantee: incident derived edges still validate their original batch
-and current identity support. Those batch, alias, interface and observation reads
-can depend on retained evidence elsewhere in the store. Older readable stores
-retain the same results but lack these relationship indexes until upgraded.
+and current identity support. Schema 6 additionally indexes observations by batch,
+so loading that batch's originals and canonical copies does not enumerate unrelated
+observations. Its compact `(batch_id, entity_id)` index preserves original row order
+without a temporary sort; canonical-copy reads filter kind/anchor within the batch
+rather than storing the repeated context-qualified anchor in every index entry.
+Per-original copy lookups scan that batch's canonical copies, so whole-query work
+can increase for large admitted batches, including the batch unresolved summary,
+despite the measured source-device-query, storage and write improvements.
+Latest-batch ordering, alias/identity, access and historical reads can still depend
+on retained evidence elsewhere in the store. The linked topology batch provenance
+page and batch unresolved summary share another residual cost:
+`TopologySnapshot.relationship_for` starts from
+`relations` and can scan unrelated relationships to recover frozen membership, even
+when the primary device lookup is indexed. Bounded page output does not make that
+provenance read or summary constant-time. Older readable stores
+retain the same results but lack the newer indexes until explicitly upgraded.
 Global inventory, relationship filters without `device_id`, status and maps still
 refuse when current collector candidates exceed `limits.observations`; pagination
 does not bypass that global evidence bound. Per-device detail and map byte/device

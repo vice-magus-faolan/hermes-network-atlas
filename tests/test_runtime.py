@@ -79,7 +79,8 @@ class NativeRuntimeTests(unittest.TestCase):
             timeout = 180 if mode in {"revocation", "native_clone", "native_reset", "native_reset_custom",
                                      "native_stop_converted", "native_stop_converted_shared",
                                      "native_stop_converted_file_link"} else 60
-            script = ("native_store_upgrade.py" if mode in {"store_upgrade", "store_upgrade_indexes"} else
+            script = ("native_store_upgrade.py" if mode in {"store_upgrade", "store_upgrade_indexes",
+                                                          "store_upgrade_batch_indexes"} else
                       "native_profiles.py" if mode in {"native_clone", "native_privacy", "native_reset",
                                                        "native_reset_custom", "native_stop_converted",
                                                        "native_stop_converted_shared",
@@ -91,7 +92,8 @@ class NativeRuntimeTests(unittest.TestCase):
             receipt = json.loads(child.stdout.strip().splitlines()[-1])
             self.assertEqual(receipt["mode"], mode)
             if mode in {"valid", "local_discovery", "ssh_inspection", "conversion",
-                        "conversion_overlap", "conversion_hardkill", "store_upgrade", "store_upgrade_indexes"}:
+                        "conversion_overlap", "conversion_hardkill", "store_upgrade", "store_upgrade_indexes",
+                        "store_upgrade_batch_indexes"}:
                 if not mode.startswith("conversion"):
                     (home / "config.yaml").write_text(json.dumps({"plugins": {
                         "enabled": ["network-atlas"], "entries": {"network-atlas": {
@@ -148,6 +150,9 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_schema4_relation_index_upgrade_refusal_rollback_and_cold_retry(self):
         self.assertTrue(self.run_smoke("store_upgrade_indexes")["fresh_native_process_persistence"])
+
+    def test_native_schema5_batch_index_upgrade_refusal_rollback_and_cold_retry(self):
+        self.assertTrue(self.run_smoke("store_upgrade_batch_indexes")["fresh_native_process_persistence"])
 
     def test_native_conversion_writer_overlap_refuses_changed_source_and_stale_cold_retry(self):
         self.assertTrue(self.run_smoke("conversion_overlap")["fresh_native_process_persistence"])

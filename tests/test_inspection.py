@@ -2,6 +2,7 @@
 """Synthetic A03/A05/A08/A09/A12 inspection evidence; no real SSH subprocess."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import timedelta
 import importlib
@@ -33,6 +34,7 @@ topology = importlib.import_module("atlas_test_plugin.topology")
 MAC = "00:11:22:33:44:77"
 MAC2 = "00:11:22:33:44:88"
 ALIAS = "lab-router"
+BATCH_INDEX_SHAPES = ("batch_id,subject_kind,subject_anchor,entity_id", "batch_id,entity_id")
 
 
 def outputs():
@@ -346,21 +348,162 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertGreater(len(ids), self.policy.limits.observations)
         return source, target, edge, ids, devices
 
-    def device_query_work(self, params):
+    def device_query_work(self, params, *, batch_work=None):
         """Measure every SQL instruction in the real public read, not just edge lookup."""
         statements, ticks = [], []
         enter = storage.Store.__enter__
         def measured_enter(store):
             enter(store)
-            store.connection.set_trace_callback(statements.append)
-            store.connection.set_progress_handler(lambda: ticks.append(1) or False, 100)
+            store.connection.set_trace_callback(lambda sql: statements.append((sql, len(ticks))))
+            store.connection.set_progress_handler(lambda: ticks.append(1) or store.check_deadline() or False, 100)
             return store
         with patch.object(storage.Store, "__enter__", measured_enter):
             answer = json.loads(self.handlers.query(params))
         self.assertNotIn("error", answer)
-        plans = [row[3] for sql in statements if "relations" in sql
+        ends = [start for _, start in statements[1:]] + [len(ticks)]
+        batch_reads = [(sql, (end - start) * 100) for (sql, start), end in zip(statements, ends, strict=True)
+                       if "FROM observations WHERE batch_id=" in sql]
+        if batch_work is not None:
+            batch_work.append(sum(work for _, work in batch_reads))
+            print("Batch lookup statement work:", batch_reads, flush=True)
+            print("Batch lookup plans:", [[row[3] for row in self.store.connection.execute("EXPLAIN QUERY PLAN " + sql)]
+                                          for sql, _ in batch_reads], flush=True)
+        plans = [row[3] for sql, _ in statements if "relations" in sql or "FROM observations WHERE batch_id=" in sql
                  for row in self.store.connection.execute("EXPLAIN QUERY PLAN " + sql)]
         return answer, len(ticks) * 100, plans
+
+    @contextmanager
+    def batch_index_shape(self, columns):
+        """Compare one candidate at a time on identical producer-owned rows."""
+        original = self.store.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE name='observation_batch'").fetchone()[0]
+        with self.store.transaction():
+            self.store.connection.execute("DROP INDEX observation_batch")
+            self.store.connection.execute(f"CREATE INDEX observation_batch ON observations({columns})")
+        try:
+            yield
+        finally:
+            with self.store.transaction():
+                self.store.connection.execute("DROP INDEX observation_batch")
+                self.store.connection.execute(original)
+
+    def compare_batch_index_reads(self, params):
+        results = {}
+        for columns in BATCH_INDEX_SHAPES:
+            measured = []
+            with self.batch_index_shape(columns):
+                for filters in params:
+                    batch = []
+                    answer, whole, plans = self.device_query_work(filters, batch_work=batch)
+                    measured.append((answer, whole, batch[0], plans))
+                    print("Index shape read:", columns, filters, "whole", whole, "batch", batch[0], plans, flush=True)
+            results[columns] = measured
+        self.assertEqual([row[0] for row in results[BATCH_INDEX_SHAPES[0]]],
+                         [row[0] for row in results[BATCH_INDEX_SHAPES[1]]])
+        return results
+
+    def compare_batch_index_write_cost(self, payloads):
+        """Same starting history and native collect/apply workload; no timing gate."""
+        sizes = []
+        for number, columns in enumerate(BATCH_INDEX_SHAPES):
+            policy = replace(self.policy, database=self.home / f"index-cost-{number}" / "atlas.sqlite3")
+            with storage.Store(policy, writable=True) as copy:
+                self.store.connection.backup(copy.connection)
+                with copy.transaction():
+                    copy.connection.execute("DROP INDEX observation_batch")
+                    copy.connection.execute(f"CREATE INDEX observation_batch ON observations({columns})")
+            ticks = []
+            enter = storage.Store.__enter__
+            def measured_enter(store, ticks=ticks, enter=enter):
+                enter(store)
+                store.connection.set_progress_handler(lambda: ticks.append(1) or store.check_deadline() or False, 100)
+                return store
+            started = time.monotonic()
+            with patch.object(storage.Store, "__enter__", measured_enter):
+                receipt = self.public_collect(payloads, policy)
+                applied = json.loads(tools.Handlers(lambda policy=policy: policy).reconcile(
+                    {"batch_id": receipt["batch_id"]}))
+            elapsed = time.monotonic() - started
+            self.assertEqual(receipt["completion"], "complete")
+            self.assertNotIn("error", applied)
+            self.assertEqual(len(applied["relationships"]), 1)
+            with storage.Store(policy) as reader:
+                index_bytes = reader.connection.execute(
+                    "SELECT SUM(pgsize) FROM dbstat WHERE name='observation_batch'").fetchone()[0]
+                page_bytes = reader.connection.execute("PRAGMA page_size").fetchone()[0]
+                database_bytes = reader.connection.execute("PRAGMA page_count").fetchone()[0] * page_bytes
+                free_bytes = reader.connection.execute("PRAGMA freelist_count").fetchone()[0] * page_bytes
+                volume = reader.connection.execute(
+                    "SELECT COUNT(*),AVG(length(subject_anchor)),MAX(length(subject_anchor)) FROM observations"
+                ).fetchone()
+            sizes.append(index_bytes)
+            print("Index shape write:", columns, "collect+apply SQL steps", len(ticks) * 100,
+                  "seconds", elapsed, "index bytes", index_bytes, "database bytes", database_bytes,
+                  "database live bytes", database_bytes - free_bytes,
+                  "observations/anchor average/max bytes", tuple(volume), flush=True)
+        self.assertLess(sizes[1], sizes[0])
+
+    def test_device_batch_observation_lookup_ignores_unrelated_history(self):
+        _, peer = self.known_peer()
+        receipt, applied = self.apply()
+        source = applied["new"][0]
+        self.assertEqual(len(applied["relationships"]), 1)
+        manual = self.update("relationship", {"target_device": peer, "relationship_type": "hosted_on"},
+                             device=source, now=self.clock)
+        manual_id = self.store.connection.execute("SELECT entity_id FROM observations WHERE id=?",
+                                                  (manual["observation_id"],)).fetchone()[0]
+        params = [{"device_id": device} for device in (source, peer, self.device)]
+        params += [{"device_id": peer, "relationship": "routes_via", "related_to": source}]
+        baselines = self.compare_batch_index_reads(params)
+        baseline = baselines[BATCH_INDEX_SHAPES[0]]
+        for answer, _, _, _ in baseline[:2]:
+            self.assertEqual({r["id"] for r in answer["devices"][0]["relationships"]},
+                             {*applied["relationships"], manual_id})
+        self.assertEqual(baseline[2][0]["devices"][0]["relationships"], [])
+        self.manual_graph()
+        before = list(self.store.connection.iterdump())
+        comparisons = self.compare_batch_index_reads(params)
+        for columns in BATCH_INDEX_SHAPES:
+            for filters, (expected, small_work, small_batch, _), (answer, large_work, batch, plans) in zip(
+                    params, baselines[columns], comparisons[columns], strict=True):
+                self.assertEqual(answer, expected)
+                if filters["device_id"] == self.device:
+                    self.assertEqual(batch, 0)
+                else:
+                    self.assertTrue(expected["devices"][0]["relationships"])
+                    self.assertGreater(small_batch, 0)
+                    self.assertLessEqual(batch, small_batch + 1000)
+                    self.assertTrue(any("observation_batch" in plan for plan in plans), plans)
+                    self.assertFalse(any("SCAN observations" in plan for plan in plans), plans)
+                print("Batch observation lookup:", columns, filters, "whole", small_work, large_work,
+                      "batch", small_batch, batch, plans, flush=True)
+        # Removing only this index must increase real public batch-read work;
+        # retain both endpoint indexes. Commit the drop so the public reader's
+        # independent connection sees it, then restore only this fixture's index.
+        indexed = []
+        expected, _, _ = self.device_query_work(params[0], batch_work=indexed)
+        original = self.store.connection.execute(
+            "SELECT sql FROM sqlite_master WHERE name='observation_batch'").fetchone()[0]
+        with self.store.transaction():
+            self.store.connection.execute("DROP INDEX observation_batch")
+        try:
+            unindexed = []
+            answer, _, _ = self.device_query_work(params[0], batch_work=unindexed)
+            self.assertEqual(answer, expected)
+            self.assertGreater(unindexed[0], indexed[0] + 10000)
+            print("Absent batch index control:", indexed[0], unindexed[0], flush=True)
+        finally:
+            with self.store.transaction():
+                self.store.connection.execute(original)
+        edge = next(r for r in expected["devices"][0]["relationships"] if r["id"] == applied["relationships"][0])
+        fact = edge["facts"]["relationship"]["evidence"][0]
+        self.assertEqual((fact["source"], fact["confidence"]), ("ssh:" + ALIAS, "inferred"))
+        self.assertEqual(fact["value"]["evidence_query"], {"view": "topology", "batch_id": receipt["batch_id"]})
+        self.assertEqual({r["resolution"]["relationship_id"] for r in self.topology(receipt) if r["kind"] == "route"},
+                         {edge["id"]})
+        history = json.loads(self.handlers.query({"view": "history", "device_id": source}))
+        self.assertIn(manual["observation_id"], {r["id"] for r in history["observations"]})
+        self.assertEqual(list(self.store.connection.iterdump()), before)
 
     def test_device_relation_lookup_work_is_independent_of_unrelated_manual_graph(self):
         peer = core.create_device(self.store, "Indexed peer", now=self.clock)["device_id"]
@@ -630,12 +773,15 @@ class TopologyInspectionTests(AtlasFixture):
             applications.append(applied)
             if n == 0:
                 self.collector_global_views(sources[0], peers[0][0], set(applied["relationships"]))
-                baseline_work["source"] = self.device_query_work({"device_id": sources[0]})[1]
+                baseline_work["batch"] = []
+                baseline_work["source"] = self.device_query_work(
+                    {"device_id": sources[0]}, batch_work=baseline_work["batch"])[1]
                 baseline_work["isolated"] = self.device_query_work({"device_id": self.device})[1]
         total = self.store.connection.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         self.assertEqual(total, 4224)
         self.assertGreater(total, self.policy.limits.observations)
-        answer, large_work, plans = self.device_query_work({"device_id": sources[0]})
+        batch_work = []
+        answer, large_work, plans = self.device_query_work({"device_id": sources[0]}, batch_work=batch_work)
         self.assertEqual({r["id"] for r in answer["devices"][0]["relationships"]},
                          set(applications[0]["relationships"]))
         self.assertFalse(any("SCAN r" in plan for plan in plans), plans)
@@ -643,8 +789,11 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertTrue(any("relation_target_device" in plan for plan in plans), plans)
         _, isolated_large_work, _ = self.device_query_work({"device_id": self.device})
         self.assertLessEqual(isolated_large_work, baseline_work["isolated"] + 2000)
-        # Incident support still reads batch/identity evidence; report the whole
-        # cost rather than claiming endpoint indexes eliminate those scans.
+        # Batch observations stay scoped even as other real batches accumulate.
+        # Latest-batch and identity work remains visible in the whole-read count.
+        self.assertGreater(baseline_work["batch"][0], 0)
+        self.assertLessEqual(batch_work[0], baseline_work["batch"][0] + 1000, plans)
+        self.assertTrue(any("observation_batch" in plan for plan in plans), plans)
         print("Collector device query SQL work:", baseline_work["source"], large_work, plans, flush=True)
         manual = self.update("relationship", {"target_device": peers[-1][0], "relationship_type": "physical"},
                              device=sources[0], now=self.clock)
@@ -668,6 +817,9 @@ class TopologyInspectionTests(AtlasFixture):
         self.scoped_relationships(sources[-1], applications[-1]["relationships"])
         self.scoped_relationships(sources[0], source_ids, relationship="routes_via")
         self.scoped_relationships(sources[0], source_ids, related_to=peer)
+        self.compare_batch_index_reads([
+            {"device_id": sources[0]}, {"device_id": peer}, {"device_id": self.device},
+            {"device_id": sources[0], "relationship": "routes_via", "related_to": peer}])
         self.collector_global_views(sources[0], peer, None)
         self.assertEqual(list(self.store.connection.iterdump()), before)
         edge = next(row for row in edges if row["target_device"] == peer)
@@ -901,6 +1053,17 @@ class TopologyInspectionTests(AtlasFixture):
         snapshot = list(self.store.connection.iterdump())
         self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
         self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+        comparisons = self.compare_batch_index_reads([
+            {"device_id": source}, {"device_id": peer}, {"device_id": self.device},
+            {"device_id": peer, "relationship": "routes_via", "related_to": source}])
+        for measured in comparisons.values():
+            self.assertEqual(measured[2][2], 0)
+            for answer, _, batch, plans in (measured[0], measured[1], measured[3]):
+                self.assertEqual([r["id"] for r in answer["devices"][0]["relationships"]], [edge_id])
+                self.assertGreater(batch, 0)
+                self.assertTrue(any("observation_batch" in plan for plan in plans), plans)
+                self.assertFalse(any("SCAN observations" in plan for plan in plans), plans)
+        self.compare_batch_index_write_cost(payloads)
 
     def test_group_uses_eligible_members_and_never_merges_distinct_interfaces(self):
         _, peer = self.known_peer()

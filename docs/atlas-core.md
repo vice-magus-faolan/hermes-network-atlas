@@ -31,12 +31,14 @@ through `storage_continuations.sql`; schema 4 widens only endpoint projection
 constraints through `storage_endpoint_protocols.sql`, copying exact old row values.
 Schema 5 adds indexes on both relationship device endpoints through
 `storage_relation_indexes.sql`, without rewriting any rows.
-`storage.py` initializes new empty stores at schema 5. Existing schema 1..4 stores
+Schema 6 indexes original and canonical-copy observation lookup by batch through
+`storage_observation_indexes.sql`, also without rewriting rows.
+`storage.py` initializes new empty stores at schema 6. Existing schema 1..5 stores
 remain readable but ordinary writable opens refuse; only the explicit native local
 `upgrade-store --writers-stopped` action migrates under a bounded write lock.
 Collection preflights the version before transport, then persistence rechecks
 under its lock; this is not a lock across network effects. Read-only opens
-support schema 1..4 without migration. A nonempty unversioned database or
+support schema 1..5 without migration. A nonempty unversioned database or
 future version is refused without repair/downgrade. See endpoint-checks.md for
 upgrade compatibility. Foreign keys are enabled for
 every connection. Write transactions use BEGIN IMMEDIATE, bounded busy waits,
