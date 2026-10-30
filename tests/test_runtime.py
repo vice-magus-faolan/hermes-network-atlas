@@ -42,7 +42,7 @@ class NativeRuntimeTests(unittest.TestCase):
             if mode in {"status_availability", "status_eligibility"}:
                 policy = {}
             if mode in {"conversion", "conversion_overlap", "conversion_hardkill", "native_clone",
-                        "native_stop_converted", "native_stop_converted_shared"}:
+                        "native_stop_converted", "native_stop_converted_shared", "native_stop_converted_file_link"}:
                 (home / "network-atlas" / "config.yaml").write_text(json.dumps(policy))
                 policy = {}
             # Explicit native opt-in selection. No production configuration is copied.
@@ -77,11 +77,13 @@ class NativeRuntimeTests(unittest.TestCase):
             # Revocation also launches the documented installed config CLI;
             # each native subprocess retains its own bounded timeout.
             timeout = 180 if mode in {"revocation", "native_clone", "native_reset", "native_reset_custom",
-                                     "native_stop_converted", "native_stop_converted_shared"} else 60
+                                     "native_stop_converted", "native_stop_converted_shared",
+                                     "native_stop_converted_file_link"} else 60
             script = ("native_store_upgrade.py" if mode in {"store_upgrade", "store_upgrade_indexes"} else
                       "native_profiles.py" if mode in {"native_clone", "native_privacy", "native_reset",
                                                        "native_reset_custom", "native_stop_converted",
-                                                       "native_stop_converted_shared"}
+                                                       "native_stop_converted_shared",
+                                                       "native_stop_converted_file_link"}
                       else "runtime_smoke.py")
             child = subprocess.run([sys.executable, str(ROOT / "tests" / script), str(root), mode],
                                    env=env, cwd=scratch, capture_output=True, text=True, timeout=timeout)
@@ -168,6 +170,11 @@ class NativeRuntimeTests(unittest.TestCase):
 
     def test_native_backup_reset_converted_symlink_binding_and_retained_reinstall(self):
         receipt = self.run_smoke("native_stop_converted_shared")
+        self.assertTrue(receipt["converted_stop_no_grants"])
+        self.assertTrue(receipt["retained_reinstall_no_grants"])
+
+    def test_native_backup_reset_converted_managed_file_symlink_and_missing_target(self):
+        receipt = self.run_smoke("native_stop_converted_file_link")
         self.assertTrue(receipt["converted_stop_no_grants"])
         self.assertTrue(receipt["retained_reinstall_no_grants"])
 

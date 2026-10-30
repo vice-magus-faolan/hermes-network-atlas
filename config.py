@@ -309,10 +309,12 @@ def load_policy(ctx: Settings) -> Policy:
 
         # Conversion retains legacy files. Block guessed recovery destinations,
         # not a deliberate distinct new store or its intentional empty reset.
-        # Resolve identity without importing legacy grants into runtime policy.
+        # Resolve full file identities, including managed file symlinks, without
+        # importing legacy grants into runtime policy.
         if not policy.database.is_file() and (
-                policy.database == data / "atlas.sqlite3" or
-                policy.database == validate_policy(read_legacy(policy.home), policy.home, data_dir=data).database):
+                policy.database == (data / "atlas.sqlite3").resolve() or
+                policy.database == validate_policy(
+                    read_legacy(policy.home), policy.home, data_dir=data).database.resolve()):
             raise ConfigError(
                 "legacy store present but selected store is absent or not a regular file; stop writers. "
                 "Do not create an empty replacement. Establish first migration versus converted-profile "
