@@ -388,6 +388,46 @@ def _retained_reinstall(atlas, home, config, storage, policy):
     assert _history(storage, policy) == history
 
 
+def _deliberate_converted_selection(atlas, home, config, storage, retained_binding):
+    """Retained legacy state must not forbid a distinct new store or its owned reset."""
+    original = atlas.ctx.get_config('policy', None)
+    selected = home / 'deliberate-new.sqlite3'
+    binding = home / 'deliberate-link.sqlite3'
+    binding.symlink_to(selected)
+    _replace_policy(atlas, {'store': {'shared_sqlite_path': str(binding)}})
+    _binding_status(atlas, config, storage, home, selected, 0)
+    assert not selected.exists()
+    device = atlas.cli(['create', '--name', 'Deliberately separate inventory'])['device_id']
+    assert {item['id'] for item in atlas.cli(['query'])['devices']} == {device}
+    policy = config.load_policy(atlas.ctx)
+    history = _history(storage, policy)
+    backup_dir = home.parent / 'deliberate-store-backup'
+    backup_dir.mkdir(mode=0o700)
+    backup = _documented_backup(selected, backup_dir)
+    assert _history(storage, replace(policy, database=backup)) == history
+    # Every connection is closed. Reset only this exclusively owned synthetic
+    # target while retaining the explicitly chosen binding and old legacy files.
+    for suffix in ('', '-wal', '-shm', '-journal'):
+        Path(str(selected) + suffix).unlink(missing_ok=True)
+    _binding_status(atlas, config, storage, home, selected, 0)
+    hermes = shutil.which('hermes')
+    assert hermes is not None
+    cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                          input='', capture_output=True, text=True, timeout=45)
+    assert cold.returncode == 0, cold.stdout + cold.stderr
+    status = json.loads(cold.stdout)
+    assert status['known_devices'] == 0 and status['last_collection'] is None
+    assert status['configured_networks'] == status['authorized_for_atlas_ssh_inspection'] == []
+    assert status['database_binding']['database_path'] == str(selected)
+    assert atlas.cli(['query'])['devices'] == [] and not selected.exists()
+    successor = atlas.cli(['create', '--name', 'After deliberate reset'])['device_id']
+    assert successor != device
+    assert {item['id'] for item in atlas.cli(['query'])['devices']} == {successor}
+    assert _history(storage, replace(policy, database=backup)) == history
+    _replace_policy(atlas, original)
+    assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(retained_binding)}}
+
+
 def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
     """Reconversion after native revocation/removal must not silently restore grants."""
     conversion = importlib.import_module(config.__package__ + '.conversion')
@@ -442,6 +482,8 @@ def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
     with patch('subprocess.Popen', side_effect=AssertionError('reinstalled profile attempted collection')):
         assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
         assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
+    _deliberate_converted_selection(atlas, home, config, storage, binding)
+    _binding_status(atlas, config, storage, home, policy.database, 1)
     assert _history(storage, policy) == history
     assert {path: path.read_bytes() for path in policy.exports.iterdir()} == exports
     assert backup.read_bytes() == backup_bytes

@@ -305,13 +305,22 @@ def load_policy(ctx: Settings) -> Policy:
     if not (legacy.exists() or legacy.is_symlink()):
         return policy
     if isinstance(raw, dict) and "shared_sqlite_path" in raw.get("store", {}):
-        # A guessed binding must not bypass the legacy barrier and initialize a
-        # replacement. Existence still cannot attest which inventory was selected.
-        if not policy.database.is_file():
+        from .conversion import read_legacy
+
+        # Conversion retains legacy files. Block guessed recovery destinations,
+        # not a deliberate distinct new store or its intentional empty reset.
+        # Resolve identity without importing legacy grants into runtime policy.
+        if not policy.database.is_file() and (
+                policy.database == data / "atlas.sqlite3" or
+                policy.database == validate_policy(read_legacy(policy.home), policy.home, data_dir=data).database):
             raise ConfigError(
                 "legacy store present but selected store is absent or not a regular file; stop writers. "
                 "Do not create an empty replacement. Establish first migration versus converted-profile "
-                "recovery in docs/operator-guide.md#recover-the-selected-binding; preserve originals and backups")
+                "recovery in docs/operator-guide.md#recover-the-selected-binding; preserve originals and backups. "
+                "Only after independently confirming first migration and that the guessed selected file remains "
+                "absent, preserve native config and clear the policy with the replacing native config CLI as in "
+                "docs/operator-guide.md#clear-an-absent-guessed-binding-before-first-migration, "
+                "then explicitly accept conversion. Never clear a binding to existing data")
         return policy
     destination = ("managed destination exists but does not prove conversion or the intended inventory. "
                    if policy.database.is_file() else

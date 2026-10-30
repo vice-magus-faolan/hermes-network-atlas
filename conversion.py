@@ -26,7 +26,10 @@ class WritableSettings(Settings, Protocol):
 
 
 def read_legacy(home: Path) -> dict:
-    """Bounded legacy parser retained solely for explicit one-time conversion."""
+    """Bounded legacy parser for explicit conversion and recovery-path comparison.
+
+    Runtime comparison may identify a selected path, never adopt legacy grants.
+    """
     path = home / "network-atlas" / "config.yaml"
     try:
         with path.open("rb") as handle:

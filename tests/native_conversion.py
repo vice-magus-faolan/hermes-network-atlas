@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import signal
 import shutil
 import subprocess
@@ -26,30 +27,65 @@ def _history(storage, policy):
 
 def _first_migration_route(cli, ctx, home, destination, storage, policy):
     """A guessed binding must not turn retained legacy inventory into empty success."""
-    native = (home / 'config.yaml').read_bytes()
+    from hermes_constants import profile_name_for_home
+
     history = _history(storage, policy)
     assert not destination.exists()
     refused = cli(['status'], 2)
-    try:
-        ctx.set_config('policy', {'store': {'shared_sqlite_path': str(destination)}})
-        bound = (home / 'config.yaml').read_bytes()
-        for argv in (['status'], ['query'], ['create', '--name', 'Must not mask retained inventory']):
-            result = cli(argv, 2)
-            assert 'selected store is absent' in result['error'], result
-            assert not result['persisted'] and not result['applied']
-        hermes = shutil.which('hermes')
-        assert hermes is not None
-        cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
-                              input='', capture_output=True, text=True, timeout=45)
-        assert cold.returncode == 2, cold.stdout + cold.stderr
-        assert 'selected store is absent' in json.loads(cold.stdout)['error']
-        assert (home / 'config.yaml').read_bytes() == bound
-        assert not destination.exists()
-    finally:
-        (home / 'config.yaml').write_bytes(native)
+    ctx.set_config('policy', {'store': {'shared_sqlite_path': str(destination)}})
+    bound = (home / 'config.yaml').read_bytes()
+    for argv in (['status'], ['query'], ['create', '--name', 'Must not mask retained inventory']):
+        result = cli(argv, 2)
+        assert not result['persisted'] and not result['applied']
+        assert 'selected store is absent' in result['error'], result
+    hermes = shutil.which('hermes')
+    assert hermes is not None
+    cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                          input='', capture_output=True, text=True, timeout=45)
+    assert cold.returncode == 2, cold.stdout + cold.stderr
+    assert 'selected store is absent' in json.loads(cold.stdout)['error']
+    assert (home / 'config.yaml').read_bytes() == bound
+    assert not destination.exists()
+    guide = (Path(__file__).resolve().parents[1] / 'docs' / 'operator-guide.md').read_text()
+    section = guide.split('#### Clear an absent guessed binding', 1)[1]
+    snippet = section.split('```sh\n', 1)[1].split('```', 1)[0]
+    backup = home.parent / 'first-migration-backup'
+    profile = profile_name_for_home(home)
+    assert profile is not None
+    for template, value in (('/absolute/selected/profile-home', home),
+                            ('/absolute/guessed/atlas.sqlite3', destination),
+                            ('/absolute/private/first-migration-backup-UNIQUE', backup)):
+        snippet = snippet.replace(template, shlex.quote(str(value)))
+    # Existing initialized empty inventory is not recovery: the public view lacks
+    # our expected producer IDs/history, and neither clearing nor conversion may clobber it.
+    with storage.Store(replace(policy, database=destination), writable=True):
+        pass
+    empty = destination.read_bytes()
+    assert cli(['query'])['devices'] == [] and cli(['status'])['known_devices'] == 0
+    assert _history(storage, replace(policy, database=destination)) != history
+    blocked = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
+                             env=os.environ.copy(), capture_output=True, text=True, timeout=45)
+    assert blocked.returncode != 0, blocked.stdout + blocked.stderr
+    assert destination.read_bytes() == empty and (home / 'config.yaml').read_bytes() == bound
+    assert not backup.exists()
+    assert not cli(['convert-legacy', '--writers-stopped', '--accept-legacy-policy'], 2)['persisted']
+    assert destination.read_bytes() == empty
+    # Retire only this fixture-created conflicting empty file; this is negative
+    # setup cleanup, not an operator recovery instruction or the positive escape.
+    destination.unlink()
+    cleared = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
+                             env=os.environ.copy(), capture_output=True, text=True, timeout=45)
+    assert cleared.returncode == 0, cleared.stdout + cleared.stderr
+    assert (backup / 'config.yaml').read_bytes() == bound
+    assert (backup / 'config.yaml').stat().st_mode & 0o777 == 0o600
+    assert backup.stat().st_mode & 0o777 == 0o700
+    assert not destination.exists()
     assert 'managed destination is absent' in refused['error'], refused
     assert 'first migration' in refused['error'] and 'deleted' in refused['error']
     assert ctx.get_config('policy', None) == {}
+    assert policy.networks and policy.authorized_aliases
+    assert not cli(['convert-legacy', '--writers-stopped'], 2)['persisted']
+    assert ctx.get_config('policy', None) == {} and not destination.exists()
     assert _history(storage, policy) == history
 
 
