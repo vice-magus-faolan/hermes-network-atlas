@@ -157,7 +157,7 @@ class PersistenceTests(AtlasFixture):
         self.assertEqual(self.store.schema_version, 6)
         for name, columns in (("relation_source_device", ["source_device"]),
                               ("relation_target_device", ["target_device"]),
-                              ("observation_batch", ["batch_id", "subject_kind", "subject_anchor", "entity_id"])):
+                              ("observation_batch", ["batch_id", "entity_id"])):
             self.assertEqual([row["name"] for row in self.store.connection.execute(f"PRAGMA index_info({name})")],
                              columns)
         before = list(self.store.connection.iterdump())

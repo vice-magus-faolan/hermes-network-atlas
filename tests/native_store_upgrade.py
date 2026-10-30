@@ -110,7 +110,7 @@ def assert_relation_indexes(storage, policy):
     with storage.Store(policy) as store:
         for name, columns in (('relation_source_device', ['source_device']),
                               ('relation_target_device', ['target_device']),
-                              ('observation_batch', ['batch_id', 'subject_kind', 'subject_anchor', 'entity_id'])):
+                              ('observation_batch', ['batch_id', 'entity_id'])):
             assert [row['name'] for row in store.connection.execute(f'PRAGMA index_info({name})')] == columns
 
 
