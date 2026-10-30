@@ -380,7 +380,10 @@ def relation_condition(snapshot: TopologySnapshot, device: str | None = None) ->
         rows = snapshot.by_device.get(device, [])
     accepted = [row["id"] for row in rows]
     marks = ",".join("?" for _ in accepted) or "NULL"
-    return ("(r.observation_id NOT IN (SELECT id FROM observations WHERE evidence_kind='configured_route') "
+    # Correlate by the observation PK: enumerating every configured-route ID
+    # would make even an isolated device query scan unrelated stored history.
+    return ("(NOT EXISTS (SELECT 1 FROM observations origin WHERE origin.id=r.observation_id "
+            "AND origin.evidence_kind='configured_route') "
             f"OR {ASSERTED_RELATION} OR r.id IN ({marks}))", accepted)
 
 

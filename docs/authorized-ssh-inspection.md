@@ -295,6 +295,13 @@ Unrelated operator relationships do not consume route-evidence bounds; manual
 assertions remain visible in details, filters, status and maps. Queries selecting
 `device_id` check only collector edges incident to that device, at either endpoint;
 unrelated collector volume cannot exhaust that detail query's evidence bound.
+After the explicit schema-5 upgrade, both incident endpoint lookups use indexes;
+native assertions and isolated devices avoid scanning unrelated relationships or
+enumerating all configured-route observation IDs. This is not a constant-time
+whole-query guarantee: incident derived edges still validate their original batch
+and current identity support. Those batch, alias, interface and observation reads
+can depend on retained evidence elsewhere in the store. Older readable stores
+retain the same results but lack these relationship indexes until upgraded.
 Global inventory, relationship filters without `device_id`, status and maps still
 refuse when current collector candidates exceed `limits.observations`; pagination
 does not bypass that global evidence bound. Per-device detail and map byte/device

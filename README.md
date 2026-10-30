@@ -171,7 +171,7 @@ matching local policy (the quick start enables only passive discovery).
 - UDP sends one empty unicast datagram per selected tuple; local send success or
   silence is inconclusive. No QUIC or broadcast/multicast discovery is performed.
 - Keep policy, SQLite, WAL, exports and credentials private; use a consistent SQLite
-  backup before upgrades. Existing schema 1..3 stores stay readable; ordinary writes
+  backup before upgrades. Existing schema 1..4 stores stay readable; ordinary writes
   refuse until an operator deliberately runs
   [upgrade-store](docs/endpoint-checks.md#sharing-and-upgrades) with writers stopped.
   See the runbook for recovery without deleting history.

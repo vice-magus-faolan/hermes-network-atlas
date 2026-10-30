@@ -18,7 +18,8 @@ from synthetic_sockets import SyntheticSockets
 def history(storage, policy):
     with storage.Store(policy) as store:
         return {table: [list(row) for row in store.connection.execute(f'SELECT * FROM {table} ORDER BY rowid')]
-                for table in (*storage.IMMUTABLE_TABLES, 'endpoint_observations', 'endpoint_continuations')}
+                for table in (*storage.IMMUTABLE_TABLES, 'endpoint_observations', 'endpoint_continuations',
+                              'devices', 'interfaces', 'addresses', 'relations', 'aliases')}
 
 
 def schema(storage, policy):
@@ -88,6 +89,26 @@ def pause_and_udp(atlas, config, schedule, transport, capability, endpoints):
     assert {p['diagnostic_code'] for p in latest['probes']} == {'udp_nonempty_reply_inconclusive'}
 
 
+def prepare_upgrade(atlas, storage, policy, transport, schedule, capability, endpoints, version):
+    """Produce a populated old schema and prove pre-effect upgrade refusal."""
+    migration = '_migrate_endpoint_protocols' if version == 3 else '_migrate_relation_indexes'
+    with patch.object(storage, 'SCHEMA_VERSION', version), patch.object(storage, migration, return_value=None):
+        source = atlas.cli(['create', '--name', 'Historical source'])['device_id']
+        target = atlas.cli(['create', '--name', 'Historical target'])['device_id']
+        atlas.update(source, 'relationship', {'target_device': target, 'relationship_type': 'hosted_on'})
+        old, _ = collect(atlas, schedule, transport, capability, endpoints)
+    before, ddl = refuse_old(atlas, storage, policy, transport)
+    assert ddl[0] == version
+    assert not any(row[1] in {'relation_source_device', 'relation_target_device'} for row in ddl[1])
+    return old, before, ddl
+
+
+def assert_relation_indexes(storage, policy):
+    with storage.Store(policy) as store:
+        for name, column in (('relation_source_device', 'source_device'), ('relation_target_device', 'target_device')):
+            assert [row['name'] for row in store.connection.execute(f'PRAGMA index_info({name})')] == [column]
+
+
 def main():
     root, mode = Path(sys.argv[1]), sys.argv[2]
     home, scratch = Path(os.environ['HERMES_HOME']), Path(os.environ['TMPDIR'])
@@ -105,14 +126,9 @@ def main():
     atlas.ctx.set_config('policy', raw)
     policy = config.load_policy(atlas.ctx)
     saved = scratch / 'upgrade.json'
-    if mode == 'store_upgrade':
-        # Emit authentic schema3 TCP rows using the prior writer boundary.
-        with patch.object(storage, 'SCHEMA_VERSION', 3), \
-                patch.object(storage, '_migrate_endpoint_protocols', return_value=None):
-            atlas.cli(['create', '--name', 'Historical device'])
-            old, _ = collect(atlas, schedule, transport, capability, endpoints)
-        before, ddl = refuse_old(atlas, storage, policy, transport)
-        assert ddl[0] == 3
+    if mode in {'store_upgrade', 'store_upgrade_indexes'}:
+        version = 3 if mode == 'store_upgrade' else 4
+        old, before, ddl = prepare_upgrade(atlas, storage, policy, transport, schedule, capability, endpoints, version)
         # Legacy conversion copies exact old bytes/logical schema; it never
         # silently upgrades the source OR the copied destination on cold retry.
         copied = scratch / 'legacy-copy.sqlite3'
@@ -121,22 +137,23 @@ def main():
         from dataclasses import replace
         assert history(storage, replace(policy, database=copied)) == before
         assert schema(storage, replace(policy, database=copied)) == ddl
-        migrate = storage._migrate_endpoint_protocols
+        migrate = storage._migrate_relation_indexes
         def interrupted(connection):
             migrate(connection)
-            raise sqlite3.OperationalError('synthetic interruption after schema replacement')
-        with patch.object(storage, '_migrate_endpoint_protocols', interrupted):
+            raise sqlite3.OperationalError('synthetic interruption after index creation')
+        with patch.object(storage, '_migrate_relation_indexes', interrupted):
             failed = atlas.cli(['upgrade-store', '--writers-stopped'], expected_code=2)
         assert not failed['persisted'] and schema(storage, policy) == ddl
         assert history(storage, policy) == before
         saved.write_text(json.dumps({'history': before, 'schema': ddl, 'old_batch': old['batch_id']}))
-    elif mode == 'store_upgrade_reopen':
+    elif mode in {'store_upgrade_reopen', 'store_upgrade_indexes_reopen'}:
         data = json.loads(saved.read_text())
         assert history(storage, policy) == data['history']
         assert list(schema(storage, policy)) == data['schema']
         upgraded = atlas.cli(['upgrade-store', '--writers-stopped'])
-        assert upgraded == {'upgraded': True, 'schema_version': 4, 'collection_performed': False}
-        assert schema(storage, policy)[0] == 4
+        assert upgraded == {'upgraded': True, 'schema_version': 5, 'collection_performed': False}
+        assert schema(storage, policy)[0] == 5
+        assert_relation_indexes(storage, policy)
         assert history(storage, policy) == data['history']
         ddl = schema(storage, policy)
         assert atlas.cli(['upgrade-store', '--writers-stopped']) == upgraded
@@ -144,7 +161,7 @@ def main():
         old = atlas.tool('network_query', {'view': 'endpoints', 'batch_id': data['old_batch']})
         assert old['total_count'] == 2 and all(r['protocol'] == 'tcp' for r in old['endpoints'])
         atlas.cli(['create', '--name', 'Current writer'])
-        assert len(atlas.cli(['query'])['devices']) == 2
+        assert len(atlas.cli(['query'])['devices']) == 3
         pause_and_udp(atlas, config, schedule, transport, capability, endpoints)
     else:
         raise ValueError('unknown fixture mode')
