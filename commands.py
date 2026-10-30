@@ -27,7 +27,8 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     commands = parser.add_subparsers(dest="atlas_action", required=True)
     commands.add_parser("status", allow_abbrev=False)
     conversion = commands.add_parser("convert-legacy", allow_abbrev=False,
-                                     help="Explicit one-time conversion; stop all Atlas writers first")
+                                     help="Deliberate first legacy migration, not converted-profile recovery; "
+                                          "stop all Atlas writers first")
     conversion.add_argument("--writers-stopped", required=True, action="store_true")
     conversion.add_argument("--accept-legacy-policy", action="store_true",
                             help="Accept all legacy settings, which may restore revoked collection grants; "

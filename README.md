@@ -23,14 +23,24 @@ git ls-remote https://github.com/vice-magus-faolan/hermes-network-atlas.git refs
 hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
 ```
 
-If the profile retains Atlas data after removal, **before enabling** follow
-[retained-data recovery](docs/operator-guide.md#re-enable-or-reinstall-with-retained-data)
-to restore only its database binding and verify no collection grants. Do not
-reconvert or restore an old full-grant config: that can resurrect revoked grants.
-Conversion refuses policy import without explicit acceptance of the legacy settings;
-that acceptance is not binding-only recovery. A deliberate empty reset is a separate
+Before enabling, distinguish these cases:
+
+- **Never converted legacy policy/storage:** follow the deliberate
+  [first migration](docs/operator-guide.md#convert-legacy-policy-and-storage),
+  including private policy inspection and explicit acceptance. Do not bind a new
+  empty managed store in place of the retained legacy inventory.
+- **Already converted, with retained data after removal:** follow
+  [retained-data recovery](docs/operator-guide.md#re-enable-or-reinstall-with-retained-data)
+  only after verifying the actual selected database exists and contains the expected
+  IDs/history. Restore only its binding and verify no collection grants. Do not
+  reconvert or restore an old full-grant config: that can resurrect revoked grants.
+- **Uncertain history or missing selected data:** stop and inspect private
+  records/backups. A missing file/binding does not prove first use, and a successful
+  zero-device status does not prove recovery. Do not initialize a replacement.
+
+A deliberate empty reset is a separate
 [procedure](docs/operator-guide.md#intentional-clean-reset-and-readback).
-For a first installation, continue with:
+For a genuinely new installation with no retained history, continue with:
 
 ```sh
 hermes -p PROFILE plugins enable network-atlas

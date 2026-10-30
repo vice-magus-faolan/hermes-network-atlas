@@ -10,7 +10,9 @@ As of 2026-10-26, CI targets Hermes v0.21.7 (oldest tested stable release) and
 v0.22.5 (latest stable release checked that date) on Linux x86_64 and arm64.
 There is no Hermes upper bound, following its additive plugin contract;
 other releases are not individually verified.
-The plugin declares `ruamel.yaml>=0.18.16,<0.19` for explicit legacy conversion only.
+The plugin declares `ruamel.yaml>=0.18.16,<0.19` for bounded legacy-policy parsing
+during explicit conversion and recovery-path comparison; legacy grants are never
+a runtime policy fallback.
 
 Replace PROFILE with an existing profile's name (`default` for the default
 profile), COMMIT_SHA with an immutable 40-character Atlas commit, and uppercase
@@ -24,11 +26,16 @@ git ls-remote https://github.com/vice-magus-faolan/hermes-network-atlas.git refs
 hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-network-atlas.git --ref COMMIT_SHA --no-enable
 ```
 
-If this profile retains Atlas data after removal, **before enabling** follow
+Before enabling, identify the profile's history. A **never-converted legacy**
+profile needs deliberate [first migration](#convert-legacy-policy-and-storage),
+not binding-only recovery to a new empty managed store. An **already-converted**
+profile retaining data after removal uses
 [Re-enable or reinstall with retained data](#re-enable-or-reinstall-with-retained-data)
-to restore only its database binding. Do not accept legacy policy import or restore
-an old full-grant config: either can reintroduce revoked collection grants.
-For a first installation, continue with:
+only after verifying the actual selected retained database and expected IDs/history.
+Restore only its binding, not legacy policy or an old full-grant config, which can
+reintroduce revoked collection grants. If history is uncertain or the selected data
+is missing, stop and inspect private records/backups; do not initialize a replacement.
+For a genuinely new installation with no retained history, continue with:
 
 ```sh
 hermes -p PROFILE plugins enable network-atlas
@@ -249,10 +256,12 @@ populated history between owners is not provided by this clone procedure.
 
 ### Convert legacy policy and storage
 
-Use this procedure for the **first migration**, not recovery after stop, removal
-or reinstall. If conversion already occurred, or that history is uncertain, keep
-workers stopped and follow
-[retained-data recovery](#re-enable-or-reinstall-with-retained-data) instead.
+Use this procedure for an independently confirmed **first migration**, including
+a never-converted profile being reinstalled, not recovery of an already-converted
+profile after stop, removal or reinstall. If conversion already occurred, keep
+workers stopped and follow [retained-data recovery](#re-enable-or-reinstall-with-retained-data)
+with its verified existing selected store. If that history is uncertain, stop and
+inspect private records/backups before choosing either route.
 A missing binding does not establish first use: retained legacy settings may
 contain revoked grants. Conversion refuses before copying a database or writing
 settings unless you pass `--accept-legacy-policy` or native policy already equals
@@ -264,8 +273,14 @@ first migration from lost settings or an interrupted settings commit.
 
 Upgrading source does not move data. If `network-atlas/atlas.sqlite3` exists and
 no native store binding was chosen, normal actions refuse with missing-binding guidance
-instead of silently showing a new empty inventory. Legacy `network-atlas/config.yaml`
-is read only by the explicit converter (bounded to 64 KiB); it is never a runtime fallback.
+instead of silently showing a new empty inventory. An absent explicit selection also
+refuses when it resolves to the native managed conversion destination or the legacy
+policy's selected shared store. Deliberately choosing a distinct new store remains
+supported; that selects empty history, not recovery. A missing managed destination
+can mean either first migration or deleted converted data; an existing destination
+can be an unrelated empty store or an interrupted copy. Neither proves conversion
+history. Legacy `network-atlas/config.yaml` is bounded to 64 KiB; normal actions may
+inspect its selected path for this refusal, but never use its grants as runtime policy.
 
 1. Stop every Atlas writer, including sessions/gateways using the old version and
    other profiles writing the same store. Keep writers stopped and do not edit
@@ -273,10 +288,15 @@ is read only by the explicit converter (bounded to 64 KiB); it is never a runtim
    private SQLite backup using your existing backup procedure, including WAL data.
 2. Install the reviewed new revision without starting collection. Privately inspect
    the complete legacy `network-atlas/config.yaml` (if present) and confirm every
-   setting and grant remains intended. Only for this deliberate first migration,
-   explicitly accept that policy in a fresh CLI:
+   setting and grant remains intended. If installed with `--no-enable`, enable
+   the plugin selection to expose its converter, keeping workers stopped. This
+   does not migrate data or start collection; normal actions still refuse an
+   unbound retained legacy store. Enable's dependency resync may need network.
+   If you already guessed a binding, first follow the guarded clearing step below.
+   Only for this deliberate first migration, explicitly accept that policy in a fresh CLI:
 
    ```sh
+   hermes -p PROFILE plugins enable network-atlas
    hermes -p PROFILE network-atlas convert-legacy --writers-stopped --accept-legacy-policy
    hermes -p PROFILE network-atlas status
    hermes -p PROFILE network-atlas query --query-json '{"limit":10}'
@@ -289,6 +309,48 @@ is read only by the explicit converter (bounded to 64 KiB); it is never a runtim
    new database explicitly. Exports keep their original profile-local location.
    An explicit `store.shared_sqlite_path` stays in place, even when it names a
    legacy location: this converts policy only, never makes private shared-store copies.
+
+#### Clear an absent guessed binding before first migration
+
+Use this only after independently establishing that conversion never occurred,
+with all writers stopped and the complete legacy policy still intended. Privately
+record the current native policy and its exact guessed `store.shared_sqlite_path`
+as ATLAS_BINDING, resolving directory/file links and checking mounts. A missing file
+alone cannot establish first migration. If the selected file exists, or the binding
+is a dangling link, stop and preserve both stores/configurations instead; do not clear
+the binding, overwrite/merge data, or delete an empty store to force conversion.
+
+Set ATLAS_HOME to the selected profile home and BACKUP to a new private directory.
+This preserves the original native config, then uses the native replacing CLI,
+not the merging settings writer, to remove the guessed binding and all native grants:
+
+```sh
+ATLAS_HOME=/absolute/selected/profile-home
+ATLAS_BINDING=/absolute/guessed/atlas.sqlite3
+BACKUP=/absolute/private/first-migration-backup-UNIQUE
+umask 077
+test ! -e "$ATLAS_BINDING" &&
+test ! -L "$ATLAS_BINDING" &&
+mkdir "$BACKUP" &&
+cp "$ATLAS_HOME/config.yaml" "$BACKUP/config.yaml" &&
+test ! -e "$ATLAS_BINDING" &&
+test ! -L "$ATLAS_BINDING" &&
+hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy '{}' &&
+hermes -p PROFILE config get plugins.entries.network-atlas.settings.policy
+```
+
+Require exactly `{}` in the readback; it is not acceptance of the legacy grants.
+Continue with the explicit `convert-legacy --writers-stopped --accept-legacy-policy`
+command above in a fresh process. The converter still refuses conflicting settings
+or divergent existing stores and retains originals. Do not restore the full saved
+native config as a shortcut; preserve it for private comparison/recovery.
+
+An earlier revision may already have initialized an empty guessed store. Compare
+its stable IDs, saved batches and complete history read-only with the expected
+legacy inventory or verified backup. Successful zero-device status with missing
+expected history identifies a mismatch, not recovery or proof of no prior conversion.
+Preserve both stores and configurations for operator recovery; the clearing step
+does not apply to an existing file, and conversion must not overwrite it.
 
 Conversion preserves the source and destination schema versions; it is not a
 schema upgrade. If the selected converted store is schema 1..5, keep writers
@@ -665,6 +727,11 @@ authorizes stopping another user's processes or deleting a shared store.
 
 Use the privately recorded binding or inspect the saved native config without
 restoring it; a saved native selection takes precedence over legacy inputs.
+First establish whether this profile was already converted. For a confirmed
+never-converted legacy profile, use [first migration](#convert-legacy-policy-and-storage)
+instead; binding-only recovery does not copy its legacy inventory. If history is
+uncertain, stop and inspect private records/backups. An absent managed file is not
+proof of first use: a converted store may have been deleted or its disk unmounted.
 Keep the accepted configuration spelling (ATLAS_BINDING) distinct from the
 resolved database target (ATLAS_DB). Missing handwritten notes alone need not block
 recovery of a converted profile: if the legacy inputs are unchanged, conversion's selection is
@@ -681,7 +748,18 @@ including any directory symlinks, then append `atlas.sqlite3` for ATLAS_BINDING.
 Resolve that full path for ATLAS_DB as well. That is the managed
 conversion destination, not the retained legacy `network-atlas/atlas.sqlite3`.
 
-This derives the path only; do not execute conversion or import legacy grants.
+This derives a candidate path only, not proof of conversion or retained inventory.
+**Before replacing policy or enabling**, require that ATLAS_BINDING resolves to
+the established ATLAS_DB and that ATLAS_DB is an existing regular SQLite file.
+Inspect it read-only using your existing private SQLite/backup procedure and
+compare expected stable device IDs, saved batches and history with private records
+or a verified backup. A directory, dangling symlink, zero-byte file or unrelated
+healthy empty database is not recovered inventory. File existence or SQLite
+integrity alone is insufficient. Do not create a database to make this check pass.
+If the file is absent/deleted or the expected history cannot be established, keep
+workers stopped and preserve originals/backups for operator recovery; do not bind
+a new default, replay conversion as repair, or declare healthy zero-device status
+to be success. Do not execute conversion or import legacy grants.
 If the legacy inputs, symlinks or later native store selection changed, establish
 the actual selected binding from saved native config/backup or other private
 records instead. Stop if it remains uncertain; do not guess a new store or move
@@ -774,6 +852,12 @@ old loaded session or in-flight operation has stopped. No live restart is implie
 
 ### Re-enable or reinstall with retained data
 
+This is for an **already-converted** profile, not every profile with retained
+Atlas files. A confirmed never-converted legacy profile follows
+[first migration](#convert-legacy-policy-and-storage), even after reinstall.
+Uncertain conversion history or missing/deleted selected data requires private
+records/backup inspection, not a new empty binding.
+
 Keep workers stopped and retain the selected/shared database, legacy files,
 exports and private backups. If disabled but still installed, no reinstall is
 needed. If removed, first install the reviewed revision **without enabling**:
@@ -783,11 +867,17 @@ hermes -p PROFILE plugins install https://github.com/vice-magus-faolan/hermes-ne
 ```
 
 Removal forgot the binding. **Before enabling**, establish ATLAS_BINDING and ATLAS_DB using
-[Recover the selected binding](#recover-the-selected-binding), then replace the
-complete policy with only that binding, even if the new entry looks empty:
+[Recover the selected binding](#recover-the-selected-binding), including the
+read-only expected-history check on the actual existing file. Only then replace
+the complete policy with that binding, even if the new entry looks empty. The
+file check below prevents an absent destination from becoming a replacement;
+it does not replace the expected-history check:
 
 ```sh
 ATLAS_BINDING=/absolute/configured/atlas.sqlite3
+ATLAS_DB=/absolute/selected/database-file
+test -f "$ATLAS_DB" &&
+test "$ATLAS_BINDING" -ef "$ATLAS_DB" &&
 hermes -p PROFILE config set plugins.entries.network-atlas.settings.policy \
   "$(python3 -c 'import json, sys; print(json.dumps({"store": {"shared_sqlite_path": sys.argv[1]}}))' "$ATLAS_BINDING")" &&
 hermes -p PROFILE config get plugins.entries.network-atlas.settings.policy
@@ -808,11 +898,14 @@ processes:
 ```sh
 hermes -p PROFILE plugins enable network-atlas
 hermes -p PROFILE network-atlas status
+hermes -p PROFILE network-atlas query --query-json '{"limit":10}'
 ```
 
 Require the intended `database_binding` and empty `configured_networks` and
-`authorized_for_atlas_ssh_inspection` before starting workers. Retained history
-should still be readable; zero inventory is not required. These config commands
+`authorized_for_atlas_ssh_inspection` before starting workers. Require the expected
+retained IDs/history through query (paginate as needed), not merely successful
+status or zero inventory. A mismatch means stop and preserve both stores, not
+create new inventory or reconvert to force a match. These config commands
 work offline, but installation and enable's dependency resync may need network.
 
 ### Intentional clean reset and readback
