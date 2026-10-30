@@ -329,6 +329,8 @@ Store schema 2 adds the endpoint projection; schema 3 adds immutable continuatio
 reservations; schema 4 widens endpoint projection constraints to TCP/UDP; schema 5
 indexes both relationship device endpoints without changing rows. Ordinary
 writable opens refuse schema 1..4; new empty stores initialize at schema 5.
+Schema 5 deliberately makes these additive indexes an explicit transactional
+operator upgrade rather than silent DDL during an ordinary schema-4 open.
 Reads do not migrate, and collection checks the schema before network effects.
 Only the deliberate local operator command upgrades an existing selected store:
 
