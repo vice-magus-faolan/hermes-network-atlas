@@ -302,11 +302,36 @@ def load_policy(ctx: Settings) -> Policy:
     data = plugin_data_dir("network-atlas").resolve()
     policy = validate_policy(raw, get_hermes_home(), data_dir=data)
     legacy = policy.home / "network-atlas" / "atlas.sqlite3"
-    if isinstance(raw, dict) and "shared_sqlite_path" not in raw.get("store", {}) and legacy.exists():
-        raise ConfigError(
-            "legacy store present without a native store binding; stop writers. "
-            "Conversion may restore revoked collection grants. For previously converted or uncertain history, "
-            "use binding-only recovery in docs/operator-guide.md#recover-the-selected-binding; "
-            "only a genuine first migration should follow "
-            "docs/operator-guide.md#convert-legacy-policy-and-storage")
-    return policy
+    if not (legacy.exists() or legacy.is_symlink()):
+        return policy
+    if isinstance(raw, dict) and "shared_sqlite_path" in raw.get("store", {}):
+        from .conversion import read_legacy
+
+        # Conversion retains legacy files. Block guessed recovery destinations,
+        # not a deliberate distinct new store or its intentional empty reset.
+        # Resolve full file identities, including managed file symlinks, without
+        # importing legacy grants into runtime policy.
+        if not policy.database.is_file() and (
+                policy.database == (data / "atlas.sqlite3").resolve() or
+                policy.database == validate_policy(
+                    read_legacy(policy.home), policy.home, data_dir=data).database.resolve()):
+            raise ConfigError(
+                "legacy store present but selected store is absent or not a regular file; stop writers. "
+                "Do not create an empty replacement. Establish first migration versus converted-profile "
+                "recovery in docs/operator-guide.md#recover-the-selected-binding; preserve originals and backups. "
+                "Only after independently confirming first migration and that the guessed selected file remains "
+                "absent, preserve native config and clear the policy with the replacing native config CLI as in "
+                "docs/operator-guide.md#clear-an-absent-guessed-binding-before-first-migration, "
+                "then explicitly accept conversion. Never clear a binding to existing data")
+        return policy
+    destination = ("managed destination exists but does not prove conversion or the intended inventory. "
+                   if policy.database.is_file() else
+                   "managed destination is absent; this can mean first migration or deleted converted data. ")
+    raise ConfigError(
+        "legacy store present without a native store binding; stop writers. " + destination +
+        "Only an independently confirmed first migration should follow "
+        "docs/operator-guide.md#convert-legacy-policy-and-storage. For an already-converted profile, "
+        "use binding-only recovery only after verifying the actual retained store and expected history in "
+        "docs/operator-guide.md#recover-the-selected-binding. If history is uncertain or data is missing, "
+        "stop and inspect private records/backups; do not select an empty replacement. "
+        "Conversion may restore revoked collection grants")

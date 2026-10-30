@@ -299,7 +299,7 @@ def _retained_reinstall(atlas, home, config, storage, policy):
     raw = conversion.read_legacy(home)
     data = plugin_data_dir('network-atlas').resolve()
     recovered = config.validate_policy(raw, home, data_dir=data)
-    assert recovered.database == policy.database
+    assert recovered.database.resolve() == policy.database
     binding = Path(raw.get('store', {}).get('shared_sqlite_path', str(data / 'atlas.sqlite3')))
     assert binding.suffix == '.sqlite3' and binding.resolve() == policy.database
     hermes = shutil.which('hermes')
@@ -325,6 +325,57 @@ def _retained_reinstall(atlas, home, config, storage, policy):
     section = guide.split('### Re-enable or reinstall with retained data', 1)[1].split('### ', 1)[0]
     snippet = section.split('```sh\n')[2].split('```', 1)[0]
     snippet = snippet.replace('/absolute/configured/atlas.sqlite3', shlex.quote(str(binding)))
+    snippet = snippet.replace('/absolute/selected/database-file', shlex.quote(str(policy.database)))
+    # A derived path is not retained data. Losing the actual selected file must
+    # refuse both the documented replacement and a mistakenly pre-bound runtime.
+    history = _history(storage, policy)
+    retained = home.parent / 'retained-reinstall-inventory.sqlite3'
+    policy.database.rename(retained)
+    try:
+        missing = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
+                                 env=os.environ.copy(), capture_output=True, text=True, timeout=90)
+        assert missing.returncode != 0, missing.stdout + missing.stderr
+        assert (home / 'config.yaml').read_bytes() == native
+        cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                              input='', capture_output=True, text=True, timeout=45)
+        assert cold.returncode == 2, cold.stdout + cold.stderr
+        unbound = json.loads(cold.stdout)
+        assert 'deleted converted data' in unbound['error']
+        assert 'uncertain' in unbound['error']
+        _replace_policy(atlas, {'store': {'shared_sqlite_path': str(binding)}})
+        with patch.object(
+                storage, '_prepare_file', side_effect=AssertionError('replacement store attempted')) as prepare:
+            for result in (atlas.cli(['status'], expected_code=2), atlas.tool('network_query', {}),
+                           atlas.slash('status'), atlas.cli(['create', '--name', 'Not recovery'], expected_code=2)):
+                assert not result['applied']
+                assert 'selected store is absent' in result['error'], result
+            prepare.assert_not_called()
+        cold = subprocess.run([hermes, 'network-atlas', 'query'], cwd=home.parent, env=os.environ.copy(),
+                              input='', capture_output=True, text=True, timeout=45)
+        assert cold.returncode == 2, cold.stdout + cold.stderr
+        refused = json.loads(cold.stdout)
+        assert not refused['applied'] and not refused['persisted']
+        assert 'selected store is absent' in refused['error']
+        assert not policy.database.exists()
+    finally:
+        retained.rename(policy.database)
+        (home / 'config.yaml').write_bytes(native)
+    assert _history(storage, policy) == history
+    # Existing candidates still require inventory verification, not an inference
+    # that a managed filename proves conversion. A mismatched target cannot bind.
+    unbound = atlas.cli(['status'], expected_code=2)
+    assert 'uncertain' in unbound['error']
+    unrelated = home.parent / 'unrelated.sqlite3'
+    with storage.Store(replace(policy, database=unrelated), writable=True):
+        pass
+    unrelated_bytes = unrelated.read_bytes()
+    wrong = snippet.replace('ATLAS_DB=' + shlex.quote(str(policy.database)),
+                            'ATLAS_DB=' + shlex.quote(str(unrelated)))
+    mismatched = subprocess.run(['sh', '-ec', wrong.replace('PROFILE', profile)], cwd=home.parent,
+                               env=os.environ.copy(), capture_output=True, text=True, timeout=90)
+    assert mismatched.returncode != 0, mismatched.stdout + mismatched.stderr
+    assert (home / 'config.yaml').read_bytes() == native
+    assert unrelated.read_bytes() == unrelated_bytes
     restored = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
                               env=os.environ.copy(), capture_output=True, text=True, timeout=90)
     assert restored.returncode == 0, restored.stdout + restored.stderr
@@ -337,10 +388,58 @@ def _retained_reinstall(atlas, home, config, storage, policy):
     assert status['database_binding']['database_path'] == str(policy.database)
     assert status['configured_networks'] == status['authorized_for_atlas_ssh_inspection'] == []
     assert status['known_devices'] == 1
+    cold = subprocess.run([hermes, 'network-atlas', 'query'], cwd=home.parent, env=os.environ.copy(),
+                          input='', capture_output=True, text=True, timeout=45)
+    assert cold.returncode == 0, cold.stdout + cold.stderr
+    assert {item['id'] for item in json.loads(cold.stdout)['devices']} == {
+        item['id'] for item in atlas.cli(['query'])['devices']}
+    assert _history(storage, policy) == history
 
 
-def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
+def _deliberate_converted_selection(atlas, home, config, storage, retained_binding):
+    """Retained legacy state must not forbid a distinct new store or its owned reset."""
+    original = atlas.ctx.get_config('policy', None)
+    selected = home / 'deliberate-new.sqlite3'
+    binding = home / 'deliberate-link.sqlite3'
+    binding.symlink_to(selected)
+    _replace_policy(atlas, {'store': {'shared_sqlite_path': str(binding)}})
+    _binding_status(atlas, config, storage, home, selected, 0)
+    assert not selected.exists()
+    device = atlas.cli(['create', '--name', 'Deliberately separate inventory'])['device_id']
+    assert {item['id'] for item in atlas.cli(['query'])['devices']} == {device}
+    policy = config.load_policy(atlas.ctx)
+    history = _history(storage, policy)
+    backup_dir = home.parent / 'deliberate-store-backup'
+    backup_dir.mkdir(mode=0o700)
+    backup = _documented_backup(selected, backup_dir)
+    assert _history(storage, replace(policy, database=backup)) == history
+    # Every connection is closed. Reset only this exclusively owned synthetic
+    # target while retaining the explicitly chosen binding and old legacy files.
+    for suffix in ('', '-wal', '-shm', '-journal'):
+        Path(str(selected) + suffix).unlink(missing_ok=True)
+    _binding_status(atlas, config, storage, home, selected, 0)
+    hermes = shutil.which('hermes')
+    assert hermes is not None
+    cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                          input='', capture_output=True, text=True, timeout=45)
+    assert cold.returncode == 0, cold.stdout + cold.stderr
+    status = json.loads(cold.stdout)
+    assert status['known_devices'] == 0 and status['last_collection'] is None
+    assert status['configured_networks'] == status['authorized_for_atlas_ssh_inspection'] == []
+    assert status['database_binding']['database_path'] == str(selected)
+    assert atlas.cli(['query'])['devices'] == [] and not selected.exists()
+    successor = atlas.cli(['create', '--name', 'After deliberate reset'])['device_id']
+    assert successor != device
+    assert {item['id'] for item in atlas.cli(['query'])['devices']} == {successor}
+    assert _history(storage, replace(policy, database=backup)) == history
+    _replace_policy(atlas, original)
+    assert atlas.ctx.get_config('policy', None) == {'store': {'shared_sqlite_path': str(retained_binding)}}
+
+
+def _converted_stop(atlas, home, config, storage, batches, *, shared_binding, managed_file_link=False):
     """Reconversion after native revocation/removal must not silently restore grants."""
+    from plugins.plugin_storage import plugin_data_dir
+
     conversion = importlib.import_module(config.__package__ + '.conversion')
     core = importlib.import_module(config.__package__ + '.core')
     raw = conversion.read_legacy(home)
@@ -355,15 +454,26 @@ def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
     with storage.Store(legacy, writable=True) as store:
         core.create_device(store, 'Converted stop inventory')
     _pending_batch(storage, batches, legacy)
+    managed = plugin_data_dir('network-atlas').resolve() / 'atlas.sqlite3'
+    if managed_file_link:
+        # Conversion accepts a pre-existing managed file link when its actual
+        # target already contains the identical legacy history.
+        managed.symlink_to(home.parent / 'managed-inventory.db')
+        with (closing(sqlite3.connect(legacy.database)) as source,
+              closing(sqlite3.connect(managed.resolve())) as destination):
+            source.backup(destination)
     if 'shared_sqlite_path' in raw.get('store', {}):
         shared = config.validate_policy(raw, home)
         assert shared.database.suffix == '.db'
         with (closing(sqlite3.connect(legacy.database)) as source,
               closing(sqlite3.connect(shared.database)) as destination):
             source.backup(destination)
-    assert atlas.cli(['convert-legacy', '--writers-stopped', '--accept-legacy-policy'])['converted']
+    converted = atlas.cli(['convert-legacy', '--writers-stopped', '--accept-legacy-policy'])
+    assert converted['converted']
+    if managed_file_link:
+        assert not converted['copied'] and managed.is_symlink()
     policy = config.load_policy(atlas.ctx)
-    binding = Path(raw.get('store', {}).get('shared_sqlite_path', str(policy.database)))
+    binding = Path(atlas.ctx.get_config('policy')['store']['shared_sqlite_path'])
     assert binding.suffix == '.sqlite3' and binding.resolve() == policy.database
     atlas.cli(['map', '--format', 'markdown', '--export'])
     exports = {path: path.read_bytes() for path in policy.exports.iterdir()}
@@ -393,6 +503,8 @@ def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):
     with patch('subprocess.Popen', side_effect=AssertionError('reinstalled profile attempted collection')):
         assert 'error' in atlas.tool('network_discover', {'network': 'lab', 'mode': 'passive'})
         assert 'error' in atlas.tool('network_inspect', {'target': 'lab-router'})
+    _deliberate_converted_selection(atlas, home, config, storage, binding)
+    _binding_status(atlas, config, storage, home, policy.database, 1)
     assert _history(storage, policy) == history
     assert {path: path.read_bytes() for path in policy.exports.iterdir()} == exports
     assert backup.read_bytes() == backup_bytes
@@ -525,8 +637,9 @@ def main():
             receipt = _clone_binding(atlas, home, config, storage, batches)
         elif mode in {'native_reset', 'native_reset_custom'}:
             receipt = _reset_walkthrough(atlas, home, config, storage, batches, custom=mode == 'native_reset_custom')
-        elif mode in {'native_stop_converted', 'native_stop_converted_shared'}:
-            receipt = _converted_stop(atlas, home, config, storage, batches, shared_binding=mode.endswith('_shared'))
+        elif mode in {'native_stop_converted', 'native_stop_converted_shared', 'native_stop_converted_file_link'}:
+            receipt = _converted_stop(atlas, home, config, storage, batches, shared_binding=mode.endswith('_shared'),
+                                      managed_file_link=mode.endswith('_file_link'))
         else:
             assert mode == 'native_privacy'
             receipt = _privacy(atlas, home, config, storage, mask)
