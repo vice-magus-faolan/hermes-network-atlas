@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -21,6 +22,35 @@ from helpers import symlink_plugin_data
 def _history(storage, policy):
     with storage.Store(policy) as store, store.snapshot():
         return list(store.connection.iterdump())
+
+
+def _first_migration_route(cli, ctx, home, destination, storage, policy):
+    """A guessed binding must not turn retained legacy inventory into empty success."""
+    native = (home / 'config.yaml').read_bytes()
+    history = _history(storage, policy)
+    assert not destination.exists()
+    refused = cli(['status'], 2)
+    try:
+        ctx.set_config('policy', {'store': {'shared_sqlite_path': str(destination)}})
+        bound = (home / 'config.yaml').read_bytes()
+        for argv in (['status'], ['query'], ['create', '--name', 'Must not mask retained inventory']):
+            result = cli(argv, 2)
+            assert 'selected store is absent' in result['error'], result
+            assert not result['persisted'] and not result['applied']
+        hermes = shutil.which('hermes')
+        assert hermes is not None
+        cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                              input='', capture_output=True, text=True, timeout=45)
+        assert cold.returncode == 2, cold.stdout + cold.stderr
+        assert 'selected store is absent' in json.loads(cold.stdout)['error']
+        assert (home / 'config.yaml').read_bytes() == bound
+        assert not destination.exists()
+    finally:
+        (home / 'config.yaml').write_bytes(native)
+    assert 'managed destination is absent' in refused['error'], refused
+    assert 'first migration' in refused['error'] and 'deleted' in refused['error']
+    assert ctx.get_config('policy', None) == {}
+    assert _history(storage, policy) == history
 
 
 def _writer_overlap(cli, conversion, storage, core, policy, destination):
@@ -191,6 +221,8 @@ def run_conversion(mode, home, manager):
             assert '--accept-legacy-policy' in refused['error']
             assert (home / 'config.yaml').read_bytes() == native_config
             assert not destination.exists()
+            if mode == 'conversion':
+                _first_migration_route(cli, ctx, home, destination, storage, policy)
             if mode != 'conversion':
                 if mode == 'conversion_overlap':
                     data = _writer_overlap(cli, conversion, storage, core, policy, destination)
@@ -231,6 +263,9 @@ def run_conversion(mode, home, manager):
                 assert not cli(action, 2)['persisted']
             assert destination.exists(), 'interruption must follow DB publication'
             assert ctx.get_config('policy', None) == {}, 'interruption must precede native settings commit'
+            refused = cli(['status'], 2)
+            assert 'managed destination exists' in refused['error']
+            assert 'does not prove conversion' in refused['error']
             assert original == {path.name: path.read_bytes() for path in legacy.parent.iterdir()
                                 if path.is_file() and not path.name.endswith('-shm')}
             # Producer rows, triggers, IDs, receipts and ownership must all survive.

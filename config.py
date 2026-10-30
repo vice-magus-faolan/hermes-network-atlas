@@ -302,11 +302,25 @@ def load_policy(ctx: Settings) -> Policy:
     data = plugin_data_dir("network-atlas").resolve()
     policy = validate_policy(raw, get_hermes_home(), data_dir=data)
     legacy = policy.home / "network-atlas" / "atlas.sqlite3"
-    if isinstance(raw, dict) and "shared_sqlite_path" not in raw.get("store", {}) and legacy.exists():
-        raise ConfigError(
-            "legacy store present without a native store binding; stop writers. "
-            "Conversion may restore revoked collection grants. For previously converted or uncertain history, "
-            "use binding-only recovery in docs/operator-guide.md#recover-the-selected-binding; "
-            "only a genuine first migration should follow "
-            "docs/operator-guide.md#convert-legacy-policy-and-storage")
-    return policy
+    if not (legacy.exists() or legacy.is_symlink()):
+        return policy
+    if isinstance(raw, dict) and "shared_sqlite_path" in raw.get("store", {}):
+        # A guessed binding must not bypass the legacy barrier and initialize a
+        # replacement. Existence still cannot attest which inventory was selected.
+        if not policy.database.is_file():
+            raise ConfigError(
+                "legacy store present but selected store is absent or not a regular file; stop writers. "
+                "Do not create an empty replacement. Establish first migration versus converted-profile "
+                "recovery in docs/operator-guide.md#recover-the-selected-binding; preserve originals and backups")
+        return policy
+    destination = ("managed destination exists but does not prove conversion or the intended inventory. "
+                   if policy.database.is_file() else
+                   "managed destination is absent; this can mean first migration or deleted converted data. ")
+    raise ConfigError(
+        "legacy store present without a native store binding; stop writers. " + destination +
+        "Only an independently confirmed first migration should follow "
+        "docs/operator-guide.md#convert-legacy-policy-and-storage. For an already-converted profile, "
+        "use binding-only recovery only after verifying the actual retained store and expected history in "
+        "docs/operator-guide.md#recover-the-selected-binding. If history is uncertain or data is missing, "
+        "stop and inspect private records/backups; do not select an empty replacement. "
+        "Conversion may restore revoked collection grants")

@@ -325,6 +325,49 @@ def _retained_reinstall(atlas, home, config, storage, policy):
     section = guide.split('### Re-enable or reinstall with retained data', 1)[1].split('### ', 1)[0]
     snippet = section.split('```sh\n')[2].split('```', 1)[0]
     snippet = snippet.replace('/absolute/configured/atlas.sqlite3', shlex.quote(str(binding)))
+    snippet = snippet.replace('/absolute/selected/database-file', shlex.quote(str(policy.database)))
+    # A derived path is not retained data. Losing the actual selected file must
+    # refuse both the documented replacement and a mistakenly pre-bound runtime.
+    history = _history(storage, policy)
+    retained = home.parent / 'retained-reinstall-inventory.sqlite3'
+    policy.database.rename(retained)
+    try:
+        missing = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
+                                 env=os.environ.copy(), capture_output=True, text=True, timeout=90)
+        assert missing.returncode != 0, missing.stdout + missing.stderr
+        assert (home / 'config.yaml').read_bytes() == native
+        cold = subprocess.run([hermes, 'network-atlas', 'status'], cwd=home.parent, env=os.environ.copy(),
+                              input='', capture_output=True, text=True, timeout=45)
+        assert cold.returncode == 2, cold.stdout + cold.stderr
+        unbound = json.loads(cold.stdout)
+        assert 'deleted converted data' in unbound['error']
+        assert 'uncertain' in unbound['error']
+        _replace_policy(atlas, {'store': {'shared_sqlite_path': str(binding)}})
+        with patch.object(storage, '_prepare_file', side_effect=AssertionError('replacement store attempted')):
+            for result in (atlas.cli(['status'], expected_code=2), atlas.tool('network_query', {}),
+                           atlas.slash('status'), atlas.cli(['create', '--name', 'Not recovery'], expected_code=2)):
+                assert 'selected store is absent' in result['error'], result
+                assert not result['applied']
+        assert not policy.database.exists()
+    finally:
+        retained.rename(policy.database)
+        (home / 'config.yaml').write_bytes(native)
+    assert _history(storage, policy) == history
+    # Existing candidates still require inventory verification, not an inference
+    # that a managed filename proves conversion. A mismatched target cannot bind.
+    unbound = atlas.cli(['status'], expected_code=2)
+    assert 'uncertain' in unbound['error']
+    unrelated = home.parent / 'unrelated.sqlite3'
+    with storage.Store(replace(policy, database=unrelated), writable=True):
+        pass
+    unrelated_bytes = unrelated.read_bytes()
+    wrong = snippet.replace('ATLAS_DB=' + shlex.quote(str(policy.database)),
+                            'ATLAS_DB=' + shlex.quote(str(unrelated)))
+    mismatched = subprocess.run(['sh', '-ec', wrong.replace('PROFILE', profile)], cwd=home.parent,
+                               env=os.environ.copy(), capture_output=True, text=True, timeout=90)
+    assert mismatched.returncode != 0, mismatched.stdout + mismatched.stderr
+    assert (home / 'config.yaml').read_bytes() == native
+    assert unrelated.read_bytes() == unrelated_bytes
     restored = subprocess.run(['sh', '-ec', snippet.replace('PROFILE', profile)], cwd=home.parent,
                               env=os.environ.copy(), capture_output=True, text=True, timeout=90)
     assert restored.returncode == 0, restored.stdout + restored.stderr
@@ -337,6 +380,12 @@ def _retained_reinstall(atlas, home, config, storage, policy):
     assert status['database_binding']['database_path'] == str(policy.database)
     assert status['configured_networks'] == status['authorized_for_atlas_ssh_inspection'] == []
     assert status['known_devices'] == 1
+    cold = subprocess.run([hermes, 'network-atlas', 'query'], cwd=home.parent, env=os.environ.copy(),
+                          input='', capture_output=True, text=True, timeout=45)
+    assert cold.returncode == 0, cold.stdout + cold.stderr
+    assert {item['id'] for item in json.loads(cold.stdout)['devices']} == {
+        item['id'] for item in atlas.cli(['query'])['devices']}
+    assert _history(storage, policy) == history
 
 
 def _converted_stop(atlas, home, config, storage, batches, *, shared_binding):

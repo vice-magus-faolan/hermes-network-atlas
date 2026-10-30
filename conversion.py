@@ -148,8 +148,10 @@ def convert_legacy(ctx: WritableSettings | None, *, writers_stopped: bool,
     if current != converted and not accept_legacy_policy:
         raise ConfigError(
             "legacy conversion: retained legacy policy may restore revoked collection grants; "
-            "no database copy or settings write attempted. For retained-data recovery, use binding-only recovery "
-            "in docs/operator-guide.md#recover-the-selected-binding, not conversion. "
+            "no database copy or settings write attempted. For an already-converted profile, use binding-only "
+            "recovery only with a verified existing retained store and expected history; see "
+            "docs/operator-guide.md#recover-the-selected-binding. Missing data or uncertain history requires "
+            "inspection of private records/backups, not an empty replacement. "
             "For an intended first migration or interrupted retry, inspect the complete legacy policy "
             "and pass --accept-legacy-policy only if all its settings and grants are still intended")
     copied = False
