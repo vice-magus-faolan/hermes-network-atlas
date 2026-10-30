@@ -270,7 +270,7 @@ class UDPEndpointTests(unittest.TestCase):
             resumed = json.loads(self.handlers(tcp_policy).check_endpoints({'batch_id': old['batch_id']}))
         self.assertTrue(resumed['queryable'], resumed)
         with storage.Store(tcp_policy, writable=True) as store:
-            self.assertEqual(store.schema_version, 5)
+            self.assertEqual(store.schema_version, 6)
             for sql in ('UPDATE endpoint_observations SET rowid=rowid', 'DELETE FROM endpoint_observations'):
                 with self.assertRaises(sqlite3.IntegrityError):
                     store.connection.execute(sql)

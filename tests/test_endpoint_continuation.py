@@ -867,7 +867,7 @@ class ContinuationTests(unittest.TestCase):
         self.assertTrue(result['queryable'], result)
         self.assertEqual(self.history(first['batch_id']), before)
         with storage.Store(self.policy, writable=True) as store:
-            self.assertEqual(store.schema_version, 5)
+            self.assertEqual(store.schema_version, 6)
             for sql in ('UPDATE endpoint_continuations SET rowid=rowid', 'DELETE FROM endpoint_continuations'):
                 with store.transaction(), self.assertRaises(sqlite3.IntegrityError):
                     store.connection.execute(sql)

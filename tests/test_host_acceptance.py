@@ -186,6 +186,6 @@ class CumulativeHostTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reconcile.reconcile(foreign, {'batch_id': batch['batch_id']})
         with storage.Store(policy) as store:
-            self.assertEqual(store.connection.execute('PRAGMA user_version').fetchone()[0], 5)
+            self.assertEqual(store.connection.execute('PRAGMA user_version').fetchone()[0], 6)
             self.assertEqual(query._probe_totals(store, old['batch_id'])['address_count'], 2)
             self.assertEqual(query._probe_totals(store, new['batch_id'])['responding_address_count'], 2)

@@ -91,7 +91,8 @@ def pause_and_udp(atlas, config, schedule, transport, capability, endpoints):
 
 def prepare_upgrade(atlas, storage, policy, transport, schedule, capability, endpoints, version):
     """Produce a populated old schema and prove pre-effect upgrade refusal."""
-    migration = '_migrate_endpoint_protocols' if version == 3 else '_migrate_relation_indexes'
+    migration = {3: '_migrate_endpoint_protocols', 4: '_migrate_relation_indexes',
+                 5: '_migrate_observation_indexes'}[version]
     with patch.object(storage, 'SCHEMA_VERSION', version), patch.object(storage, migration, return_value=None):
         source = atlas.cli(['create', '--name', 'Historical source'])['device_id']
         target = atlas.cli(['create', '--name', 'Historical target'])['device_id']
@@ -99,14 +100,18 @@ def prepare_upgrade(atlas, storage, policy, transport, schedule, capability, end
         old, _ = collect(atlas, schedule, transport, capability, endpoints)
     before, ddl = refuse_old(atlas, storage, policy, transport)
     assert ddl[0] == version
-    assert not any(row[1] in {'relation_source_device', 'relation_target_device'} for row in ddl[1])
+    names = {row[1] for row in ddl[1]}
+    assert 'observation_batch' not in names
+    assert ({'relation_source_device', 'relation_target_device'} <= names) == (version == 5)
     return old, before, ddl
 
 
 def assert_relation_indexes(storage, policy):
     with storage.Store(policy) as store:
-        for name, column in (('relation_source_device', 'source_device'), ('relation_target_device', 'target_device')):
-            assert [row['name'] for row in store.connection.execute(f'PRAGMA index_info({name})')] == [column]
+        for name, columns in (('relation_source_device', ['source_device']),
+                              ('relation_target_device', ['target_device']),
+                              ('observation_batch', ['batch_id', 'subject_kind', 'subject_anchor', 'entity_id'])):
+            assert [row['name'] for row in store.connection.execute(f'PRAGMA index_info({name})')] == columns
 
 
 def main():
@@ -126,8 +131,8 @@ def main():
     atlas.ctx.set_config('policy', raw)
     policy = config.load_policy(atlas.ctx)
     saved = scratch / 'upgrade.json'
-    if mode in {'store_upgrade', 'store_upgrade_indexes'}:
-        version = 3 if mode == 'store_upgrade' else 4
+    if mode in {'store_upgrade', 'store_upgrade_indexes', 'store_upgrade_batch_indexes'}:
+        version = {'store_upgrade': 3, 'store_upgrade_indexes': 4, 'store_upgrade_batch_indexes': 5}[mode]
         old, before, ddl = prepare_upgrade(atlas, storage, policy, transport, schedule, capability, endpoints, version)
         # Legacy conversion copies exact old bytes/logical schema; it never
         # silently upgrades the source OR the copied destination on cold retry.
@@ -137,22 +142,22 @@ def main():
         from dataclasses import replace
         assert history(storage, replace(policy, database=copied)) == before
         assert schema(storage, replace(policy, database=copied)) == ddl
-        migrate = storage._migrate_relation_indexes
+        migrate = storage._migrate_observation_indexes
         def interrupted(connection):
             migrate(connection)
             raise sqlite3.OperationalError('synthetic interruption after index creation')
-        with patch.object(storage, '_migrate_relation_indexes', interrupted):
+        with patch.object(storage, '_migrate_observation_indexes', interrupted):
             failed = atlas.cli(['upgrade-store', '--writers-stopped'], expected_code=2)
         assert not failed['persisted'] and schema(storage, policy) == ddl
         assert history(storage, policy) == before
         saved.write_text(json.dumps({'history': before, 'schema': ddl, 'old_batch': old['batch_id']}))
-    elif mode in {'store_upgrade_reopen', 'store_upgrade_indexes_reopen'}:
+    elif mode in {'store_upgrade_reopen', 'store_upgrade_indexes_reopen', 'store_upgrade_batch_indexes_reopen'}:
         data = json.loads(saved.read_text())
         assert history(storage, policy) == data['history']
         assert list(schema(storage, policy)) == data['schema']
         upgraded = atlas.cli(['upgrade-store', '--writers-stopped'])
-        assert upgraded == {'upgraded': True, 'schema_version': 5, 'collection_performed': False}
-        assert schema(storage, policy)[0] == 5
+        assert upgraded == {'upgraded': True, 'schema_version': 6, 'collection_performed': False}
+        assert schema(storage, policy)[0] == 6
         assert_relation_indexes(storage, policy)
         assert history(storage, policy) == data['history']
         ddl = schema(storage, policy)

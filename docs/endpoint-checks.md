@@ -327,10 +327,12 @@ security boundary.
 
 Store schema 2 adds the endpoint projection; schema 3 adds immutable continuation
 reservations; schema 4 widens endpoint projection constraints to TCP/UDP; schema 5
-indexes both relationship device endpoints without changing rows. Ordinary
-writable opens refuse schema 1..4; new empty stores initialize at schema 5.
+indexes both relationship device endpoints without changing rows. Schema 6 adds
+a batch index for original and canonical-copy observations, without changing rows.
+Ordinary writable opens refuse schema 1..5; new empty stores initialize at schema 6.
 Schema 5 deliberately makes these additive indexes an explicit transactional
 operator upgrade rather than silent DDL during an ordinary schema-4 open.
+Schema 6 follows the same explicit-upgrade rule for existing schema-5 stores.
 Reads do not migrate, and collection checks the schema before network effects.
 Only the deliberate local operator command upgrades an existing selected store:
 
@@ -347,11 +349,11 @@ The transaction copies exact old projection values and retains original
 batch/probe/application rows and immutable guards. Legacy
 TCP-only batches retain `tcp_endpoint` provenance; UDP-containing batches use
 `endpoint`, with per-probe `tcp_endpoint`/`udp_endpoint` evidence kinds.
-Batch/application envelope versions remain 1. Read-only opens support schema 1..4
+Batch/application envelope versions remain 1. Read-only opens support schema 1..5
 without migration (schema 1 has no endpoint rows). Upgrade failure rolls back DDL
 and the version together; keep writers stopped and cold-retry the same explicit
 command after addressing the failure. Repeating a completed upgrade is harmless.
-Nonempty unversioned/future schemas still fail closed. Schema-5 stores require
+Nonempty unversioned/future schemas still fail closed. Schema-6 stores require
 compatible readers AND writers; no downgrade is provided. After upgrade, verify
 status and historical queries before restarting writers. Restoring a pre-upgrade
 backup after new writes would lose those writes: preserve both histories for

@@ -291,7 +291,7 @@ is read only by the explicit converter (bounded to 64 KiB); it is never a runtim
    legacy location: this converts policy only, never makes private shared-store copies.
 
 Conversion preserves the source and destination schema versions; it is not a
-schema upgrade. If the selected converted store is schema 1..4, keep writers
+schema upgrade. If the selected converted store is schema 1..5, keep writers
 stopped and deliberately run `hermes -p PROFILE network-atlas upgrade-store --writers-stopped`
 after conversion finishes, before restarting writers. Upgrade changes only the
 selected destination (or deliberately selected shared file), not retained originals.
@@ -910,9 +910,9 @@ resume a saved batch after repairing the reported category, rather than rescanni
   the budget. Endpoint recovery uses its stored ID rather than another scan.
 - Store or version failure: preserve the database and use a compatible Atlas version;
   make a consistent backup before changing versions. Ordinary writes to schema
-  1..4 refuse before collection; reads remain available without migration. The
-  explicit local `upgrade-store --writers-stopped` command upgrades to 5 transactionally.
-  Older binaries cannot read/write schema 5, even though its indexes are additive.
+  1..5 refuse before collection; reads remain available without migration. The
+  explicit local `upgrade-store --writers-stopped` command upgrades to 6 transactionally.
+  Older binaries cannot read/write schema 6, even though its indexes are additive.
   See [upgrade compatibility](endpoint-checks.md#sharing-and-upgrades).
 
 Older readers may also reject additive configuration keys or `not_started` probe

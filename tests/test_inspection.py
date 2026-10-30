@@ -346,21 +346,88 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertGreater(len(ids), self.policy.limits.observations)
         return source, target, edge, ids, devices
 
-    def device_query_work(self, params):
+    def device_query_work(self, params, *, batch_work=None):
         """Measure every SQL instruction in the real public read, not just edge lookup."""
         statements, ticks = [], []
         enter = storage.Store.__enter__
         def measured_enter(store):
             enter(store)
-            store.connection.set_trace_callback(statements.append)
+            store.connection.set_trace_callback(lambda sql: statements.append((sql, len(ticks))))
             store.connection.set_progress_handler(lambda: ticks.append(1) or False, 100)
             return store
         with patch.object(storage.Store, "__enter__", measured_enter):
             answer = json.loads(self.handlers.query(params))
         self.assertNotIn("error", answer)
-        plans = [row[3] for sql in statements if "relations" in sql
+        ends = [start for _, start in statements[1:]] + [len(ticks)]
+        batch_reads = [(sql, (end - start) * 100) for (sql, start), end in zip(statements, ends, strict=True)
+                       if "FROM observations WHERE batch_id=" in sql]
+        if batch_work is not None:
+            batch_work.append(sum(work for _, work in batch_reads))
+            print("Batch lookup statement work:", batch_reads, flush=True)
+        plans = [row[3] for sql, _ in statements if "relations" in sql or "FROM observations WHERE batch_id=" in sql
                  for row in self.store.connection.execute("EXPLAIN QUERY PLAN " + sql)]
         return answer, len(ticks) * 100, plans
+
+    def test_device_batch_observation_lookup_ignores_unrelated_history(self):
+        _, peer = self.known_peer()
+        receipt, applied = self.apply()
+        source = applied["new"][0]
+        self.assertEqual(len(applied["relationships"]), 1)
+        manual = self.update("relationship", {"target_device": peer, "relationship_type": "hosted_on"},
+                             device=source, now=self.clock)
+        manual_id = self.store.connection.execute("SELECT entity_id FROM observations WHERE id=?",
+                                                  (manual["observation_id"],)).fetchone()[0]
+        params = [{"device_id": device} for device in (source, peer, self.device)]
+        params += [{"device_id": peer, "relationship": "routes_via", "related_to": source}]
+        small_batches = []
+        baseline = [self.device_query_work(p, batch_work=small_batches) for p in params]
+        for answer, _, _ in baseline[:2]:
+            self.assertEqual({r["id"] for r in answer["devices"][0]["relationships"]},
+                             {*applied["relationships"], manual_id})
+        self.assertEqual(baseline[2][0]["devices"][0]["relationships"], [])
+        self.manual_graph()
+        before = list(self.store.connection.iterdump())
+        for filters, (expected, small_work, _), small_batch in zip(params, baseline, small_batches, strict=True):
+            with self.subTest(filters=filters):
+                measured = []
+                answer, large_work, plans = self.device_query_work(filters, batch_work=measured)
+                self.assertEqual(answer, expected)
+                if filters["device_id"] == self.device:
+                    self.assertEqual(measured, [0])
+                else:
+                    self.assertTrue(expected["devices"][0]["relationships"])
+                    self.assertGreater(small_batch, 0)
+                    self.assertLessEqual(measured[0], small_batch + 1000)
+                    self.assertTrue(any("observation_batch" in plan for plan in plans), plans)
+                    self.assertFalse(any("SCAN observations" in plan for plan in plans), plans)
+                print("Batch observation lookup:", filters, "whole", small_work, large_work,
+                      "batch", small_batch, measured[0], plans, flush=True)
+        # Removing only this index must increase real public batch-read work;
+        # retain both endpoint indexes. Commit the drop so the public reader's
+        # independent connection sees it, then restore only this fixture's index.
+        indexed = []
+        expected, _, _ = self.device_query_work(params[0], batch_work=indexed)
+        with self.store.transaction():
+            self.store.connection.execute("DROP INDEX observation_batch")
+        try:
+            unindexed = []
+            answer, _, _ = self.device_query_work(params[0], batch_work=unindexed)
+            self.assertEqual(answer, expected)
+            self.assertGreater(unindexed[0], indexed[0] + 10000)
+            print("Absent batch index control:", indexed[0], unindexed[0], flush=True)
+        finally:
+            with self.store.transaction():
+                self.store.connection.execute(
+                    "CREATE INDEX observation_batch ON observations(batch_id,subject_kind,subject_anchor,entity_id)")
+        edge = next(r for r in expected["devices"][0]["relationships"] if r["id"] == applied["relationships"][0])
+        fact = edge["facts"]["relationship"]["evidence"][0]
+        self.assertEqual((fact["source"], fact["confidence"]), ("ssh:" + ALIAS, "inferred"))
+        self.assertEqual(fact["value"]["evidence_query"], {"view": "topology", "batch_id": receipt["batch_id"]})
+        self.assertEqual({r["resolution"]["relationship_id"] for r in self.topology(receipt) if r["kind"] == "route"},
+                         {edge["id"]})
+        history = json.loads(self.handlers.query({"view": "history", "device_id": source}))
+        self.assertIn(manual["observation_id"], {r["id"] for r in history["observations"]})
+        self.assertEqual(list(self.store.connection.iterdump()), before)
 
     def test_device_relation_lookup_work_is_independent_of_unrelated_manual_graph(self):
         peer = core.create_device(self.store, "Indexed peer", now=self.clock)["device_id"]
@@ -630,12 +697,15 @@ class TopologyInspectionTests(AtlasFixture):
             applications.append(applied)
             if n == 0:
                 self.collector_global_views(sources[0], peers[0][0], set(applied["relationships"]))
-                baseline_work["source"] = self.device_query_work({"device_id": sources[0]})[1]
+                baseline_work["batch"] = []
+                baseline_work["source"] = self.device_query_work(
+                    {"device_id": sources[0]}, batch_work=baseline_work["batch"])[1]
                 baseline_work["isolated"] = self.device_query_work({"device_id": self.device})[1]
         total = self.store.connection.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         self.assertEqual(total, 4224)
         self.assertGreater(total, self.policy.limits.observations)
-        answer, large_work, plans = self.device_query_work({"device_id": sources[0]})
+        batch_work = []
+        answer, large_work, plans = self.device_query_work({"device_id": sources[0]}, batch_work=batch_work)
         self.assertEqual({r["id"] for r in answer["devices"][0]["relationships"]},
                          set(applications[0]["relationships"]))
         self.assertFalse(any("SCAN r" in plan for plan in plans), plans)
@@ -643,8 +713,11 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertTrue(any("relation_target_device" in plan for plan in plans), plans)
         _, isolated_large_work, _ = self.device_query_work({"device_id": self.device})
         self.assertLessEqual(isolated_large_work, baseline_work["isolated"] + 2000)
-        # Incident support still reads batch/identity evidence; report the whole
-        # cost rather than claiming endpoint indexes eliminate those scans.
+        # Batch observations stay scoped even as other real batches accumulate.
+        # Latest-batch and identity work remains visible in the whole-read count.
+        self.assertGreater(baseline_work["batch"][0], 0)
+        self.assertLessEqual(batch_work[0], baseline_work["batch"][0] + 1000, plans)
+        self.assertTrue(any("observation_batch" in plan for plan in plans), plans)
         print("Collector device query SQL work:", baseline_work["source"], large_work, plans, flush=True)
         manual = self.update("relationship", {"target_device": peers[-1][0], "relationship_type": "physical"},
                              device=sources[0], now=self.clock)
