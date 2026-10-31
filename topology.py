@@ -179,8 +179,12 @@ class TopologySnapshot:
     def relationship_for(self, row) -> tuple | None:
         batch_id = row["batch_id"]
         if batch_id not in self.memberships:
-            rows = _rows(self.store, "SELECT r.*,o.value_json FROM relations r JOIN observations o "
-                         "ON o.id=r.observation_id WHERE o.batch_id=? AND o.evidence_kind='configured_route' "
+            # Start from this batch's projected evidence, not the store-wide
+            # relation graph. Match the original receipt, never a later fact.
+            rows = _rows(self.store, "SELECT r.*,o.value_json FROM observations o JOIN relations r "
+                         "ON r.id=o.entity_id AND r.observation_id=o.id WHERE o.batch_id=? "
+                         "AND o.subject_kind='relationship' AND o.entity_id IS NOT NULL "
+                         "AND o.evidence_kind='configured_route' "
                          "ORDER BY r.id", (batch_id,))
             members = {}
             for relation in rows:

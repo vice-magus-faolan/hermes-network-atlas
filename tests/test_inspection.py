@@ -348,20 +348,24 @@ class TopologyInspectionTests(AtlasFixture):
         self.assertGreater(len(ids), self.policy.limits.observations)
         return source, target, edge, ids, devices
 
-    def device_query_work(self, params, *, batch_work=None):
+    def device_query_work(self, params, *, batch_work=None, statement_work=None):
         """Measure every SQL instruction in the real public read, not just edge lookup."""
         statements, ticks = [], []
+        quantum = 10 if statement_work is not None else 100
         enter = storage.Store.__enter__
         def measured_enter(store):
             enter(store)
             store.connection.set_trace_callback(lambda sql: statements.append((sql, len(ticks))))
-            store.connection.set_progress_handler(lambda: ticks.append(1) or store.check_deadline() or False, 100)
+            store.connection.set_progress_handler(lambda: ticks.append(1) or store.check_deadline() or False, quantum)
             return store
         with patch.object(storage.Store, "__enter__", measured_enter):
             answer = json.loads(self.handlers.query(params))
         self.assertNotIn("error", answer)
         ends = [start for _, start in statements[1:]] + [len(ticks)]
-        batch_reads = [(sql, (end - start) * 100) for (sql, start), end in zip(statements, ends, strict=True)
+        measured = [(sql, (end - start) * quantum) for (sql, start), end in zip(statements, ends, strict=True)]
+        if statement_work is not None:
+            statement_work.extend(measured)
+        batch_reads = [(sql, work) for sql, work in measured
                        if "FROM observations WHERE batch_id=" in sql]
         if batch_work is not None:
             batch_work.append(sum(work for _, work in batch_reads))
@@ -370,7 +374,57 @@ class TopologyInspectionTests(AtlasFixture):
                                           for sql, _ in batch_reads], flush=True)
         plans = [row[3] for sql, _ in statements if "relations" in sql or "FROM observations WHERE batch_id=" in sql
                  for row in self.store.connection.execute("EXPLAIN QUERY PLAN " + sql)]
-        return answer, len(ticks) * 100, plans
+        return answer, len(ticks) * quantum, plans
+
+    def batch_public_work(self, receipt):
+        """Inventory both public consumers, including joins and per-original copies."""
+        results = []
+        for params in ({"view": "topology"}, {"view": "unresolved", "summary": True}):
+            statements = []
+            answer, whole, _ = self.device_query_work(
+                {**params, "batch_id": receipt["batch_id"]}, statement_work=statements)
+            selects = [(sql, work, [row[3] for row in self.store.connection.execute("EXPLAIN QUERY PLAN " + sql)])
+                       for sql, work in statements if sql.lstrip().upper().startswith("SELECT")]
+            membership = [(sql, work, plan) for sql, work, plan in selects
+                          if "relations r" in sql and "o.value_json" in sql]
+            self.assertEqual(len(membership), 1, selects)
+            self.assertGreater(membership[0][1], 0)
+            copies = [work for sql, work, _ in selects if "SELECT DISTINCT CASE" in sql]
+            if params["view"] == "unresolved":
+                self.assertTrue(copies, selects)
+            originals = [plan for sql, _, plan in selects
+                         if "FROM observations WHERE batch_id=" in sql and "entity_id IS NULL ORDER BY rowid" in sql]
+            self.assertTrue(originals, selects)
+            self.assertFalse(any("USE TEMP B-TREE" in step for plan in originals for step in plan), originals)
+            print("Public batch SQL inventory:", params, "whole steps", whole,
+                  "membership steps", membership[0][1], "copy steps per original", copies,
+                  "other steps", whole - membership[0][1] - sum(copies), "all SELECTs", selects, flush=True)
+            results.append((answer, whole, membership[0][1], membership[0][2], copies))
+        return results
+
+    def assert_batch_membership_work(self, receipt, baseline):
+        measured = self.batch_public_work(receipt)
+        for small, large in zip(baseline, measured, strict=True):
+            self.assertEqual(large[0], small[0])
+            print("Public membership growth: whole", small[1], large[1],
+                  "membership", small[2], large[2], "copy steps", small[4], large[4], flush=True)
+            self.assertLessEqual(large[2], small[2] + 1000, large[3])
+            self.assertFalse(any("SCAN r" in step for step in large[3]), large[3])
+            self.assertTrue(any("observation_batch" in step for step in large[3]), large[3])
+
+    def test_batch_public_membership_ignores_unrelated_manual_graph(self):
+        self.known_peer()
+        receipt, applied = self.apply()
+        baseline = self.batch_public_work(receipt)
+        routes = [row for row in baseline[0][0]["observations"] if row["kind"] == "route"]
+        self.assertTrue(routes)
+        self.assertEqual({row["resolution"]["relationship_id"] for row in routes}, set(applied["relationships"]))
+        self.assertGreater(baseline[1][0]["summary"]["resolved_observation_count"], 0)
+        self.manual_graph()
+        before = list(self.store.connection.iterdump())
+        print("Public batch volume:", self.counts(), flush=True)
+        self.assert_batch_membership_work(receipt, baseline)
+        self.assertEqual(list(self.store.connection.iterdump()), before)
 
     @contextmanager
     def batch_index_shape(self, columns):
@@ -773,6 +827,7 @@ class TopologyInspectionTests(AtlasFixture):
             applications.append(applied)
             if n == 0:
                 self.collector_global_views(sources[0], peers[0][0], set(applied["relationships"]))
+                baseline_work["public_batch"] = self.batch_public_work(receipt)
                 baseline_work["batch"] = []
                 baseline_work["source"] = self.device_query_work(
                     {"device_id": sources[0]}, batch_work=baseline_work["batch"])[1]
@@ -780,6 +835,8 @@ class TopologyInspectionTests(AtlasFixture):
         total = self.store.connection.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         self.assertEqual(total, 4224)
         self.assertGreater(total, self.policy.limits.observations)
+        print("Collector public batch volume:", self.counts(), flush=True)
+        self.assert_batch_membership_work(receipts[0], baseline_work["public_batch"])
         batch_work = []
         answer, large_work, plans = self.device_query_work({"device_id": sources[0]}, batch_work=batch_work)
         self.assertEqual({r["id"] for r in answer["devices"][0]["relationships"]},
@@ -1053,6 +1110,7 @@ class TopologyInspectionTests(AtlasFixture):
         snapshot = list(self.store.connection.iterdump())
         self.assertEqual(json.loads(self.handlers.reconcile({"batch_id": receipt["batch_id"]})), applied)
         self.assertEqual(list(self.store.connection.iterdump()), snapshot)
+        self.batch_public_work(receipt)
         comparisons = self.compare_batch_index_reads([
             {"device_id": source}, {"device_id": peer}, {"device_id": self.device},
             {"device_id": peer, "relationship": "routes_via", "related_to": source}])

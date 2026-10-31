@@ -307,13 +307,15 @@ rather than storing the repeated context-qualified anchor in every index entry.
 Per-original copy lookups scan that batch's canonical copies, so whole-query work
 can increase for large admitted batches, including the batch unresolved summary,
 despite the measured source-device-query, storage and write improvements.
-Latest-batch ordering, alias/identity, access and historical reads can still depend
-on retained evidence elsewhere in the store. The linked topology batch provenance
-page and batch unresolved summary share another residual cost:
-`TopologySnapshot.relationship_for` starts from
-`relations` and can scan unrelated relationships to recover frozen membership, even
-when the primary device lookup is indexed. Bounded page output does not make that
-provenance read or summary constant-time. Older readable stores
+The topology batch provenance page and batch unresolved summary recover frozen
+membership from that batch's relationship observations, joining each entity to its
+original relation receipt. With schema 6's batch index, this membership lookup does
+not enumerate unrelated relationships; it can still sort the selected batch's
+memberships. This does not remove the per-original canonical-copy cost above or
+guarantee lower whole-query work for every batch. Latest-batch ordering,
+alias/identity, access and historical reads can still depend on retained evidence
+elsewhere in the store. Bounded page output does not make the provenance read or
+summary constant-time. Older readable stores
 retain the same results but lack the newer indexes until explicitly upgraded.
 Global inventory, relationship filters without `device_id`, status and maps still
 refuse when current collector candidates exceed `limits.observations`; pagination
