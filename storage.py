@@ -103,7 +103,7 @@ def _initialize_locked(connection: sqlite3.Connection, *, upgrade: bool = False)
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     if version == SCHEMA_VERSION:
         return
-    if version in (1, 2, 3, 4, 5) and not upgrade:
+    if version in range(1, SCHEMA_VERSION) and not upgrade:
         raise UpgradeRequiredError()
     if version == 1:
         _migrate_endpoints(connection)
@@ -250,7 +250,7 @@ class Store:
                 _initialize(self.connection, upgrade=upgrade)
                 os.chmod(policy.database, 0o600)
                 self.connection.execute("PRAGMA journal_mode=WAL")
-            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, SCHEMA_VERSION):
+            elif self.connection.execute("PRAGMA user_version").fetchone()[0] not in range(1, SCHEMA_VERSION + 1):
                 raise StoreError("unsupported atlas schema")
             else:
                 self.connection.execute("PRAGMA query_only=ON")
@@ -333,7 +333,7 @@ def require_current_schema(policy: Policy, *, deadline: float) -> None:
         version = connection.execute('PRAGMA user_version').fetchone()[0]
         if version == SCHEMA_VERSION:
             return
-        if version in (1, 2, 3, 4, 5):
+        if version in range(1, SCHEMA_VERSION):
             raise UpgradeRequiredError()
         if version != 0 or connection.execute('SELECT 1 FROM sqlite_master LIMIT 1').fetchone():
             raise StoreError('unsupported or unversioned atlas schema')
