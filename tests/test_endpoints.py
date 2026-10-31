@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import errno
 import importlib
+from ipaddress import ip_network
 import json
 from pathlib import Path
 import sqlite3
@@ -14,10 +15,10 @@ from helpers import ROOT, fixture_handlers, fixture_policy, load_package, scratc
 from synthetic_sockets import SyntheticSockets
 
 load_package()
-config, endpoints, schedule, transport, capability, storage, query, tools, core, reconcile, batches = (
+config, endpoints, schedule, transport, capability, storage, query, tools, core, reconcile, batches, continuation = (
     importlib.import_module('atlas_test_plugin.' + name) for name in
     ('config', 'endpoints', 'host_schedule', 'host_transport', 'host_discovery',
-     'storage', 'query', 'tools', 'core', 'reconcile', 'batches'))
+     'storage', 'query', 'tools', 'core', 'reconcile', 'batches', 'endpoint_continuation'))
 
 
 class EndpointTests(unittest.TestCase):
@@ -26,9 +27,10 @@ class EndpointTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
 
-    def policy(self, *, ports=None, cidr='192.0.2.8/31', limits=None):
+    def policy(self, *, ports=None, udp_ports=None, cidr='192.0.2.8/31', limits=None):
         raw = {'networks': {'lab': {'cidr': cidr, 'allow_public': True,
-                                  'endpoints': {'enabled': True, 'tcp_ports': ports or [22, 2222]}}}}
+                                  'endpoints': {'enabled': True, 'tcp_ports': ports or [22, 2222],
+                                                'udp_ports': udp_ports or []}}}}
         if limits:
             raw['limits'] = limits
         path = self.home / 'network-atlas' / 'config.yaml'
@@ -173,7 +175,7 @@ class EndpointTests(unittest.TestCase):
                 self.assertFalse(policy.database.exists())
         # The exact hard grid boundary is admissible; deadlines still leave
         # truthful unstarted work rather than increasing runtime power.
-        policy = self.policy(cidr='192.168.1.0/24', ports=list(range(1, 17)),
+        policy = self.policy(cidr='192.168.1.0/24', ports=list(range(100, 108)), udp_ports=list(range(100, 108)),
                              limits={'operation_timeout_seconds': 2, 'host_timeout_seconds': 1})
         fixture = SyntheticSockets(lambda address, port: 'closed' if address == '192.168.1.1' else 'filtered')
         with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock):
@@ -187,11 +189,54 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(result['state_counts']['unavailable'], 32)
         self.assertLessEqual(fixture.peak, 4)
         self.assertLessEqual(fixture.clock.now - fixture.calls[0][0], 1.5 + 1e-6)
-        self.assertEqual(len(fixture.calls), len({(a, p) for _, a, p in fixture.calls}))
+        self.assertEqual(len(fixture.protocol_calls), len({(a, protocol, p) for _, a, protocol, p in
+                                                         fixture.protocol_calls}))
         self.assertTrue(all(later[0] - earlier[0] >= 1 / 32 - 1e-7
                             for earlier, later in zip(fixture.calls, fixture.calls[1:], strict=False)))
         self.assertTrue(all(sock.closed for sock in fixture.sockets))
         self.assertEqual(self.rows(policy, batch_id=result['batch_id'])['total_count'], 4096)
+        with patch.object(transport.socket, 'socket', side_effect=AssertionError('preview traffic')):
+            preview = json.loads(fixture_handlers(self.home).check_endpoints({'preview_batch_id': result['batch_id']}))
+        progress = preview['progress']
+        eligible = progress['total'] - progress['excluded']
+        self.assertEqual((progress['total'], progress['excluded'], eligible), (4096, 32, 4064))
+        self.assertEqual(progress['attempted'], len(fixture.protocol_calls))
+        self.assertLess(1 + eligible, continuation.LINEAGE_BATCH_LIMIT)
+
+    def test_smaller_scopes_at_protocol_ceilings_cannot_exceed_eligible_lineage_margin(self):
+        ceilings = config.Limits()
+        eligible_counts = []
+        # /24's exact public boundary is exercised above. Check every smaller
+        # IPv4 size, including /31-/32 where neither endpoint is excluded.
+        for prefix in range(25, 33):
+            with self.subTest(prefix=prefix):
+                scope = ip_network(f'192.168.1.0/{prefix}')
+                methods = min(ceilings.observations // scope.num_addresses,
+                              config.MAX_TCP_ENDPOINT_PORTS + config.MAX_UDP_ENDPOINT_PORTS)
+                tcp_count = min(methods, config.MAX_TCP_ENDPOINT_PORTS)
+                policy = self.policy(cidr=str(scope), ports=list(range(100, 100 + tcp_count)),
+                                     udp_ports=list(range(100, 100 + methods - tcp_count)),
+                                     limits={'operation_timeout_seconds': 2, 'host_timeout_seconds': 1})
+                fixture = SyntheticSockets()
+                with fixture.install(schedule, transport, capability), patch.object(endpoints, 'time', fixture.clock):
+                    result = json.loads(fixture_handlers(self.home).check_endpoints({'network': 'lab'}))
+                self.assertTrue(result['queryable'], result)
+                self.assertTrue(all(sock.closed for sock in fixture.sockets))
+                self.assertLessEqual(fixture.peak, ceilings.concurrent_probes)
+                self.assertEqual(len(policy.networks[0].endpoint_methods), methods)
+                with patch.object(transport.socket, 'socket', side_effect=AssertionError('preview traffic')):
+                    preview = json.loads(fixture_handlers(self.home).check_endpoints(
+                        {'preview_batch_id': result['batch_id']}))
+                progress = preview['progress']
+                self.assertEqual(progress['total'], result['observation_count'])
+                self.assertLessEqual(progress['total'], ceilings.observations)
+                eligible = progress['total'] - progress['excluded']
+                eligible_counts.append(eligible)
+                self.assertLess(eligible, 4064)
+                self.assertLess(1 + eligible, continuation.LINEAGE_BATCH_LIMIT)
+        self.assertEqual(eligible_counts, [4032, 3968, 1920, 896, 384, 128, 128, 64])
+        with self.assertRaisesRegex(config.ConfigError, 'at most 256 addresses'):
+            self.policy(cidr='192.168.0.0/23')
 
     def test_all_public_request_injections_refuse_before_effects(self):
         policy = self.policy()
