@@ -82,6 +82,14 @@ four-probe concurrency, operation/host deadlines, output cap and persistence
 reserve do not grow with the selected list; later ports may remain `not_started`.
 Owned sockets close on completion or interruption.
 
+Longer TCP/UDP lists shorten each individual wait within that same per-host
+budget. A slow host can therefore yield `no_response` even while its service is
+functioning. Continuation checks only never-started endpoints; it does not retry
+attempted endpoints, including `no_response`. Select fewer ports or a narrower
+scope when that genuinely matches the work needed, rather than overlapping
+network aliases or larger budgets. A narrower scope reduces total work but does
+not lengthen an individual host's wait for an unchanged port list.
+
 The TCP handshake itself may consume connection slots or cause remote logs and
 kernel retransmissions. This is not a zero-effect probe. 4403 is excluded at both
 policy and socket boundaries because connection contention can affect radio

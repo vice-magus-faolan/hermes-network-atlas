@@ -21,7 +21,13 @@ from .host_transport import excluded
 from .storage import Store, encode, identifier, parse_time, response_json, timestamp, utc_now
 
 # Retain the structural traversal bound, not a cumulative probe-row quota.
-# This bounds ancestry separately from the per-batch observation/grid ceiling.
+# With <=256 IPv4 addresses, <=32 ports per protocol and <=4096 full-grid rows,
+# the largest eligible grid is /24 x 16 selections: (256 - 2) x 16 = 4064.
+# /25 x 32 yields 4032; /26 x 64 yields 3968; smaller scopes cannot exceed
+# those (even /31-/32 without network/broadcast exclusions). Other exclusions
+# only reduce work. Thus root + one progressing child per eligible tuple fits
+# below 4096 batches. Zero-progress histories can still hit this structural
+# bound; time/capacity refusals or an unsaved reservation can stop progress first.
 LINEAGE_BATCH_LIMIT = 4096
 LINEAGE_LIMIT_ERROR = ('endpoint continuation: lineage batch limit (4096) reached; '
                        'retain saved IDs and history for operator review; no new collection')
